@@ -1,0 +1,71 @@
+<% if (flash !== null) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b><%= flash %></b> line<%= flash === 1 ? '' : 's' %> tagged.</div>
+<% } %>
+<% if (typeof tagError !== 'undefined') { %>
+<div class="errb"><div class="errb-tx"><p><b>Rejected by the database.</b> <%= tagError %></p></div></div>
+<% } %>
+
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-book"/></svg>Untagged lines</div>
+    <div class="v"><%= lines.length %></div><div class="f">of <%= totalCount %> ledger entries</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Already checked</div>
+    <div class="v"><%= checkedCount %></div><div class="f">of <%= totalCount %> lines</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-tree"/></svg>Tag coverage</div>
+    <div class="v"><%= totalCount ? Math.round(checkedCount / totalCount * 1000) / 10 : 100 %>%</div>
+    <div class="f"><span class="<%= checkedCount === totalCount ? 'up' : 'wn' %>">target 100%</span></div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-chart"/></svg>CBS accounts</div>
+    <div class="v"><%= cbs.length %></div><div class="f"><%= wbs.length %> WBS nodes available</div></div>
+</div>
+
+<form method="post" action="/queue/tag" id="tagform">
+<div class="card" style="margin-top:12px">
+  <div class="fbar">
+    <label class="fchk"><input type="checkbox" id="selall" onclick="toggleAll(this)"> Select all</label>
+    <span class="fsep"></span>
+    <label class="flbl">Tag with CBS
+      <select name="cbs"><option value="">— choose account —</option>
+        <% cbs.forEach(function(a){ %><option value="<%= a.id %>"><%= a.code %> <%= a.name %></option><% }) %>
+      </select></label>
+    <label class="flbl">WBS
+      <select name="wbs"><option value="">— choose node —</option>
+        <% wbs.forEach(function(w){ %><option value="<%= w.id %>"><%= w.wbs_code %> <%= w.name %></option><% }) %>
+      </select></label>
+    <label class="fchk"><input type="checkbox" name="check" value="1"> Mark checked</label>
+  </div>
+  <div class="tw"><table>
+    <thead><tr><th style="width:34px"></th><th>Date</th><th>Doc no.</th><th>Description</th>
+      <th>Type</th><th class="r">Amount</th><th>Current tag</th><th>Status</th></tr></thead>
+    <tbody>
+      <% lines.forEach(function(l){ %>
+      <tr>
+        <td><input type="checkbox" name="line" value="<%= l.id %>" class="rl" onclick="syncCount()"></td>
+        <td class="mono"><%= l.date %></td>
+        <td class="mono"><%= l.document_no || '—' %></td>
+        <td><%= l.description || '' %></td>
+        <td><%= l.type || '' %></td>
+        <td class="num"><%= l.amount < 0 ? '−Rp ' + fmt(-l.amount) : 'Rp ' + fmt(l.amount) %></td>
+        <td><% if (l.cbs_code) { %><span class="chip ok"><%= l.cbs_code %></span><% } else { %><span class="chip nt">untagged</span><% } %></td>
+        <td><% if (l.cost_checked) { %><span class="chip ok">CHECKED</span><% } else { %><span class="chip wn">UNCHECKED</span><% } %></td>
+      </tr>
+      <% }) %>
+      <% if (!lines.length) { %>
+      <tr><td colspan="8" class="empty">Nothing to tag — every line in <%= projectName %> carries a WBS + CBS tag.</td></tr>
+      <% } %>
+    </tbody>
+  </table></div>
+  <div class="fbar bot">
+    <span class="selinfo"><b id="seln">0</b> selected</span>
+    <button class="btn pri sm" type="submit"><svg><use href="#i-check"/></svg>Apply tag + check</button>
+  </div>
+</div>
+</form>
+
+<script>
+function toggleAll(el){document.querySelectorAll('.rl').forEach(function(c){c.checked=el.checked;});syncCount();}
+function syncCount(){
+  var n=document.querySelectorAll('.rl:checked').length;
+  document.getElementById('seln').textContent=n;
+  document.querySelectorAll('.rl').forEach(function(c){c.closest('tr').classList.toggle('sel',c.checked);});
+}
+syncCount();
+</script>
