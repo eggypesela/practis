@@ -1,0 +1,58 @@
+<% if (typeof flash !== 'undefined' && flash) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b>Saved.</b> New line posted to the ledger<% if (dupId) { %> — duplicate guarded (existing line <b>#<%= dupId %></b> is the one already on file)<% } %>.</div>
+<% } %>
+<% if (typeof error !== 'undefined') { %>
+<div class="errb"><div class="errb-tx"><p><b>Not posted.</b> <%= error %></p></div></div>
+<% } %>
+
+<form method="post" action="/ledger/entry">
+<div class="card" style="max-width:640px">
+  <div class="card-hd"><h2>New entry</h2><span class="r"><%= projectName %></span></div>
+  <div class="fbody">
+    <label class="fld">Date
+      <input type="date" name="date" value="<%= typeof form !== 'undefined' && form.date ? form.date : defaultDate %>" required></label>
+    <label class="fld">Document no.
+      <input type="text" name="document_no" value="<%= typeof form !== 'undefined' ? (form.document_no || '') : '' %>" placeholder="PO-… / INV-… / CASHIN-…"></label>
+    <label class="fld">Description
+      <input type="text" name="description" value="<%= typeof form !== 'undefined' ? (form.description || '') : '' %>" placeholder="What this line is for"></label>
+    <label class="fld">Type
+      <select name="type">
+        <option value="">— unclassified —</option>
+        <% types.forEach(function(t){ %><option value="<%= t %>" <%= typeof form !== 'undefined' && form.type === t ? 'selected' : '' %>><%= t %></option><% }) %>
+      </select></label>
+
+    <div class="fld">Side
+      <div class="seg">
+        <label class="seg-btn"><input type="radio" name="side" value="debit" <%= typeof form === 'undefined' || form.side === 'debit' ? 'checked' : '' %>> Debit <span class="dim">money out</span></label>
+        <label class="seg-btn"><input type="radio" name="side" value="credit" <%= typeof form !== 'undefined' && form.side === 'credit' ? 'checked' : '' %>> Credit <span class="dim">money in</span></label>
+      </div></div>
+    <label class="fld">Amount <span class="dim">whole rupiah</span>
+      <input type="number" name="amount" min="1" step="1" inputmode="numeric" value="<%= typeof form !== 'undefined' && form.amount ? Number(form.amount).toLocaleString('id-ID') : '' %>" placeholder="0" required></label>
+    <label class="fld">Retainage <span class="dim">Rp · optional</span>
+      <input type="number" name="retainage" min="0" step="1" inputmode="numeric" value="<%= typeof form !== 'undefined' && form.retainage ? Number(form.retainage).toLocaleString('id-ID') : '' %>" placeholder="0"></label>
+    <label class="fld">Paid amount <span class="dim">Rp · optional</span>
+      <input type="number" name="paid" min="0" step="1" inputmode="numeric" value="<%= typeof form !== 'undefined' && form.paid ? Number(form.paid).toLocaleString('id-ID') : '' %>" placeholder="0"></label>
+
+    <div class="fnote"><svg><use href="#i-info"/></svg><span>This line is <b>immutable once posted</b> — corrections are reversing + new lines, never edits. The Cost Controller tags it in the queue afterwards.</span></div>
+
+    <button class="btn pri wide" type="submit"><svg><use href="#i-plus"/></svg>Post entry</button>
+  </div>
+</div>
+</form>
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
+</defs></svg>
+<script>
+(function(){
+  document.querySelectorAll('.seg').forEach(function(seg){
+    var radios=seg.querySelectorAll('input[type=radio]');
+    radios.forEach(function(r){
+      if(r.checked) r.closest('label').classList.add('on');
+      r.addEventListener('change',function(){
+        radios.forEach(function(x){ x.closest('label').classList.remove('on'); });
+        if(r.checked) r.closest('label').classList.add('on');
+      });
+    });
+  });
+})();
+</script>
