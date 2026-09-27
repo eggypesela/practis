@@ -1,0 +1,36 @@
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-folder"/></svg>Active projects</div>
+    <div class="v"><%= projects.length %></div><div class="f">visible to you</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-chart"/></svg>Contract value</div>
+    <div class="v sm">Rp <%= fmt(contractValue) %></div><div class="f">across <%= projects.length %> projects</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-book"/></svg>Cost to date</div>
+    <div class="v sm">Rp <%= fmt(costToDate) %></div>
+    <div class="f"><%= contractValue ? Math.round(costToDate / contractValue * 100) : 0 %>% of contract</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-in"/></svg>Untagged lines</div>
+    <div class="v"><%= untaggedCount %></div><div class="f"><span class="wn">blocks cost report</span></div></div>
+</div>
+
+<div class="grid k2" style="margin-top:12px">
+  <div class="card">
+    <div class="card-hd"><h2>Projects</h2><span class="r"><%= projects.length %></span></div>
+    <div class="rows">
+      <% projects.forEach(function(p){ %>
+      <div class="row">
+        <div class="ic bl"><svg><use href="#i-folder"/></svg></div>
+        <div class="tx"><div class="t"><a href="/ledger?project=<%= p.id %>"><%= p.name %></a></div>
+          <div class="d"><%= p.code %> · <%= p.status %></div></div>
+        <div class="tm">Rp <%= fmt(p.contract_amount) %></div>
+      </div>
+      <% }) %>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-hd"><h2>To review</h2><span class="r"><%= untaggedCount %></span></div>
+    <div class="rows">
+      <div class="row"><div class="ic wn"><svg><use href="#i-book"/></svg></div>
+        <div class="tx"><div class="t">Untagged cost lines <span class="chip nt">QUEUE</span></div>
+          <div class="d">No WBS/CBS tag · blocks cost reporting</div></div>
+        <div class="tm"><%= untaggedCount %> lines</div></div>
+    </div>
+  </div>
+</div>

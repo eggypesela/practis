@@ -1,0 +1,8 @@
+<form method="post" action="/login" class="auth-form">
+  <% if (typeof error !== 'undefined') { %><div class="errb"><div class="errb-tx"><p><%= error %></p></div></div><% } %>
+  <h2>Sign in</h2>
+  <p class="sub">PRACTIS cost control</p>
+  <label>Email<input type="email" name="email" value="<%= typeof email !== 'undefined' ? email : '' %>" autofocus required></label>
+  <label>Password<input type="password" name="password" required></label>
+  <button class="btn pri" type="submit">Sign in</button>
+</form>

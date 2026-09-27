@@ -1,0 +1,19 @@
+{
+  "name": "practis",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PRACTIS — construction cost management (multi-user, replaces Excel + PowerQuery)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "cookie-parser": "^1.4.7",
+    "ejs": "^6.0.1",
+    "express": "^5.2.1",
+    "express-ejs-layouts": "^2.5.1"
+  }
+}

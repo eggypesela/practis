@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title><%= typeof title !== 'undefined' ? title + ' · PRACTIS' : 'PRACTIS' %></title>
+<link rel="stylesheet" href="/fonts.css">
+<link rel="stylesheet" href="/app.css">
+<style>[x-cloak]{display:none!important}</style>
+</head><body>
+<div class="shell">
+  <%- include('partials/sidebar') %>
+  <div class="main">
+    <%- include('partials/topbar') %>
+    <div class="wrap">
+      <div class="hd">
+        <div><h1><%= title %></h1><p><%= subtitle %></p></div>
+        <div class="act"><%- typeof actions !== 'undefined' ? actions : '' %></div>
+      </div>
+      <%- body %>
+    </div>
+  </div>
+</div>
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 4v16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M4.5 12h15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M4 2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm10.6 6.2-5 5-2.2-2.2-1.4 1.4 3.6 3.6 6.4-6.4Z"/></symbol>
+</defs></svg>
+<% if (typeof extraScript !== 'undefined') { %><script><%- extraScript %></script><% } %>
+</body></html>

@@ -1,0 +1,30 @@
+<% if (typeof saved !== 'undefined' && saved) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b>Saved.</b> Line #<%= saved %> posted — it now waits in the tagging queue.</div>
+<% } %>
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl">Total debit</div><div class="v sm">Rp <%= fmt(debitTotal) %></div>
+    <div class="f">cost side (money out)</div></div>
+  <div class="card kpi"><div class="lbl">Total credit</div><div class="v sm">Rp <%= fmt(creditTotal) %></div>
+    <div class="f">income side (money in)</div></div>
+  <div class="card kpi"><div class="lbl">Cost checked</div><div class="v"><%= checkedCount %></div>
+    <div class="f">of <%= totalCount %> lines</div></div>
+  <div class="card kpi"><div class="lbl">Untagged queue</div><div class="v"><%= untaggedCount %></div>
+    <div class="f"><span class="wn">blocks cost report</span></div></div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Ledger</h2><span class="r"><%= totalCount %> rows</span></div>
+  <div class="tw"><table>
+    <thead><tr><th>Date</th><th>Doc no.</th><th>Description</th><th>Type</th>
+      <th class="r">Debit</th><th class="r">Credit</th><th>Status</th></tr></thead>
+    <tbody>
+      <% lines.forEach(function(l){ %>
+      <tr><td class="mono"><%= l.date %></td><td class="mono"><%= l.document_no || '—' %></td>
+        <td><%= l.description || '' %></td><td><%= l.type || '' %></td>
+        <td class="num"><%= l.debit ? 'Rp ' + fmt(l.debit) : '—' %></td>
+        <td class="num"><%= l.credit ? 'Rp ' + fmt(l.credit) : '—' %></td>
+        <td><% if (l.cost_checked) { %><span class="chip ok">CHECKED</span><% } else { %><span class="chip wn">UNCHECKED</span><% } %></td></tr>
+      <% }) %>
+    </tbody>
+  </table></div>
+</div>

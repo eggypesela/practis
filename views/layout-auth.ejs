@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title><%= typeof title !== 'undefined' ? title + ' · PRACTIS' : 'PRACTIS' %></title>
+<link rel="stylesheet" href="/fonts.css">
+<link rel="stylesheet" href="/app.css">
+</head><body class="auth">
+<div class="auth-wrap">
+  <div class="auth-brand">
+    <div class="mark"><svg width="15" height="15"><use href="#i-book"/></svg></div>
+    <div class="bt"><b>PRACTIS</b><span>Cost Control</span></div>
+  </div>
+  <div class="auth-card">
+    <%- body %>
+  </div>
+</div>
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-book" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M4 2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm2 4v2h12V6Zm0 4v2h12v-2Zm0 4v2h8v-2Z"/></symbol>
+</defs></svg>
+</body></html>
