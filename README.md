@@ -42,8 +42,8 @@ src/
     queries.js           prepared statements (plain function wrappers)
   middleware/auth.js     session cookie, page guard (302) vs API guard (401)
   routes/
-    auth.js              GET/POST /login, POST /logout
-    app.js               GET /, GET /ledger, GET /queue, POST /queue/tag
+    auth.js              GET/POST /login (Argon2id, lockout, audit), POST /logout
+    app.js               GET /, /ledger, /ledger/entry, /queue, POST /queue/tag, POST /ledger/entry
 views/                   layouts + pages + partials (sidebar/topbar)
 assets/                  app.css (design tokens), fonts.css + fonts/ (local Inter)
 tools/appshot.sh         screenshot a snapshot page (headless Chrome flags for this box)
@@ -72,8 +72,12 @@ tools/appshot.sh         screenshot a snapshot page (headless Chrome flags for t
 
 ## Status
 
-Scaffold + tagging queue: boot, migrate, seed, session auth, dashboard, ledger,
-**tagging queue (read + guarded write)**, 23 tests green.
+Scaffold + tagging queue + ledger entry + **auth (TS-01)**: 42 tests green.
+- **Auth**: Argon2id (m=64MiB, t=3, p=4). Lockout: 5 failures → 15-min lock (429),
+  cleared on success. Generic errors — no account/role disclosure. Unknown accounts
+  burn one Argon2id hash so timing doesn't leak existence. Every success / failure /
+  auto-rehash is audited to `audit_log`. Legacy `pbkdf2$` hashes upgrade in place on
+  first successful login (wrong passwords never upgrade).
 - The queue's write path (`POST /queue/tag`) sets only `transaction_account_id`,
   `wbs_node_id`, `cost_category_id`, `cost_checked(+by/+at)` — the exact one-way
   transitions the DB triggers allow. Every tag writes an `audit_log` row (append-only,

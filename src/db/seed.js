@@ -1,17 +1,16 @@
 // Seed minimal bootstrap data: roles, admin user, one project.
 // Usage: node src/db/seed.js [email]   (defaults to admin@practis.local / 'admin1234')
 const db = require('./db');
-const crypto = require('crypto');
+const argon2 = require('argon2');
 
-// PBKDF2 is fine for the scaffold ADMIN-ONLY bootstrap account; the full auth
-// (Argon2id, invites, lockout) is the SPEC'd TS-01 path and lands with auth work.
+// TS-01: passwords are Argon2id (m=64MiB, t=3, p=4 — argon2 pkg defaults).
+// src/lib/password.js also accepts the legacy pbkdf2$ prefix and upgrades it
+// in place at login, so pre-existing installs migrate themselves.
 function hash(pw) {
-  const salt = crypto.randomBytes(16).toString('hex');
-  const h = crypto.pbkdf2Sync(pw, salt, 100_000, 32, 'sha256').toString('hex');
-  return `pbkdf2$100000$${salt}$${h}`;
+  return argon2.hash(pw);
 }
 
-function main() {
+async function main() {
   const email = process.argv[2] || 'admin@practis.local';
   const pw = process.argv[3] || 'admin1234';
 
@@ -32,7 +31,7 @@ function main() {
   const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (!existing) {
     db.prepare('INSERT INTO users (email, full_name, password_hash, is_system_admin) VALUES (?, ?, ?, 1)')
-      .run(email, 'Ayu Kusuma', hash(pw));
+      .run(email, 'Ayu Kusuma', await hash(pw));
     db.prepare('INSERT INTO user_roles (user_id, role_code) VALUES ((SELECT id FROM users WHERE email = ?), ?)')
       .run(email, 'administrator');
     console.log(`created admin ${email} (pw: ${pw})`);
@@ -52,5 +51,5 @@ function main() {
 }
 
 if (require.main === module) {
-  main();
+  main().catch((e) => { console.error(e); process.exit(1); });
 }

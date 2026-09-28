@@ -29,6 +29,13 @@ const _costToDate = db.prepare(`
 
 const _userByEmail = db.prepare('SELECT * FROM users WHERE email = ?');
 const _userById = db.prepare('SELECT * FROM users WHERE id = ?');
+
+const _loginFail = db.prepare(`
+  UPDATE users SET failed_login_count = failed_login_count + 1, locked_until =
+    CASE WHEN failed_login_count + 1 >= 5 THEN datetime('now', '+15 minutes') ELSE locked_until END
+  WHERE id = ?`);
+const _loginOk = db.prepare(`UPDATE users SET failed_login_count = 0, locked_until = NULL WHERE id = ?`);
+const _setPassword = db.prepare(`UPDATE users SET password_hash = ? WHERE id = ?`);
 const _roleForUser = db.prepare(`
   SELECT r.code, r.name FROM user_roles ur JOIN roles r ON r.code = ur.role_code
   WHERE ur.user_id = ? AND ur.project_id IS NULL ORDER BY r.code LIMIT 1`);
@@ -102,6 +109,10 @@ const _insertLedgerAudit = db.prepare(`
   INSERT INTO audit_log (entity_type, entity_id, action, actor_id, before_json, after_json)
   VALUES ('accounting_ledger', ?, 'create', ?, NULL, ?)`);
 
+const _insertGenericAudit = db.prepare(`
+  INSERT INTO audit_log (entity_type, entity_id, action, actor_id, before_json, after_json)
+  VALUES (?, ?, ?, ?, ?, ?)`);
+
 module.exports = {
   projects: () => _projects.all(),
   projectById: (id) => _projectById.get(id),
@@ -128,4 +139,11 @@ module.exports = {
   insertLedger: (row) => _insertLedger.run(row),
   insertLedgerAudit: (entityId, actorId, after) =>
     _insertLedgerAudit.run(entityId, actorId, JSON.stringify(after)),
+  loginFail: (userId) => _loginFail.run(userId),
+  loginOk: (userId) => _loginOk.run(userId),
+  setPasswordHash: (userId, hash) => _setPassword.run(hash, userId),
+  audit: (entityType, entityId, action, actorId, before, after) =>
+    _insertGenericAudit.run(entityType, entityId, action, actorId,
+      before == null ? null : JSON.stringify(before),
+      after == null ? null : JSON.stringify(after)),
 };
