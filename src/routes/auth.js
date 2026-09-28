@@ -22,7 +22,7 @@ router.post('/login', async (req, res) => {
   if (user && lockedUntil && lockedUntil > now) {
     await pwd.burn(); // timing equalizer
     return res.status(429).render('login', {
-      layout: 'layout-auth', title: 'Sign in',
+      layout: 'layout-auth', title: 'Sign in', locked: true,
       error: 'Too many sign-in attempts. Try again in a few minutes.', email,
     });
   }
