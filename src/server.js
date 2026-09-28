@@ -18,6 +18,10 @@ app.use(cookieParser());
 app.use(require('./lib/csrf').csrf); // must sit after cookies + body parsing, before routes
 app.use(express.static(path.join(__dirname, '..', 'assets')));
 
+// Resolve the signed-in user + sidebar locals (user name, role, initials, admin
+// flag) on every request, so every page — including 403/404 — renders correctly.
+app.use(require('./middleware/auth').attachUser);
+
 app.use(require('./routes/auth'));
 app.use(require('./routes/admin'));
 app.use(require('./routes/app'));

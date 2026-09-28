@@ -27,8 +27,10 @@
     <a href="#"><svg><use href="#i-file"/></svg><span class="lbl">Expense reports</span></a>
     <a href="#"><svg><use href="#i-check"/></svg><span class="lbl">Reconciliation</span></a>
     <a href="#"><svg><use href="#i-in"/></svg><span class="lbl">Revenue</span></a>
+    <% if (typeof isAdmin !== 'undefined' && isAdmin) { %>
     <div class="grp caps">Administration</div>
     <a href="/admin/users" class="<%= _active === 'Users' ? 'on' : '' %>"><svg><use href="#i-users"/></svg><span class="lbl">Users &amp; roles</span></a>
+    <% } %>
   </nav>
   <div class="sb-foot">
     <div class="av"><%= (typeof initials !== 'undefined') ? initials : '?' %></div>

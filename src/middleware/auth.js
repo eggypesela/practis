@@ -6,6 +6,7 @@
 // silent bug on any non-UTC host. All expiry/idle checks therefore compare
 // `strftime('%s', col)` epoch integers inside SQLite, never JS Dates.
 const db = require('../db/db');
+const q = require('../db/queries');
 const crypto = require('crypto');
 
 const SESSION_COOKIE = 'practis_sid';
@@ -75,14 +76,42 @@ function loadUser(req) {
   return s;
 }
 
-function requirePage(req, res, next) {
+// Resolves the signed-in user for every request that renders a page, and exposes
+// the sidebar/topbar locals in one place. Without this, pages that render outside
+// the app routes (403, 404, admin) would show an empty footer, and the sidebar
+// could not tell an Administrator from a Viewer.
+function attachUser(req, res, next) {
   req.user = loadUser(req);
+  if (req.user) {
+    const withRole = q.userWithRole(req.user.id);
+    res.locals.isAdmin = req.user.is_system_admin === 1;
+    res.locals.userName = req.user.full_name || req.user.email;
+    res.locals.roleName = withRole?.role_name && withRole.role_name !== '—'
+      ? withRole.role_name : (res.locals.isAdmin ? 'Administrator' : 'User');
+    res.locals.initials = initialsOf(res.locals.userName);
+  } else {
+    res.locals.isAdmin = false;
+  }
+  next();
+}
+
+// "Ayu Kusuma" → "RC"; falls back to the first letter of an email.
+function initialsOf(name) {
+  const words = String(name || '').replace(/@.*$/, '').split(/[\s._-]+/).filter(Boolean);
+  if (!words.length) return '?';
+  const first = words[0][0];
+  const last = words.length > 1 ? words[words.length - 1][0] : '';
+  return (first + last).toUpperCase();
+}
+
+function requirePage(req, res, next) {
+  if (!req.user) req.user = loadUser(req);
   if (!req.user) return res.redirect('/login');
   next();
 }
 
 function requireAuth(req, res, next) {
-  req.user = loadUser(req);
+  if (!req.user) req.user = loadUser(req);
   if (!req.user) return res.status(401).json({ error: 'unauthorized' });
   next();
 }
@@ -104,5 +133,5 @@ function requireAdmin(req, res, next) {
 module.exports = {
   SESSION_COOKIE, IDLE_MS, ABS_MS,
   createSession, destroySession, rotateSession, revokeUserSessions,
-  loadUser, requirePage, requireAuth, requireAdmin,
+  loadUser, attachUser, initialsOf, requirePage, requireAuth, requireAdmin,
 };

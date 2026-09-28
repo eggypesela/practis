@@ -98,6 +98,31 @@ test('the administrator can open the user list and sees the seeded account', asy
   assert.match(html, /admin@example\.com/);
 });
 
+test('the sidebar footer shows the real signed-in role, not a hardcoded one', async () => {
+  const staff = await loggedIn(ORIGIN, 'staff@example.com', 'staffpass1234');
+  const html = await (await staff.get('/')).text();
+  const foot = html.match(/<div class="sb-foot">([\s\S]*?)<\/aside>/)[1];
+  assert.match(foot, /Staff Member/, 'shows the user name');
+  assert.match(foot, /Viewer/, 'shows their actual role');
+  assert.doesNotMatch(foot, /Administrator/, 'must not claim a Viewer is an Administrator');
+  assert.match(foot, /<div class="av">SM<\/div>/, 'initials derived from the user');
+});
+
+test('the Administration link is hidden from non-administrators', async () => {
+  const staff = await loggedIn(ORIGIN, 'staff@example.com', 'staffpass1234');
+  assert.doesNotMatch(await (await staff.get('/')).text(), /Users &amp; roles/);
+  const page = await admin.get('/');
+  assert.match(await page.text(), /Users &amp; roles/, 'still shown to an administrator');
+});
+
+test('the 403 page renders fully for the blocked user, not a blank shell', async () => {
+  const staff = await loggedIn(ORIGIN, 'staff@example.com', 'staffpass1234');
+  const res = await staff.get('/admin/users');
+  const html = await res.text();
+  assert.match(html, /Only an Administrator can manage users/);
+  assert.match(html, /Staff Member/, 'the denied page still shows who is signed in');
+});
+
 // ---- issuing an invitation ----
 
 test('inviting a new email creates a DISABLED account and issues a link', async () => {

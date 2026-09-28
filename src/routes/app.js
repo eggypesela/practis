@@ -43,7 +43,6 @@ router.get('/', (req, res) => {
     locals: {
       projects, contractValue, costToDate, untaggedCount,
       fmt,
-      userName: req.user.full_name, roleName: 'Administrator', initials: 'RC',
     },
   });
 });
@@ -63,7 +62,6 @@ router.get('/ledger', (req, res) => {
       debitTotal: totals.debit_total, creditTotal: totals.credit_total,
       checkedCount: totals.checked_count, totalCount: totals.total_count,
       fmt,
-      userName: req.user.full_name, roleName: 'Administrator', initials: 'RC',
     },
   });
 });
@@ -82,7 +80,6 @@ router.get('/ledger/entry', (req, res) => {
     types: Object.keys(TYPES), fmt,
     flash: typeof req.query.saved !== 'undefined' || typeof req.query.dup !== 'undefined',
     dupId: typeof req.query.dup !== 'undefined' ? Number(req.query.dup) : null,
-    userName: req.user.full_name, roleName: 'Administrator', initials: 'RC',
     untaggedCount: q.untaggedCount(proj.id).n,
   });
 });
@@ -114,7 +111,6 @@ router.post('/ledger/entry', (req, res) => {
       types: Object.keys(TYPES_r()), fmt,
       defaultDate: new Date().toISOString().slice(0, 10),
       error: err.message, form: req.body,
-      userName: req.user.full_name, roleName: 'Administrator', initials: 'RC',
       untaggedCount: q.untaggedCount(proj.id).n,
     });
   }
@@ -135,7 +131,6 @@ router.post('/ledger/entry', (req, res) => {
       types: Object.keys(TYPES_r()), fmt,
       defaultDate: new Date().toISOString().slice(0, 10),
       error: err.message, form: req.body,
-      userName: req.user.full_name, roleName: 'Administrator', initials: 'RC',
       untaggedCount: q.untaggedCount(proj.id).n,
     });
   }
@@ -159,7 +154,6 @@ router.get('/queue', (req, res) => {
         checkedCount, totalCount, untaggedCount: lines.length,
         fmt,
         flash: typeof req.query.tagged !== 'undefined' ? Number(req.query.tagged) : null,
-        userName: req.user.full_name, roleName: 'Administrator', initials: 'RC',
       },
     });
 });
@@ -206,7 +200,6 @@ router.post('/queue/tag', (req, res) => {
       totalCount: q.totalsForProject(proj.id).total_count,
       untaggedCount: q.untaggedLines(proj.id).length,
       fmt, flash: null, tagError: err.message,
-      userName: req.user.full_name, roleName: 'Administrator', initials: 'RC',
     });
   }
   res.redirect(`/queue?tagged=${tagged}`);
