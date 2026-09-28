@@ -10,15 +10,18 @@ const ROOT = path.join(__dirname, '..');
 const NODE = process.execPath;
 const PORT = 3997;
 
-let dbPath, proc, cookie, db;
+let dbPath, proc, cookie, db, cli;
+const { client } = require('./helpers/csrf');
+const ORIGIN = `http://127.0.0.1:${PORT}`;
 
 function sh(args, env) {
   return execFileSync(NODE, args, { cwd: ROOT, env: { ...process.env, ...env }, encoding: 'utf8' });
 }
 async function req(pathname, opts = {}) {
-  return fetch(`http://127.0.0.1:${PORT}${pathname}`, { redirect: 'manual', ...opts });
+  return fetch(`${ORIGIN}${pathname}`, { redirect: 'manual', ...opts });
 }
-function form(body) {
+// Kept for negative tests: a raw POST that carries no CSRF token.
+function formNoToken(body) {
   return { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', cookie }, body };
 }
 
@@ -38,12 +41,8 @@ before(async () => {
     proc.stdout.on('data', (d) => { if (String(d).includes('http://localhost')) { clearTimeout(t); resolve(); } });
     proc.stderr.on('data', (d) => process.stderr.write(d));
   });
-  const res = await req('/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: 'email=e@example.com&password=epw12345',
-  });
-  cookie = (res.headers.get('set-cookie') || '').split(';')[0];
+  cli = await require('./helpers/csrf').loggedIn(ORIGIN, 'e@example.com', 'epw12345');
+  cookie = `practis_sid=${cli.j.c['practis_sid']}`;
   db = new (require('better-sqlite3'))(dbPath);
 });
 
@@ -71,14 +70,14 @@ test('L1.1 GET /ledger/entry renders the form', async () => {
 
 test('L1.2 missing amount → 400, nothing posted', async () => {
   const before = count();
-  const res = await req('/ledger/entry', form('side=debit&amount=&type=Expense'));
+  const res = await cli.post('/ledger/entry', 'side=debit&amount=&type=Expense');
   assert.strictEqual(res.status, 400);
   assert.strictEqual(count(), before);
 });
 
 test('L1.3 non-integer amount → 400', async () => {
   const before = count();
-  const res = await req('/ledger/entry', form('side=debit&amount=100.5&type=Expense'));
+  const res = await cli.post('/ledger/entry', 'side=debit&amount=100.5&type=Expense');
   assert.strictEqual(res.status, 400);
   assert.strictEqual(count(), before);
 });
@@ -87,8 +86,8 @@ test('L1.3 non-integer amount → 400', async () => {
 
 test('L2.1 valid Expense debit posts, derived fields correct', async () => {
   const before = count();
-  const res = await req('/ledger/entry', form(
-    'side=debit&amount=15000000&type=Expense&date=2026-09-26&document_no=INV-0999&description=Test expense'));
+  const res = await cli.post('/ledger/entry', 
+    'side=debit&amount=15000000&type=Expense&date=2026-09-26&document_no=INV-0999&description=Test expense');
   assert.strictEqual(res.status, 302);
   assert.match(res.headers.get('location'), /\/ledger\?saved=\d+/);
   assert.strictEqual(count(), before + 1);
@@ -105,8 +104,8 @@ test('L2.1 valid Expense debit posts, derived fields correct', async () => {
 });
 
 test('L2.2 valid Income credit posts with opposite side', async () => {
-  const res = await req('/ledger/entry', form(
-    'side=credit&amount=25000000&type=Income&date=2026-09-26&document_no=CASHIN-0999'));
+  const res = await cli.post('/ledger/entry', 
+    'side=credit&amount=25000000&type=Income&date=2026-09-26&document_no=CASHIN-0999');
   assert.strictEqual(res.status, 302);
   const row = latest();
   assert.strictEqual(row.amount, -25000000);
@@ -117,7 +116,7 @@ test('L2.2 valid Income credit posts with opposite side', async () => {
 });
 
 test('L2.3 null type → line_role other, in_cost_basis 0 (conservative)', async () => {
-  const res = await req('/ledger/entry', form('side=debit&amount=5000000&date=2026-09-26'));
+  const res = await cli.post('/ledger/entry', 'side=debit&amount=5000000&date=2026-09-26');
   assert.strictEqual(res.status, 302);
   const row = latest();
   assert.strictEqual(row.line_role, 'other');
@@ -169,8 +168,8 @@ test('L3.3 negative credit is aborted by the trigger', () => {
 
 test('L4.1 manual duplicate is ALLOWED (dedupe index is import-only by design)', async () => {
   const before = count();
-  const res = await req('/ledger/entry', form(
-    'side=debit&amount=15000000&type=Expense&date=2026-09-26&document_no=INV-0999&description=Test expense'));
+  const res = await cli.post('/ledger/entry', 
+    'side=debit&amount=15000000&type=Expense&date=2026-09-26&document_no=INV-0999&description=Test expense');
   assert.strictEqual(res.status, 302);
   assert.strictEqual(count(), before + 1);
 });
@@ -188,12 +187,12 @@ test('L4.2 the dedupe index rejects IMPORT duplicates at the schema level', () =
 
 // ---- L5 route guard ----
 
-test('L5.1 POST /ledger/entry without session → 302 /login', async () => {
-  const res = await fetch(`http://127.0.0.1:${PORT}/ledger/entry`, {
-    method: 'POST', redirect: 'manual',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: 'side=debit&amount=1000&type=Expense',
-  });
+test('L5.1 POST /ledger/entry without session → 302 /login (token valid, only auth missing)', async () => {
+  // Use a token that IS valid for this anonymous client, so the request gets
+  // past CSRF and is stopped by the auth guard — that is what this test is about.
+  const anon = client(ORIGIN);
+  await anon.get('/ledger/entry'); // 302 to login, but sets the csrf cookie
+  const res = await anon.post('/ledger/entry', 'side=debit&amount=1000&type=Expense');
   assert.strictEqual(res.status, 302);
   assert.match(res.headers.get('location'), /\/login$/);
 });

@@ -1,12 +1,17 @@
 // Auth: session cookie (random token, hash stored in sessions table per TS-02),
-// page guard redirects, API guard returns JSON. Argon2id + lockout + invites
-// land with the auth feature (TS-01) — this is the session skeleton only.
+// page guard redirects, API guard returns JSON.
+//
+// Time handling: SQLite `datetime('now')` is UTC but has no timezone suffix, so
+// `new Date('2026-09-28 01:30:00')` is parsed as *local* time by JS. That is a
+// silent bug on any non-UTC host. All expiry/idle checks therefore compare
+// `strftime('%s', col)` epoch integers inside SQLite, never JS Dates.
 const db = require('../db/db');
 const crypto = require('crypto');
 
 const SESSION_COOKIE = 'practis_sid';
-const IDLE_MS = 30 * 60 * 1000;
-const ABS_MS = 12 * 60 * 60 * 1000;
+const IDLE_MS = 30 * 60 * 1000;   // 30 min idle (TS-16)
+const ABS_MS = 12 * 60 * 60 * 1000; // 12 h absolute
+const TOUCH_MS = 60 * 1000;       // throttle last_seen writes to once/min
 
 function sha256(s) {
   return crypto.createHash('sha256').update(s).digest('hex');
@@ -21,26 +26,52 @@ function createSession(userId, req) {
 }
 
 function destroySession(token) {
-  if (!token) return;
-  db.prepare(`UPDATE sessions SET revoked_at = datetime('now') WHERE id = ? AND revoked_at IS NULL`)
+  if (!token) return false;
+  const r = db.prepare(`UPDATE sessions SET revoked_at = datetime('now') WHERE id = ? AND revoked_at IS NULL`)
     .run(sha256(token));
+  return r.changes > 0;
 }
 
+// Session rotation (TS-01 3.1): revoke the presented session and mint a new one.
+function rotateSession(oldToken, userId, req) {
+  destroySession(oldToken);
+  return createSession(userId, req);
+}
+
+// Revoke every active session for a user, optionally sparing one (the caller's
+// fresh session). Used on password change / privilege change / disable.
+function revokeUserSessions(userId, exceptToken) {
+  const except = exceptToken ? sha256(exceptToken) : null;
+  const r = db.prepare(`
+    UPDATE sessions SET revoked_at = datetime('now')
+    WHERE user_id = ? AND revoked_at IS NULL AND (? IS NULL OR id <> ?)`)
+    .run(userId, except, except);
+  return r.changes;
+}
+
+// Epoch-safe session lookup: expiry and idle windows are compared as integers
+// derived by SQLite, so the result is identical on a UTC or a UTC+7 host.
 function loadUser(req) {
   const token = req.cookies?.[SESSION_COOKIE];
   if (!token) return null;
+  const id = sha256(token);
   const s = db.prepare(`
-    SELECT s.user_id, s.expires_at, s.last_seen_at, u.*
+    SELECT s.user_id, s.expires_at, s.last_seen_at, u.*,
+           CAST(strftime('%s', s.expires_at) AS INTEGER)  AS exp_epoch,
+           CAST(strftime('%s', s.last_seen_at) AS INTEGER) AS seen_epoch,
+           CAST(strftime('%s','now') AS INTEGER)           AS now_epoch
     FROM sessions s JOIN users u ON u.id = s.user_id
-    WHERE s.id = ? AND s.revoked_at IS NULL`).get(sha256(token));
+    WHERE s.id = ? AND s.revoked_at IS NULL`).get(id);
   if (!s) return null;
-  if (new Date(s.expires_at) < new Date()) { destroySession(token); return null; }
-  if (Date.now() - new Date(s.last_seen_at).getTime() > IDLE_MS) {
-    destroySession(token);
-    return null;
+
+  const now = s.now_epoch;
+  if (now > s.exp_epoch) { destroySession(token); return null; }              // absolute expiry
+  if (now - s.seen_epoch > IDLE_MS / 1000) { destroySession(token); return null; } // idle timeout
+
+  // sliding window, throttled so a busy request loop isn't a write per request
+  if (now - s.seen_epoch > TOUCH_MS / 1000) {
+    db.prepare(`UPDATE sessions SET last_seen_at = datetime('now') WHERE id = ?`).run(id);
   }
-  // sliding window: bump last_seen (cheap, throttled to once/min by app usage)
-  db.prepare(`UPDATE sessions SET last_seen_at = datetime('now') WHERE id = ?`).run(sha256(token));
   return s;
 }
 
@@ -56,4 +87,8 @@ function requireAuth(req, res, next) {
   next();
 }
 
-module.exports = { SESSION_COOKIE, createSession, destroySession, loadUser, requirePage, requireAuth };
+module.exports = {
+  SESSION_COOKIE, IDLE_MS, ABS_MS,
+  createSession, destroySession, rotateSession, revokeUserSessions,
+  loadUser, requirePage, requireAuth,
+};

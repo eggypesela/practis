@@ -15,6 +15,7 @@ app.set('views', path.join(__dirname, '..', 'views'));
 app.use(layouts);
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
+app.use(require('./lib/csrf').csrf); // must sit after cookies + body parsing, before routes
 app.use(express.static(path.join(__dirname, '..', 'assets')));
 
 app.use(require('./routes/auth'));

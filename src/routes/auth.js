@@ -3,6 +3,7 @@ const router = express.Router();
 const { SESSION_COOKIE, createSession, destroySession } = require('../middleware/auth');
 const q = require('../db/queries');
 const pwd = require('../lib/password');
+const { rotateSession, revokeUserSessions } = require('../middleware/auth');
 
 const MAX_FAILS = 5;
 const LOCK_MIN = 15;
@@ -49,6 +50,8 @@ router.post('/login', async (req, res) => {
 
   q.loginOk(user.id); // clears failed counter + lockout
   q.audit('users', user.id, 'login_success', user.id, null, { ip: req.ip });
+  // Session fixation (TS-01): never adopt a session id that existed pre-login.
+  destroySession(req.cookies?.[SESSION_COOKIE]);
   const token = createSession(user.id, req);
   res.cookie(SESSION_COOKIE, token, { httpOnly: true, sameSite: 'lax', maxAge: 12 * 60 * 60 * 1000 });
   try {

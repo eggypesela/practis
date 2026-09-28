@@ -1,23 +1,28 @@
 <aside class="sb">
+  <%# Tolerant of missing locals so pages rendered outside the app routes
+      (403 blocked request, 404) still render instead of throwing. %>
+  <% const _active = (typeof active !== 'undefined') ? active : ''; %>
+  <% const _proj = (typeof projectName !== 'undefined') ? projectName : 'No project'; %>
+  <% const _untagged = (typeof untaggedCount !== 'undefined') ? untaggedCount : 0; %>
   <div class="brand">
     <div class="mark"><svg width="15" height="15"><use href="#i-book"/></svg></div>
     <div class="brand-txt"><b>PRACTIS</b><span>Cost Control</span></div>
   </div>
   <nav class="nav">
     <div class="grp caps">Portfolio</div>
-    <a href="/" class="<%= active === 'Dashboard' ? 'on' : '' %>"><svg><use href="#i-grid"/></svg><span class="lbl">Dashboard</span></a>
-    <a href="/projects" class="<%= active === 'Projects' ? 'on' : '' %>"><svg><use href="#i-folder"/></svg><span class="lbl">Projects</span></a>
+    <a href="/" class="<%= _active === 'Dashboard' ? 'on' : '' %>"><svg><use href="#i-grid"/></svg><span class="lbl">Dashboard</span></a>
+    <a href="/projects" class="<%= _active === 'Projects' ? 'on' : '' %>"><svg><use href="#i-folder"/></svg><span class="lbl">Projects</span></a>
     <a href="#"><svg><use href="#i-chart"/></svg><span class="lbl">Reports</span></a>
     <div class="pctx">
       <span class="pc-lbl caps">Project</span>
-      <button class="pc-btn" type="button"><span class="pc-dot"></span><span class="pc-name"><%= projectName %></span><svg class="pc-chev"><use href="#i-chev"/></svg></button>
+      <button class="pc-btn" type="button"><span class="pc-dot"></span><span class="pc-name"><%= _proj %></span><svg class="pc-chev"><use href="#i-chev"/></svg></button>
     </div>
     <div class="grp caps" style="display:none">Project</div>
     <a href="#"><svg><use href="#i-home"/></svg><span class="lbl">Overview</span></a>
     <a href="#"><svg><use href="#i-tree"/></svg><span class="lbl">WBS</span></a>
     <a href="#"><svg><use href="#i-chart"/></svg><span class="lbl">CBS plan</span></a>
-    <a href="/ledger" class="<%= active === 'Ledger' ? 'on' : '' %>"><svg><use href="#i-book"/></svg><span class="lbl">Ledger</span></a>
-    <a href="/queue" class="<%= active === 'Tagging queue' ? 'on' : '' %>"><svg><use href="#i-check"/></svg><span class="lbl">Tagging queue</span><% if (untaggedCount) { %><span class="pill"><%= untaggedCount %></span><% } %></a>
+    <a href="/ledger" class="<%= _active === 'Ledger' ? 'on' : '' %>"><svg><use href="#i-book"/></svg><span class="lbl">Ledger</span></a>
+    <a href="/queue" class="<%= _active === 'Tagging queue' ? 'on' : '' %>"><svg><use href="#i-check"/></svg><span class="lbl">Tagging queue</span><% if (_untagged) { %><span class="pill"><%= _untagged %></span><% } %></a>
     <a href="#"><svg><use href="#i-cash"/></svg><span class="lbl">Cash advances</span></a>
     <a href="#"><svg><use href="#i-file"/></svg><span class="lbl">Expense reports</span></a>
     <a href="#"><svg><use href="#i-check"/></svg><span class="lbl">Reconciliation</span></a>
@@ -26,8 +31,8 @@
     <a href="#"><svg><use href="#i-users"/></svg><span class="lbl">Users &amp; roles</span></a>
   </nav>
   <div class="sb-foot">
-    <div class="av"><%= initials %></div>
-    <div class="who"><b><%= userName %></b><span><%= roleName %></span></div>
+    <div class="av"><%= (typeof initials !== 'undefined') ? initials : '?' %></div>
+    <div class="who"><b><%= (typeof userName !== 'undefined') ? userName : 'Signed out' %></b><span><%= (typeof roleName !== 'undefined') ? roleName : '' %></span></div>
   </div>
 </aside>
 <svg style="display:none" aria-hidden="true"><defs>

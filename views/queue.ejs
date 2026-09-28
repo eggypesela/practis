@@ -18,6 +18,7 @@
 </div>
 
 <form method="post" action="/queue/tag" id="tagform">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 <div class="card" style="margin-top:12px">
   <div class="fbar">
     <label class="fchk"><input type="checkbox" id="selall" onclick="toggleAll(this)"> Select all</label>

@@ -2,6 +2,7 @@
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<% if (typeof csrfToken !== 'undefined' && csrfToken) { %><meta name="csrf-token" content="<%= csrfToken %>"><% } %>
 <title><%= typeof title !== 'undefined' ? title + ' · PRACTIS' : 'PRACTIS' %></title>
 <link rel="stylesheet" href="/fonts.css">
 <link rel="stylesheet" href="/app.css">

@@ -12,13 +12,17 @@ const NODE = process.execPath;
 const PORT = 3999;
 
 let dbPath, proc, cookie;
+const { client } = require('./helpers/csrf');
+let cli; // authenticated client (jar + csrf-aware POST)
 
 function sh(args, env) {
   return execFileSync(NODE, args, { cwd: ROOT, env: { ...process.env, ...env }, encoding: 'utf8' });
 }
 
+const ORIGIN = `http://127.0.0.1:${PORT}`;
+
 async function req(pathname, opts = {}) {
-  const res = await fetch(`http://127.0.0.1:${PORT}${pathname}`, { redirect: 'manual', ...opts });
+  const res = await fetch(`${ORIGIN}${pathname}`, { redirect: 'manual', ...opts });
   return res;
 }
 
@@ -62,34 +66,23 @@ test('S1.3 GET /login renders the sign-in form', async () => {
 });
 
 test('A1.1 wrong password → 401, no session', async () => {
-  const res = await req('/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: 'email=t@example.com&password=wrong',
-  });
+  cli = client(ORIGIN);
+  await cli.get('/login'); // obtain csrf cookie
+  const res = await cli.post('/login', 'email=t@example.com&password=wrong');
   assert.strictEqual(res.status, 401);
   assert.match(await res.text(), /Invalid email or password/);
 });
 
 test('A1.2 unknown email → 401', async () => {
-  const res = await req('/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: 'email=nobody@example.com&password=testpw123',
-  });
+  const res = await cli.post('/login', 'email=nobody@example.com&password=testpw123');
   assert.strictEqual(res.status, 401);
 });
 
 test('S1.4 login with seed creds → 302 and session cookie', async () => {
-  const res = await req('/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: 'email=t@example.com&password=testpw123',
-  });
+  const res = await cli.post('/login', 'email=t@example.com&password=testpw123');
   assert.strictEqual(res.status, 302);
-  const setCookie = res.headers.get('set-cookie') || '';
-  assert.match(setCookie, /practis_sid=/);
-  cookie = setCookie.split(';')[0];
+  assert.ok(cli.j.c['practis_sid'], 'session cookie issued');
+  cookie = `practis_sid=${cli.j.c['practis_sid']}`;
 });
 
 test('S1.5 authed GET / renders dashboard with project data', async () => {
@@ -117,8 +110,9 @@ test('S1.6 ledger amounts are whole rupiah with dot grouping', async () => {
 });
 
 test('S1.7 logout revokes the session', async () => {
-  const res = await req('/logout', { method: 'POST', headers: { cookie } });
+  await cli.get('/'); // refresh: the token is session-bound and login rotated the session
+  const res = await cli.post('/logout', '');
   assert.strictEqual(res.status, 200);
-  const after = await req('/', { headers: { cookie } });
+  const after = await cli.get('/');
   assert.strictEqual(after.status, 302);
 });

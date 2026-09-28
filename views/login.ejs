@@ -1,4 +1,5 @@
 <form method="post" action="/login" class="auth-form">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
   <% if (typeof error !== 'undefined') { %><div class="errb"><div class="errb-tx"><p><%= error %></p></div></div><% } %>
   <h2>Sign in</h2>
   <p class="sub">PRACTIS cost control</p>

@@ -40,10 +40,16 @@ src/
     seed-master.js       cost categories, CBS accounts, wbs_code + project WBS tree
     seed-demo.js         demo ledger lines
     queries.js           prepared statements (plain function wrappers)
-  middleware/auth.js     session cookie, page guard (302) vs API guard (401)
+  middleware/auth.js     session cookie, idle/absolute expiry, rotation, guards
+  lib/
+    password.js          Argon2id hash/verify + timing equalizer (TS-01)
+    csrf.js              signed double-submit CSRF token, session-bound
+    ledger-builder.js    Type → line_role/in_cost_basis mapping for new entries
   routes/
     auth.js              GET/POST /login (Argon2id, lockout, audit), POST /logout
     app.js               GET /, /ledger, /ledger/entry, /queue, POST /queue/tag, POST /ledger/entry
+test/
+  helpers/csrf.js        cookie jar + token-aware client used by the suites
 views/                   layouts + pages + partials (sidebar/topbar)
 assets/                  app.css (design tokens), fonts.css + fonts/ (local Inter)
 tools/appshot.sh         screenshot a snapshot page (headless Chrome flags for this box)
@@ -72,7 +78,18 @@ tools/appshot.sh         screenshot a snapshot page (headless Chrome flags for t
 
 ## Status
 
-Scaffold + tagging queue + ledger entry + **auth (TS-01)**: 42 tests green.
+Scaffold + tagging queue + ledger entry + **auth (TS-01)** + **CSRF/session hardening**: 54 tests green.
+- **CSRF**: signed double-submit token (`nonce.HMAC`) bound to the session cookie,
+  in a hidden `_csrf` field on every form and a `csrf-token` meta for XHR. Unsafe
+  methods without a valid token get 403 and never reach the DB. Secret in
+  `app_settings` so tokens survive restarts. Known limit: anonymous tokens share
+  an empty binding (can at worst forge a login, not a state change) — noted in
+  `src/lib/csrf.js`.
+- **Sessions**: 30-min idle / 12-h absolute, both enforced with SQLite epoch
+  arithmetic (`strftime('%s',…)`) rather than JS `Date` parsing, which would have
+  silently used local time on a non-UTC host. Session id rotates at login
+  (anti-fixation). `revokeUserSessions(userId, exceptToken)` is ready for the
+  password-change / privilege-change paths.
 - **Auth**: Argon2id (m=64MiB, t=3, p=4). Lockout: 5 failures → 15-min lock (429),
   cleared on success. Generic errors — no account/role disclosure. Unknown accounts
   burn one Argon2id hash so timing doesn't leak existence. Every success / failure /

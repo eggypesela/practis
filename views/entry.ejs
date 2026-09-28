@@ -6,6 +6,7 @@
 <% } %>
 
 <form method="post" action="/ledger/entry">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 <div class="card" style="max-width:640px">
   <div class="card-hd"><h2>New entry</h2><span class="r"><%= projectName %></span></div>
   <div class="fbody">

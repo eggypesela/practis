@@ -10,17 +10,20 @@ const ROOT = path.join(__dirname, '..');
 const NODE = process.execPath;
 const PORT = 3998;
 
-let dbPath, proc, cookie, db;
+let dbPath, proc, cookie, db, cli;
+const { client } = require('./helpers/csrf');
+const ORIGIN = `http://127.0.0.1:${PORT}`;
 
 function sh(args, env) {
   return execFileSync(NODE, args, { cwd: ROOT, env: { ...process.env, ...env }, encoding: 'utf8' });
 }
 
 async function req(pathname, opts = {}) {
-  return fetch(`http://127.0.0.1:${PORT}${pathname}`, { redirect: 'manual', ...opts });
+  return fetch(`${ORIGIN}${pathname}`, { redirect: 'manual', ...opts });
 }
 
-function form(body) {
+// Raw POST with no CSRF token — used by the negative tests.
+function formNoToken(body) {
   return {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded', cookie },
@@ -46,12 +49,8 @@ before(async () => {
     proc.stderr.on('data', (d) => process.stderr.write(d));
   });
 
-  const res = await req('/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: 'email=q@example.com&password=qpw12345',
-  });
-  cookie = (res.headers.get('set-cookie') || '').split(';')[0];
+  cli = await require('./helpers/csrf').loggedIn(ORIGIN, 'q@example.com', 'qpw12345');
+  cookie = `practis_sid=${cli.j.c['practis_sid']}`;
 
   // direct handle for DB-level assertions (same file the server uses)
   db = new (require('better-sqlite3'))(dbPath);
@@ -92,7 +91,7 @@ test('T2.1 POST /queue/tag assigns CBS + WBS and checks the line', async () => {
   const wbs = db.prepare(`SELECT id FROM wbs_nodes WHERE project_id=? AND wbs_code='1.1'`).get(proj()).id;
   const target = db.prepare(`SELECT id FROM accounting_ledger WHERE document_no='PO-0897'`).get().id;
 
-  const res = await req('/queue/tag', form(`line=${target}&cbs=${cbs}&wbs=${wbs}&check=1`));
+  const res = await cli.post('/queue/tag', `line=${target}&cbs=${cbs}&wbs=${wbs}&check=1`);
   assert.strictEqual(res.status, 302);
 
   const row = line(target);
@@ -123,7 +122,7 @@ test('T2.4 batch: several lines in one submit', async () => {
   const wbs = db.prepare(`SELECT id FROM wbs_nodes WHERE project_id=? AND wbs_code='4.1'`).get(proj()).id;
   const ids = db.prepare(`SELECT id FROM accounting_ledger WHERE document_no IN ('SAL-0012','CASHOUT-0208')`).all().map(r => r.id);
 
-  const res = await req('/queue/tag', form(`line=${ids[0]}&line=${ids[1]}&cbs=${cbs}&wbs=${wbs}&check=1`));
+  const res = await cli.post('/queue/tag', `line=${ids[0]}&line=${ids[1]}&cbs=${cbs}&wbs=${wbs}&check=1`);
   assert.strictEqual(res.status, 302);
   assert.match(res.headers.get('location'), /tagged=2/);
   for (const id of ids) assert.strictEqual(line(id).cost_checked, 1);
@@ -174,26 +173,26 @@ test('T3.5 audit rows are append-only', () => {
 
 // ---- T4 route guard ----
 
-test('T4.1 POST /queue/tag without a session redirects to /login', async () => {
-  const res = await fetch(`http://127.0.0.1:${PORT}/queue/tag`, {
-    method: 'POST', redirect: 'manual',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: 'line=1&cbs=1&check=1',
-  });
+test('T4.1 POST /queue/tag without a session redirects to /login (token valid, auth missing)', async () => {
+  // Valid anonymous token, so the request clears CSRF and is stopped by the auth
+  // guard — that is the behaviour under test here.
+  const anon = client(ORIGIN);
+  await anon.get('/queue'); // 302 to login, but mints the csrf cookie
+  const res = await anon.post('/queue/tag', 'line=1&cbs=1&check=1');
   assert.strictEqual(res.status, 302);
   assert.match(res.headers.get('location'), /\/login$/);
 });
 
 test('T4.2 a submit with no line ids tags nothing', async () => {
   const before = untagged();
-  const res = await req('/queue/tag', form('cbs=1&check=1'));
+  const res = await cli.post('/queue/tag', 'cbs=1&check=1');
   assert.strictEqual(res.status, 302);
   assert.strictEqual(untagged(), before);
 });
 
 test('T4.3 a submit with no action tags nothing', async () => {
   const before = untagged();
-  const res = await req('/queue/tag', form('line=1'));
+  const res = await cli.post('/queue/tag', 'line=1');
   assert.strictEqual(res.status, 302);
   assert.match(res.headers.get('location'), /tagged=0/);
   assert.strictEqual(untagged(), before);

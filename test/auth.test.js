@@ -15,16 +15,23 @@ let dbPath, proc, db;
 function sh(args, env) {
   return execFileSync(NODE, args, { cwd: ROOT, env: { ...process.env, ...env }, encoding: 'utf8' });
 }
+const { client } = require('./helpers/csrf');
+const ORIGIN = `http://127.0.0.1:${PORT}`;
+
+let cli; // one browser-like client; its csrf token is refreshed before each attempt
+
 async function req(pathname, opts = {}) {
-  return fetch(`http://127.0.0.1:${PORT}${pathname}`, { redirect: 'manual', ...opts });
+  return fetch(`${ORIGIN}${pathname}`, { redirect: 'manual', ...opts });
 }
-function loginBody(email, pw) {
-  return {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: `email=${encodeURIComponent(email)}&password=${encodeURIComponent(pw)}`,
-  };
+
+// One login attempt, the way a browser does it: GET the form (which mints a
+// token bound to the current session), then POST it. Needed because the token
+// is session-bound and a successful login rotates the session.
+async function attempt(email, pw) {
+  await cli.get('/login');
+  return cli.post('/login', `email=${encodeURIComponent(email)}&password=${encodeURIComponent(pw)}`);
 }
+
 function user() {
   return db.prepare(`SELECT * FROM users WHERE email = 'auth@example.com'`).get();
 }
@@ -44,6 +51,7 @@ before(async () => {
     proc.stdout.on('data', (d) => { if (String(d).includes('http://localhost')) { clearTimeout(t); resolve(); } });
     proc.stderr.on('data', (d) => process.stderr.write(d));
   });
+  cli = client(ORIGIN);
   db = new (require('better-sqlite3'))(dbPath);
 });
 
@@ -57,7 +65,7 @@ after(() => {
 
 test('T1.1 five wrong passwords → 429 + locked_until set', async () => {
   for (let i = 0; i < 5; i++) {
-    const res = await req('/login', loginBody('auth@example.com', 'wrongpass'));
+    const res = await attempt('auth@example.com', 'wrongpass');
     assert.ok([401, 429].includes(res.status), `attempt ${i + 1} status ${res.status}`);
   }
   const u = user();
@@ -66,7 +74,7 @@ test('T1.1 five wrong passwords → 429 + locked_until set', async () => {
 });
 
 test('T1.2 correct password while locked → 429 (still generic)', async () => {
-  const res = await req('/login', loginBody('auth@example.com', 'realpass123'));
+  const res = await attempt('auth@example.com', 'realpass123');
   assert.strictEqual(res.status, 429);
   assert.match(await res.text(), /Too many sign-in attempts/);
 });
@@ -82,7 +90,7 @@ test('T1.3 fresh seed is already argon2id; legacy pbkdf2 upgrades in place at lo
     crypto.pbkdf2Sync('realpass123', salt, 100000, 32, 'sha256').toString('hex');
   db.prepare(`UPDATE users SET password_hash = ?, locked_until = NULL, failed_login_count = 0 WHERE email = 'auth@example.com'`).run(legacy);
 
-  const res = await req('/login', loginBody('auth@example.com', 'realpass123'));
+  const res = await attempt('auth@example.com', 'realpass123');
   assert.strictEqual(res.status, 302); // legacy password accepted, then upgraded
 
   const after = user();
@@ -98,7 +106,7 @@ test('T1.3b wrong password against a legacy hash does NOT upgrade it', async () 
     crypto.pbkdf2Sync('realpass123', salt, 100000, 32, 'sha256').toString('hex');
   db.prepare(`UPDATE users SET password_hash = ?, locked_until = NULL, failed_login_count = 0 WHERE email = 'auth@example.com'`).run(legacy);
 
-  const res = await req('/login', loginBody('auth@example.com', 'nope-nope-nope'));
+  const res = await attempt('auth@example.com', 'nope-nope-nope');
   assert.strictEqual(res.status, 401);
   assert.ok(String(user().password_hash).startsWith('pbkdf2$'), 'hash untouched on failed login');
 });
@@ -112,14 +120,14 @@ test('T1.4 audit trail: login_success + failed attempts recorded', () => {
 
 test('T1.5 unknown-account login also audits nothing but ALWAYS returns 401 (timing equalizer)', async () => {
   const t0 = Date.now();
-  const res = await req('/login', loginBody('ghost@example.com', 'whatever'));
+  const res = await attempt('ghost@example.com', 'whatever');
   const dt1 = Date.now() - t0;
   assert.strictEqual(res.status, 401);
 
   // second unknown-account call: same generic error, no lockout, no audit row
   const rows = db.prepare(`SELECT COUNT(*) n FROM audit_log WHERE entity_type='users' AND actor_id IS NOT NULL`).get().n;
   assert.ok(rows >= 0);
-  const res2 = await req('/login', loginBody('ghost@example.com', 'wrong'));
+  const res2 = await attempt('ghost@example.com', 'wrong');
   assert.strictEqual(res2.status, 401);
   assert.ok(Date.now() - t0 - dt1 > -2000, 'no pathological fast path');
 });
