@@ -10,7 +10,11 @@ const LOCK_MIN = 15;
 
 router.get('/login', (req, res) => {
   if (req.cookies?.[SESSION_COOKIE]) return res.redirect('/');
-  res.render('login', { layout: 'layout-auth', title: 'Sign in' });
+  res.render('login', {
+    layout: 'layout-auth',
+    title: 'Sign in',
+    setup: req.query.setup === '1',
+  });
 });
 
 router.post('/login', async (req, res) => {
@@ -50,6 +54,9 @@ router.post('/login', async (req, res) => {
 
   q.loginOk(user.id); // clears failed counter + lockout
   q.audit('users', user.id, 'login_success', user.id, null, { ip: req.ip });
+  // A successful invitation acceptance is the same act as a first login: the
+  // account is no longer pending, so retire any open invitation rows for it.
+  try { q.revokePendingInvitesForEmail(user.email); } catch { /* non-fatal */ }
   // Session fixation (TS-01): never adopt a session id that existed pre-login.
   destroySession(req.cookies?.[SESSION_COOKIE]);
   const token = createSession(user.id, req);

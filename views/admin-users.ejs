@@ -1,0 +1,137 @@
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Not saved.</b> <%= error %></p></div></div>
+<% } %>
+<% if (typeof flash !== 'undefined' && flash) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><% if (savedMsg) { %><b>Done.</b> <%= savedMsg %><% } else { %><b>Saved.</b><% } %></div>
+<% } %>
+
+<% if (typeof tempPassword !== 'undefined' && tempPassword) { %>
+<div class="card tokcard">
+  <div class="card-hd"><h2>Temporary password</h2><span class="r chip wn">shown once</span></div>
+  <div class="fbody">
+    <div class="fnote"><svg><use href="#i-info"/></svg><span>Deliver this to <b><%= resetEmail %></b> out of band — it is <b>not shown again</b>. They must change it after signing in, and all their previous sessions were signed out.</span></div>
+    <div class="tokbox"><code class="mono"><%= tempPassword %></code></div>
+  </div>
+</div>
+<% } %>
+
+<% if (typeof issuedLink !== 'undefined' && issuedLink) { %>
+<div class="card tokcard">
+  <div class="card-hd"><h2>Invitation link</h2><span class="r chip wn">shown once</span></div>
+  <div class="fbody">
+    <div class="fnote"><svg><use href="#i-info"/></svg><span>Send this to <b><%= invitedEmail %></b>. It is <b>not shown again</b>, works once, and expires in 72 hours — it activates the account when they set a password.</span></div>
+    <div class="tokbox"><code class="mono"><%= issuedLink %></code></div>
+  </div>
+</div>
+<% } %>
+
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl">Active accounts</div><div class="v"><%= activeCount %></div>
+    <div class="f">can sign in</div></div>
+  <div class="card kpi"><div class="lbl">Awaiting setup</div><div class="v"><%= pendingCount %></div>
+    <div class="f"><% if (pendingCount) { %><span class="wn">cannot sign in yet</span><% } else { %>all accounts active<% } %></div></div>
+  <div class="card kpi"><div class="lbl">Open invitations</div><div class="v"><%= invitesPending.length %></div>
+    <div class="f">expire after 72 h</div></div>
+  <div class="card kpi"><div class="lbl">Administrators</div><div class="v"><%= adminCount %></div>
+    <div class="f"><% if (adminCount <= 1) { %><span class="wn">keep a second one</span><% } else { %>full user access<% } %></div></div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Invite a user</h2><span class="r"><%= projectName %></span></div>
+  <form method="post" action="/admin/users">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <div class="fbody">
+      <div class="fgrid">
+        <label class="fld">Work email
+          <input type="email" name="email" value="<%= typeof form !== 'undefined' ? (form.email || '') : '' %>" placeholder="name@company.com" required></label>
+        <label class="fld">Full name <span class="dim">new users only</span>
+          <input type="text" name="full_name" value="<%= typeof form !== 'undefined' ? (form.full_name || '') : '' %>" placeholder="As it should appear on reports"></label>
+        <label class="fld">Role
+          <select name="role">
+            <option value="">— no role yet —</option>
+            <% roles.forEach(function(r){ %><option value="<%= r.code %>" <%= typeof form !== 'undefined' && form.role === r.code ? 'selected' : '' %>><%= r.name %><% if (r.domain) { %> · <%= r.domain %><% } %></option><% }) %>
+          </select></label>
+      </div>
+      <div class="fnote"><svg><use href="#i-info"/></svg><span>The account is created <b>disabled</b> and activates when the link is used to set a password. Nothing is emailed — you deliver the link.</span></div>
+      <div class="fend"><button class="btn pri" type="submit"><svg><use href="#i-users"/></svg>Create and issue link</button></div>
+    </div>
+  </form>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Accounts</h2><span class="r"><%= users.length %> total</span></div>
+  <div class="tw"><table>
+    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th class="r">Sessions</th><th>Last sign-in</th><th class="r">Actions</th></tr></thead>
+    <tbody>
+      <% users.forEach(function(u){ %>
+      <tr>
+        <td><%= u.full_name %><% if (u.is_system_admin === 1) { %> <span class="chip bl">ADMIN</span><% } %></td>
+        <td class="mono"><%= u.email %></td>
+        <td>
+          <form method="post" action="/admin/users/<%= u.id %>/role">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <select name="role" onchange="this.form.submit()">
+              <% roles.forEach(function(r){ %><option value="<%= r.code %>" <%= r.code === u.role_code ? 'selected' : '' %>><%= r.name %></option><% }) %>
+            </select>
+          </form>
+        </td>
+        <td>
+          <% if (u.is_active === 1) { %><span class="chip ok">ACTIVE</span>
+          <% } else if (u.pending_invite_expires) { %><span class="chip wn">INVITED</span>
+          <% } else { %><span class="chip nt">DISABLED</span><% } %>
+          <% if (u.locked_until) { %><span class="chip bd">LOCKED</span><% } %>
+        </td>
+        <td class="num"><%= u.active_sessions || '—' %></td>
+        <td class="mono"><%= u.last_login_at ? String(u.last_login_at).slice(0, 16) : 'never' %></td>
+        <td class="r">
+          <div class="acts">
+            <form method="post" action="/admin/users/<%= u.id %>/active">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button class="btn sm" type="submit" name="action" value="<%= u.is_active === 1 ? 'disable' : 'enable' %>" <%= u.is_system_admin === 1 ? 'disabled' : '' %>><%= u.is_active === 1 ? 'Disable' : 'Enable' %></button>
+            </form>
+            <form method="post" action="/admin/users/<%= u.id %>/reset">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button class="btn sm" type="submit">Reset</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table></div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Open invitations</h2><span class="r"><%= invitesPending.length %> pending</span></div>
+  <% if (!invitesPending.length) { %>
+    <div class="tw"><table><tbody>
+      <tr><td class="empty">No invitations are waiting. Invite a user above.</td></tr>
+    </tbody></table></div>
+  <% } else { %>
+  <div class="tw"><table>
+    <thead><tr><th>Email</th><th>Role</th><th>Invited by</th><th>Expires</th><th class="r">Actions</th></tr></thead>
+    <tbody>
+      <% invitesPending.forEach(function(i){ %>
+      <tr>
+        <td class="mono"><%= i.email %></td>
+        <td><%= i.role_name %></td>
+        <td class="mono"><%= i.invited_by_email || '—' %></td>
+        <td class="mono"><%= String(i.expires_at).slice(0, 16) %></td>
+        <td class="r">
+          <div class="acts">
+            <form method="post" action="/admin/invitations/<%= i.id %>/resend">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button class="btn sm" type="submit">New link</button>
+            </form>
+            <form method="post" action="/admin/invitations/<%= i.id %>/revoke">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button class="btn sm" type="submit">Revoke</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table></div>
+  <% } %>
+</div>

@@ -44,9 +44,13 @@ src/
   lib/
     password.js          Argon2id hash/verify + timing equalizer (TS-01)
     csrf.js              signed double-submit CSRF token, session-bound
+    policy.js            password/token policy: 12-char minimum, hashing, TTLs
+    invites.js           invitation service (issue, reissue, accept)
     ledger-builder.js    Type → line_role/in_cost_basis mapping for new entries
   routes/
     auth.js              GET/POST /login (Argon2id, lockout, audit), POST /logout
+    admin.js             /admin/users (invite, enable/disable, role, reset),
+                         /admin/invitations/:id/{resend,revoke}, /invite/:token
     app.js               GET /, /ledger, /ledger/entry, /queue, POST /queue/tag, POST /ledger/entry
 test/
   helpers/csrf.js        cookie jar + token-aware client used by the suites
@@ -78,7 +82,24 @@ tools/appshot.sh         screenshot a snapshot page (headless Chrome flags for t
 
 ## Status
 
-Scaffold + tagging queue + ledger entry + **auth (TS-01)** + **CSRF/session hardening**: 54 tests green.
+Scaffold + tagging queue + ledger entry + **auth (TS-01)** + **user admin/invites** +
+**CSRF/session hardening**: 82 tests green.
+- **User administration** (`/admin/users`, Administrator only — enforced in the route
+  layer, not by hiding links): invite a user, enable/disable, change global role,
+  issue a temporary password (TS-17), reissue/revoke invitations.
+- **Invitations**: inviting an email creates a **disabled** account with no usable
+  password (`invite-pending$…`), plus a single-use token valid 72 h. The raw token is
+  shown once to the admin, who delivers it out of band — no SMTP dependency in v1.
+  Completing `/invite/:token` sets an Argon2id password and activates the account.
+  `user_invitations.email` is UNIQUE, so exactly one row exists per address — that row
+  is the *current* invitation and history lives in `audit_log`; reissuing resets it in
+  place, which is why reissue does not violate the unique index.
+- **Password policy** (`lib/policy.js`): 12-character minimum, enforced at both
+  invitation acceptance and temporary-password generation (they always satisfy it).
+- **Session revocation is immediate**, not expiry-based: disabling a user, changing
+  their role, or resetting their password kills their sessions at once.
+- **Safety rails**: the last Administrator cannot be demoted or disabled; role changes
+  keep `users.is_system_admin` in step with the role so the guard can't be bypassed.
 - **CSRF**: signed double-submit token (`nonce.HMAC`) bound to the session cookie,
   in a hidden `_csrf` field on every form and a `csrf-token` meta for XHR. Unsafe
   methods without a valid token get 403 and never reach the DB. Secret in

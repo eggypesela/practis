@@ -19,6 +19,7 @@ app.use(require('./lib/csrf').csrf); // must sit after cookies + body parsing, b
 app.use(express.static(path.join(__dirname, '..', 'assets')));
 
 app.use(require('./routes/auth'));
+app.use(require('./routes/admin'));
 app.use(require('./routes/app'));
 
 // 404 + error handler

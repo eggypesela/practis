@@ -4,6 +4,7 @@
   <h2>Sign in</h2>
   <p class="sub">PRACTIS cost control</p>
   <% const isLocked = typeof locked !== 'undefined' && locked; %>
+  <% if (typeof setup !== 'undefined' && setup) { %><div class="note ok"><svg><use href="#i-check"/></svg><b>Password set.</b> Sign in with your new password.</div><% } %>
   <label>Email<input type="email" name="email" value="<%= typeof email !== 'undefined' ? email : '' %>" autofocus required <%= isLocked ? 'disabled' : '' %>></label>
   <label>Password<input type="password" name="password" required <%= isLocked ? 'disabled' : '' %>></label>
   <button class="btn pri" type="submit" <%= isLocked ? 'disabled' : '' %>>Sign in</button>

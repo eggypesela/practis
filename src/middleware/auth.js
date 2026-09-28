@@ -87,8 +87,22 @@ function requireAuth(req, res, next) {
   next();
 }
 
+// Admin guard (TS-01 §3.4): the global system Administrator role is what gates
+// user administration. Authorization is enforced here, in the route layer, not
+// by hiding links in the UI — hidden buttons are usability only, never security.
+function requireAdmin(req, res, next) {
+  if (!req.user || req.user.is_system_admin !== 1) {
+    return res.status(403).render('403', {
+      layout: 'layout-app', title: 'Not allowed',
+      subtitle: 'Only an Administrator can manage users.',
+      crumb: 'Administration / Users', active: '',
+    });
+  }
+  next();
+}
+
 module.exports = {
   SESSION_COOKIE, IDLE_MS, ABS_MS,
   createSession, destroySession, rotateSession, revokeUserSessions,
-  loadUser, requirePage, requireAuth,
+  loadUser, requirePage, requireAuth, requireAdmin,
 };

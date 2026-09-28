@@ -1,0 +1,19 @@
+<% if (typeof invalid !== 'undefined' && invalid) { %>
+<form class="auth-form">
+  <h2>Link not usable</h2>
+  <p class="sub">Already used, replaced, or expired</p>
+  <p class="dim">Ask an Administrator to issue a new invitation link.</p>
+  <a class="btn wide" href="/login">Go to sign in</a>
+</form>
+<% } else { %>
+<form method="post" action="/invite/<%= token %>" class="auth-form">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+  <% if (typeof error !== 'undefined' && error) { %><div class="errb"><div class="errb-tx"><p><%= error %></p></div></div><% } %>
+  <h2>Set your password</h2>
+  <p class="sub"><%= fullName ? 'Welcome, ' + fullName : 'PRACTIS cost control' %></p>
+  <p class="dim">For <b><%= email %></b>. Minimum 12 characters — a short sentence works well.</p>
+  <label>New password<input type="password" name="password" minlength="12" autocomplete="new-password" autofocus required></label>
+  <label>Repeat password<input type="password" name="confirm" minlength="12" autocomplete="new-password" required></label>
+  <button class="btn pri" type="submit">Set password and activate</button>
+</form>
+<% } %>

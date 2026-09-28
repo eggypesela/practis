@@ -173,9 +173,13 @@ td.empty{text-align:center;color:var(--t3);padding:28px 12px !important;white-sp
 
 /* ---------- entry form ---------- */
 .fbody{display:flex;flex-direction:column;gap:12px;padding:14px 16px 16px}
-.fld{display:flex;flex-direction:column;gap:5px;font-size:11.5px;font-weight:550;color:var(--t2)}
+/* Label line + control. Flex-wrap (not column) so the label text and an inline
+   .dim hint share the first line; the control is forced onto its own line at full
+   width. A plain column would stack the text node and the hint on separate rows. */
+.fld{display:flex;flex-wrap:wrap;align-items:baseline;gap:5px;font-size:11.5px;font-weight:550;color:var(--t2)}
+.fld > input,.fld > select{flex:0 0 100%}
 .fld .dim{font-size:10.5px;color:var(--t3);font-weight:450}
-.fld input[type=text],.fld input[type=date],.fld input[type=number],.fld select{
+.fld input[type=text],.fld input[type=date],.fld input[type=number],.fld input[type=email],.fld input[type=password],.fld select{
   height:32px;border:1px solid var(--border-2);border-radius:7px;padding:0 10px;font:inherit;
   font-size:13px;color:var(--t1);background:var(--surface)}
 .fld input:focus,.fld select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-ring)}
@@ -228,3 +232,25 @@ td.empty{text-align:center;color:var(--t3);padding:28px 12px !important;white-sp
   .k4{grid-template-columns:minmax(0,1fr)}
   .search{display:none}
 }
+
+/* ---------- user administration ---------- */
+/* Row action groups: several POST forms side by side without wrapping. */
+.acts{display:flex;gap:6px;justify-content:flex-end;align-items:center}
+.acts form{margin:0}
+/* Role picker inside a table cell: shrink to the cell, not the table. */
+td select{width:auto;max-width:190px;height:26px;padding:0 6px;font-size:12px}
+/* One-time secrets (invitation link, temporary password): monospace, selectable,
+   and given room to breathe because a human copies them by hand. */
+.tokcard{margin-bottom:12px;border-color:var(--accent)}
+.tokbox{margin-top:9px;padding:10px 12px;background:var(--surface-2);border:1px solid var(--border-2);
+  border-radius:8px;overflow-x:auto}
+.tokbox code{font-size:13px;color:var(--t1);white-space:nowrap;user-select:all}
+/* Form-only card: narrower than a full-width data card, never a centred column. */
+.fcard{max-width:640px}
+/* Inline field row, so a short form doesn't leave half the card empty.
+   align-items:end keeps the controls on one baseline even when one label carries
+   an extra hint line above its input. */
+.fgrid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.4fr) minmax(0,1fr);gap:12px;align-items:end}
+@media(max-width:760px){ .fgrid{grid-template-columns:minmax(0,1fr)} }
+/* Right-aligned form footer for the submit action. */
+.fend{display:flex;justify-content:flex-end}

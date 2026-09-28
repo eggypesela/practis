@@ -113,6 +113,110 @@ const _insertGenericAudit = db.prepare(`
   INSERT INTO audit_log (entity_type, entity_id, action, actor_id, before_json, after_json)
   VALUES (?, ?, ?, ?, ?, ?)`);
 
+// ---- user administration (TS-01): list, create, enable/disable, invites ----
+
+const _allUsers = db.prepare(`
+  SELECT u.id, u.email, u.full_name, u.is_active, u.is_system_admin, u.created_at,
+         u.last_login_at, u.failed_login_count, u.locked_until,
+         COALESCE(ur.role_code, '') AS role_code,
+         COALESCE(r.name, '—')     AS role_name,
+         (SELECT COUNT(*) FROM sessions s
+           WHERE s.user_id = u.id AND s.revoked_at IS NULL
+             AND CAST(strftime('%s', s.expires_at) AS INTEGER) > CAST(strftime('%s','now') AS INTEGER)
+         ) AS active_sessions,
+         (SELECT i.expires_at FROM user_invitations i
+           WHERE i.email = u.email AND i.used_at IS NULL AND i.revoked_at IS NULL
+             AND CAST(strftime('%s', i.expires_at) AS INTEGER) > CAST(strftime('%s','now') AS INTEGER)
+           ORDER BY i.id DESC LIMIT 1) AS pending_invite_expires
+  FROM users u
+  LEFT JOIN user_roles ur ON ur.user_id = u.id AND ur.project_id IS NULL
+  LEFT JOIN roles r ON r.code = ur.role_code
+  ORDER BY u.is_active DESC, r.name, u.email`);
+
+const _roles = db.prepare(`SELECT code, name, domain FROM roles ORDER BY domain, name`);
+
+const _userWithRole = db.prepare(`
+  SELECT u.*, COALESCE(r.code, '') AS role_code, COALESCE(r.name, '—') AS role_name,
+         ur.id AS user_role_id
+  FROM users u
+  LEFT JOIN user_roles ur ON ur.user_id = u.id AND ur.project_id IS NULL
+  LEFT JOIN roles r ON r.code = ur.role_code
+  WHERE u.id = ?`);
+
+const _insertUser = db.prepare(`
+  INSERT INTO users (email, full_name, password_hash, is_active, is_system_admin)
+  VALUES (@email, @full_name, @password_hash, 0, 0)`);
+
+const _setUserRole = db.prepare(`
+  INSERT INTO user_roles (user_id, role_code, project_id, granted_by)
+  VALUES (@user_id, @role_code, NULL, @actor_id)`);
+
+const _clearUserRoles = db.prepare(`DELETE FROM user_roles WHERE user_id = ? AND project_id IS NULL`);
+
+const _setUserActive = db.prepare(`UPDATE users SET is_active = ? WHERE id = ? AND is_system_admin = 0`);
+
+const _promoteOwnerSystemAdmin = db.prepare(`UPDATE users SET is_system_admin = 1 WHERE id = ?`);
+const _demoteOwnerSystemAdmin = db.prepare(`UPDATE users SET is_system_admin = 0 WHERE id = ?`);
+
+const _adminCount = db.prepare(`SELECT COUNT(*) AS n FROM users WHERE is_system_admin = 1 AND is_active = 1`);
+
+const _setUserIdentity = db.prepare(`UPDATE users SET full_name = ? WHERE id = ?`);
+
+const _purgeUserSessions = db.prepare(`UPDATE sessions SET revoked_at = datetime('now') WHERE user_id = ? AND revoked_at IS NULL`);
+
+const _inviteById = db.prepare(`SELECT * FROM user_invitations WHERE id = ?`);
+
+const _pendingInviteForEmail = db.prepare(`
+  SELECT * FROM user_invitations
+  WHERE email = ? AND used_at IS NULL AND revoked_at IS NULL
+  ORDER BY id DESC LIMIT 1`);
+
+// user_invitations.email is UNIQUE (migration 002), so there is exactly ONE row
+// per email for all time. That row is the *current* invitation for that address;
+// the history of issue/reissue/revoke/accept events lives in audit_log. Reissuing
+// therefore resets the row in place (upsert) rather than inserting a second one.
+const _upsertInvite = db.prepare(`
+  INSERT INTO user_invitations (email, token_hash, invited_by, role_id, expires_at)
+  VALUES (@email, @token_hash, @invited_by, @role_id, datetime('now', '+' || @ttl_hours || ' hours'))
+  ON CONFLICT(email) DO UPDATE SET
+    token_hash = excluded.token_hash,
+    invited_by = excluded.invited_by,
+    role_id    = COALESCE(excluded.role_id, user_invitations.role_id),
+    expires_at = excluded.expires_at,
+    used_at    = NULL,
+    revoked_at = NULL,
+    created_at = datetime('now')`);
+
+const _consumeInvite = db.prepare(`UPDATE user_invitations SET used_at = datetime('now') WHERE id = ? AND used_at IS NULL`);
+
+const _revokeInvite = db.prepare(`UPDATE user_invitations SET revoked_at = datetime('now') WHERE id = ? AND used_at IS NULL AND revoked_at IS NULL`);
+
+const _revokePendingInvitesForEmail = db.prepare(`
+  UPDATE user_invitations SET revoked_at = datetime('now')
+  WHERE email = ? AND used_at IS NULL AND revoked_at IS NULL`);
+
+// Epoch-safe: an invitation is usable only while unused, unrevoked and unexpired.
+const _inviteForToken = db.prepare(`
+  SELECT * FROM user_invitations
+  WHERE token_hash = ? AND used_at IS NULL AND revoked_at IS NULL
+    AND CAST(strftime('%s', expires_at) AS INTEGER) > CAST(strftime('%s','now') AS INTEGER)`);
+
+const _pendingInvites = db.prepare(`
+  SELECT i.id, i.email, i.created_at, i.expires_at, i.role_id,
+         COALESCE(r.name, '—') AS role_name, u.email AS invited_by_email
+  FROM user_invitations i
+  LEFT JOIN roles r ON r.code = i.role_id
+  LEFT JOIN users u ON u.id = i.invited_by
+  WHERE i.used_at IS NULL AND i.revoked_at IS NULL
+    AND CAST(strftime('%s', i.expires_at) AS INTEGER) > CAST(strftime('%s','now') AS INTEGER)
+  ORDER BY i.id`);
+
+const _auditLogFor = db.prepare(`
+  SELECT al.*, u.email AS actor_email
+  FROM audit_log al LEFT JOIN users u ON u.id = al.actor_id
+  WHERE al.entity_type = ? AND al.entity_id = ?
+  ORDER BY al.id DESC LIMIT 50`);
+
 module.exports = {
   projects: () => _projects.all(),
   projectById: (id) => _projectById.get(id),
@@ -146,4 +250,32 @@ module.exports = {
     _insertGenericAudit.run(entityType, entityId, action, actorId,
       before == null ? null : JSON.stringify(before),
       after == null ? null : JSON.stringify(after)),
+
+  // ---- user administration (TS-01 §3.1) ----
+  allUsers: () => _allUsers.all(),
+  roles: () => _roles.all(),
+  userWithRole: (id) => _userWithRole.get(id),
+  insertUser: (email, fullName, passwordHash) =>
+    _insertUser.run({ email, full_name: fullName, password_hash: passwordHash }),
+  setUserRole: (userId, roleCode, actorId) =>
+    _setUserRole.run({ user_id: userId, role_code: roleCode, actor_id: actorId }),
+  clearUserRoles: (userId) => _clearUserRoles.run(userId),
+  setUserActive: (active, userId) => _setUserActive.run(active ? 1 : 0, userId),
+  promoteSystemAdmin: (userId) => _promoteOwnerSystemAdmin.run(userId),
+  demoteSystemAdmin: (userId) => _demoteOwnerSystemAdmin.run(userId),
+  adminCount: () => _adminCount.get().n,
+  setUserName: (fullName, userId) => _setUserIdentity.run(fullName, userId),
+  revokeUserSessions: (userId) => _purgeUserSessions.run(userId),
+
+  inviteById: (id) => _inviteById.get(id),
+  pendingInviteForEmail: (email) => _pendingInviteForEmail.get(email),
+  insertInvite: (email, tokenHash, invitedBy, roleCode) =>
+    _upsertInvite.run({ email, token_hash: tokenHash, invited_by: invitedBy,
+      role_id: roleCode || null, ttl_hours: require('../lib/policy').TOKEN_TTL_HOURS }),
+  consumeInvite: (id) => _consumeInvite.run(id),
+  revokeInvite: (id) => _revokeInvite.run(id),
+  revokePendingInvitesForEmail: (email) => _revokePendingInvitesForEmail.run(email),
+  inviteForToken: (tokenHash) => _inviteForToken.get(tokenHash),
+  pendingInvites: () => _pendingInvites.all(),
+  auditLogFor: (entityType, entityId) => _auditLogFor.all(entityType, entityId),
 };
