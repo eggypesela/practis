@@ -30,11 +30,21 @@ DROP VIEW IF EXISTS v_ledger_period;
 DROP VIEW IF EXISTS v_untagged_queue;
 DROP VIEW IF EXISTS v_descoped_lines;
 
--- 1. rename the live table aside
-ALTER TABLE accounting_ledger RENAME TO accounting_ledger_old;
-
--- 2. recreate with the widened type enum ('Revenue' added)
-CREATE TABLE accounting_ledger (
+-- 1. build the replacement under a temporary name.
+--
+-- The ORDER here is load-bearing. The obvious alternative — rename the live
+-- table aside, create the new one, copy, drop the old — silently rewrites the
+-- FK clause of EVERY other table that references accounting_ledger to point at
+-- `accounting_ledger_old`. Dropping that table then leaves those tables
+-- (cash_advance, lpb_statements) referencing a table that does not exist, and
+-- the app fails to boot with "no such table: main.accounting_ledger_old" the
+-- first time anything touches them.
+--
+-- In SQLite 3.53 `PRAGMA foreign_keys=OFF` does NOT suppress that rewrite (only
+-- `legacy_alter_table=ON` does, a connection setting the app would not carry).
+-- So do not rely on a pragma: create-new → copy → drop → rename, which never
+-- moves the name the other tables point at.
+CREATE TABLE accounting_ledger_new (
   id                INTEGER PRIMARY KEY,
   transaction_id    TEXT,
   project_id        INTEGER REFERENCES projects(id),
@@ -72,8 +82,8 @@ CREATE TABLE accounting_ledger (
   created_by        INTEGER REFERENCES users(id)
 );
 
--- 3. copy data (column order must match the old table exactly)
-INSERT INTO accounting_ledger
+-- 2. copy data (column order must match the old table exactly)
+INSERT INTO accounting_ledger_new
   (id, transaction_id, project_id, document_no, reference_no, account_code,
    partner_type, partner_id, date, effective_date, type, line_role, in_cost_basis,
    cost_category_id, chart_of_account_id, cashflow_category_id,
@@ -88,12 +98,14 @@ SELECT id, transaction_id, project_id, document_no, reference_no, account_code,
        retainage_amount, paid_amount, currency, description, source,
        import_batch_id, cash_advance_id, cost_checked, cost_checked_by, cost_checked_at,
        created_at, created_by
-FROM accounting_ledger_old;
+FROM accounting_ledger;
 
--- 4. drop the old table (its triggers/indexes go with it)
-DROP TABLE accounting_ledger_old;
+-- 3. drop the original (its triggers/indexes go with it), then put the
+--    replacement in its place
+DROP TABLE accounting_ledger;
+ALTER TABLE accounting_ledger_new RENAME TO accounting_ledger;
 
--- 5. recreate the indexes
+-- 4. recreate the indexes
 CREATE INDEX idx_ledger_project      ON accounting_ledger(project_id);
 CREATE INDEX idx_ledger_period       ON accounting_ledger(project_id, date);
 CREATE INDEX idx_ledger_effective    ON accounting_ledger(project_id, effective_date);
