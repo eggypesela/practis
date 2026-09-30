@@ -1,0 +1,40 @@
+<%# Every Expense Report line of the project, across all pots. The split that
+    matters: DRAFT contributes nothing, CHECKED is actual cost. %>
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-file"/></svg>Lines</div>
+    <div class="v"><%= summary.total %></div><div class="f">across all pots</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-info"/></svg>Draft</div>
+    <div class="v"><%= summary.draft %></div><div class="f"><span class="wn">waiting for a checker</span></div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Checked</div>
+    <div class="v"><%= summary.checked %></div><div class="f">final · feeds actual cost</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-chart"/></svg>Cost from detail</div>
+    <div class="v sm">Rp <%= fmt(summary.checked_amount) %></div><div class="f">only checked lines</div></div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Expense Report detail</h2><span class="r">latest <%= lines.length %></span></div>
+  <div class="tw"><table>
+    <thead><tr><th>Date</th><th>Advance</th><th>Description</th><th class="r">Amount</th>
+      <th>CBS</th><th>WBS</th><th>Status</th><th>Entered by</th><th>Checked by</th></tr></thead>
+    <tbody>
+      <% lines.forEach(function(l){ %>
+      <tr>
+        <td class="mono"><%= l.entry_date %></td>
+        <td class="mono"><% if (l.cash_advance_id) { %><a href="/advances/<%= l.cash_advance_id %>"><%= l.advance_no || '#' + l.cash_advance_id %></a><% } else { %>—<% } %></td>
+        <td><%= l.description || '' %></td>
+        <td class="num">Rp <%= fmt(Math.abs(l.amount)) %></td>
+        <td><% if (l.cbs_code) { %><span class="chip ok"><%= l.cbs_code %></span><% } else { %><span class="chip nt">untagged</span><% } %></td>
+        <td class="mono"><%= l.wbs_code || '—' %></td>
+        <td><% if (l.status === 'checked') { %><span class="chip ok">CHECKED</span>
+          <% } else if (l.status === 'rejected') { %><span class="chip bd">REJECTED</span>
+          <% } else { %><span class="chip wn">DRAFT</span><% } %></td>
+        <td><%= l.created_by_name || '—' %></td>
+        <td><%= l.checked_by_name || '—' %></td>
+      </tr>
+      <% }) %>
+      <% if (!lines.length) { %>
+      <tr><td colspan="9" class="empty">No Expense Report detail yet. Open a cash advance and enter how the money was spent.</td></tr>
+      <% } %>
+    </tbody>
+  </table></div>
+</div>

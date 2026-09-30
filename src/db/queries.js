@@ -233,6 +233,117 @@ const _importBatches = db.prepare(`
   LEFT JOIN users u ON u.id = b.uploaded_by
   ORDER BY b.id DESC LIMIT 25`);
 
+// ---- cash advance + Expense Report (R2-1..R2-3, R2-18, R2-19) ----------------
+
+// The advance pots of a project with what has been reported against each, so the
+// screen can show "how much of this pot is still unreported" without a second
+// query per row.
+const _advancesForProject = db.prepare(`
+  SELECT a.*,
+         COALESCE(d.detail_total, 0)  AS reported_amount,
+         COALESCE(d.checked_total, 0) AS checked_amount,
+         COALESCE(d.line_count, 0)    AS line_count,
+         a.amount - COALESCE(d.checked_total, 0) AS unreported_amount
+  FROM cash_advance a
+  LEFT JOIN (
+    SELECT cash_advance_id,
+           SUM(ABS(amount)) AS detail_total,
+           SUM(CASE WHEN status = 'checked' THEN ABS(amount) ELSE 0 END) AS checked_total,
+           COUNT(*) AS line_count
+    FROM lpb_statements GROUP BY cash_advance_id
+  ) d ON d.cash_advance_id = a.id
+  WHERE a.project_id = ?
+  ORDER BY a.id DESC`);
+
+const _advanceById = db.prepare(`
+  SELECT a.*, p.name AS project_name, p.code AS project_code
+  FROM cash_advance a JOIN projects p ON p.id = a.project_id
+  WHERE a.id = ?`);
+
+// The Expense Report detail of one pot, oldest first, with the tag names and who
+// entered / checked each line.
+const _lpbLinesForAdvance = db.prepare(`
+  SELECT s.*,
+         ta.code AS cbs_code, ta.name AS cbs_name,
+         w.wbs_code, w.name AS wbs_name,
+         cu.full_name AS created_by_name, cu.email AS created_by_email,
+         ku.full_name AS checked_by_name, ku.email AS checked_by_email
+  FROM lpb_statements s
+  LEFT JOIN transaction_accounts ta ON ta.id = s.transaction_account_id
+  LEFT JOIN wbs_nodes w ON w.id = s.wbs_node_id
+  LEFT JOIN users cu ON cu.id = s.created_by
+  LEFT JOIN users ku ON ku.id = s.checked_by
+  WHERE s.cash_advance_id = ?
+  ORDER BY s.entry_date, s.id`);
+
+const _lpbLinesForProject = db.prepare(`
+  SELECT s.*, a.advance_no, a.status AS advance_status,
+         ta.code AS cbs_code, w.wbs_code,
+         cu.full_name AS created_by_name, ku.full_name AS checked_by_name
+  FROM lpb_statements s
+  LEFT JOIN cash_advance a ON a.id = s.cash_advance_id
+  LEFT JOIN transaction_accounts ta ON ta.id = s.transaction_account_id
+  LEFT JOIN wbs_nodes w ON w.id = s.wbs_node_id
+  LEFT JOIN users cu ON cu.id = s.created_by
+  LEFT JOIN users ku ON ku.id = s.checked_by
+  WHERE s.project_id = ?
+  ORDER BY s.entry_date DESC, s.id DESC
+  LIMIT 100`);
+
+const _lpbLineById = db.prepare(`SELECT * FROM lpb_statements WHERE id = ?`);
+
+const _insertLpbLine = db.prepare(`
+  INSERT INTO lpb_statements
+    (cash_advance_id, project_id, lpb_no, period_month, entry_date, description,
+     debit, credit, amount, currency, transaction_account_id, wbs_node_id,
+     status, created_by)
+  VALUES
+    (@cash_advance_id, @project_id, @lpb_no, @period_month, @entry_date, @description,
+     @debit, @credit, @amount, @currency, @transaction_account_id, @wbs_node_id,
+     @status, @created_by)`);
+
+const _insertAdvance = db.prepare(`
+  INSERT INTO cash_advance
+    (project_id, advance_no, recipient_type, amount, submission_date, approved_date,
+     issued_date, description, currency, status)
+  VALUES
+    (@project_id, @advance_no, @recipient_type, @amount, @submission_date, @approved_date,
+     @issued_date, @description, @currency, @status)`);
+
+// The ONLY write the Expense Report check performs. The DB trigger permits
+// exactly this one-way transition (draft → checked with a checker identity) and
+// freezes the line afterwards.
+const _checkLpbLine = db.prepare(`
+  UPDATE lpb_statements
+     SET status = 'checked', checked_by = ?, checked_at = datetime('now')
+   WHERE id = ? AND status = 'draft'`);
+
+const _rejectLpbLine = db.prepare(`
+  UPDATE lpb_statements
+     SET status = 'rejected', reject_reason = ?, checked_by = ?, checked_at = datetime('now')
+   WHERE id = ? AND status = 'draft'`);
+
+const _lpbSummary = db.prepare(`
+  SELECT COUNT(*) AS total,
+         COALESCE(SUM(status = 'draft'), 0)   AS draft,
+         COALESCE(SUM(status = 'checked'), 0) AS checked,
+         COALESCE(SUM(status = 'rejected'), 0) AS rejected,
+         COALESCE(SUM(CASE WHEN status = 'checked' THEN ABS(amount) ELSE 0 END), 0) AS checked_amount
+  FROM lpb_statements WHERE project_id = ?`);
+
+// The reconciliation view, scoped to one project. This is the user-requested
+// feature (R2-19): Finance's bulk settlement vs Project Admin's detail lines.
+const _reconciliation = db.prepare(`
+  SELECT * FROM v_lpb_reconciliation
+  WHERE project_id = ?
+  ORDER BY period_month DESC, lpb_no`);
+
+const _reconciliationAll = db.prepare(`
+  SELECT r.*, p.code AS project_code, p.name AS project_name
+  FROM v_lpb_reconciliation r
+  LEFT JOIN projects p ON p.id = r.project_id
+  ORDER BY r.period_month DESC, r.lpb_no`);
+
 module.exports = {
   projects: () => _projects.all(),
   projectById: (id) => _projectById.get(id),
@@ -296,4 +407,18 @@ module.exports = {
   auditLogFor: (entityType, entityId) => _auditLogFor.all(entityType, entityId),
 
   importBatches: () => _importBatches.all(),
+
+  // ---- cash advance + Expense Report (module 5) ----
+  advancesForProject: (projectId) => _advancesForProject.all(projectId),
+  advanceById: (id) => _advanceById.get(id),
+  lpbLinesForAdvance: (advanceId) => _lpbLinesForAdvance.all(advanceId),
+  lpbLinesForProject: (projectId) => _lpbLinesForProject.all(projectId),
+  lpbLineById: (id) => _lpbLineById.get(id),
+  insertLpbLine: (row) => _insertLpbLine.run(row),
+  insertAdvance: (row) => _insertAdvance.run(row),
+  checkLpbLine: (lineId, actorId) => _checkLpbLine.run(actorId, lineId),
+  rejectLpbLine: (lineId, reason, actorId) => _rejectLpbLine.run(reason, actorId, lineId),
+  lpbSummary: (projectId) => _lpbSummary.get(projectId),
+  reconciliation: (projectId) => _reconciliation.all(projectId),
+  reconciliationAll: () => _reconciliationAll.all(),
 };

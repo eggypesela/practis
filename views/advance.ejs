@@ -1,0 +1,123 @@
+<%# Cash advance pot + its Expense Report detail.
+    Project Admin / PM enter the usage lines; a Cost Controller checks them with
+    CBS + WBS codes and that check is FINAL. Only checked lines become actual cost. %>
+<% if (error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Not saved.</b> <%= error %></p></div></div>
+<% } %>
+<% if (flash) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b>Checked.</b> The line is final and now feeds actual cost.</div>
+<% } %>
+<% if (saved) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b>Saved.</b> The line is recorded as a draft — a Cost Controller still has to check it.</div>
+<% } %>
+
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-cash"/></svg>Advance</div>
+    <div class="v sm">Rp <%= fmt(adv.amount) %></div>
+    <div class="f"><%= adv.advance_no || '#' + adv.id %></div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-file"/></svg>Reported</div>
+    <div class="v sm">Rp <%= fmt(total) %></div><div class="f"><%= lines.length %> detail lines</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Checked into cost</div>
+    <div class="v sm">Rp <%= fmt(lines.reduce(function(s,l){ return s + (l.status === 'checked' ? Math.abs(l.amount) : 0); }, 0)) %></div>
+    <div class="f"><%= lines.filter(function(l){ return l.status === 'checked'; }).length %> final lines</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-info"/></svg>Awaiting check</div>
+    <div class="v"><%= draftCount %></div><div class="f"><span class="<%= draftCount ? 'wn' : 'up' %>"><%= draftCount ? 'cost not yet counted' : 'all settled' %></span></div></div>
+</div>
+
+<% if (caps.canEnterExpense) { %>
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Enter an Expense Report line</h2><span class="r">draft until checked</span></div>
+  <div class="fbody">
+    <form method="post" action="/advances/<%= adv.id %>/lines">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="frow">
+        <label class="fld">Entry date
+          <input type="date" name="entry_date" value="<%= defaultDate %>" required></label>
+        <label class="fld">Amount <span class="dim">whole rupiah</span>
+          <input type="number" name="amount" min="1" step="1" inputmode="numeric" required placeholder="0"></label>
+        <label class="fld">Side
+          <select name="side">
+            <option value="debit">Debit — money out</option>
+            <option value="credit">Credit — money in (refund)</option>
+          </select></label>
+      </div>
+      <label class="fld">Description
+        <input type="text" name="description" placeholder="What was bought / paid for"></label>
+      <div class="frow">
+        <label class="fld">CBS account <span class="dim">optional — the Cost Controller confirms it</span>
+          <select name="cbs"><option value="">— choose account —</option>
+            <% cbs.forEach(function(a){ %><option value="<%= a.id %>"><%= a.code %> <%= a.name %></option><% }) %>
+          </select></label>
+        <label class="fld">WBS node <span class="dim">optional</span>
+          <select name="wbs"><option value="">— choose node —</option>
+            <% wbs.forEach(function(w){ %><option value="<%= w.id %>"><%= w.wbs_code %> <%= w.name %></option><% }) %>
+          </select></label>
+      </div>
+      <div class="fnote"><svg><use href="#i-info"/></svg><span>This line contributes <b>nothing</b> to
+        actual cost until a Cost Controller checks it — and the person who enters a line cannot be the
+        one who checks it (separation of duties).</span></div>
+      <button class="btn pri wide" type="submit"><svg><use href="#i-plus"/></svg>Add usage line</button>
+    </form>
+  </div>
+</div>
+<% } %>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Expense Report detail</h2><span class="r">oldest first</span></div>
+  <div class="tw"><table>
+    <thead><tr><th>Date</th><th>Description</th><th class="r">Amount</th><th>CBS</th><th>WBS</th>
+      <th>Status</th><th>Entered by</th><th>Checked by</th><th></th></tr></thead>
+    <tbody>
+      <% lines.forEach(function(l){ %>
+      <tr>
+        <td class="mono"><%= l.entry_date %></td>
+        <td><%= l.description || '' %></td>
+        <td class="num">Rp <%= fmt(Math.abs(l.amount)) %></td>
+        <td><% if (l.cbs_code) { %><span class="chip ok"><%= l.cbs_code %></span><% } else { %><span class="chip nt">untagged</span><% } %></td>
+        <td class="mono"><%= l.wbs_code || '—' %></td>
+        <td><% if (l.status === 'checked') { %><span class="chip ok">CHECKED</span>
+          <% } else if (l.status === 'rejected') { %><span class="chip bd">REJECTED</span>
+          <% } else { %><span class="chip wn">DRAFT</span><% } %>
+          <% if (l.status === 'rejected' && l.reject_reason) { %>
+            <div class="dim"><%= l.reject_reason %></div><% } %></td>
+        <td><%= l.created_by_name || l.created_by_email || '—' %></td>
+        <td><%= l.checked_by_name || l.checked_by_email || '—' %></td>
+        <td>
+          <% if (l.status === 'draft' && caps.canCheckExpense) { %>
+            <%# the same checkbox form as the queue: enter the codes, then check %>
+            <form method="post" action="/expenses/<%= l.id %>/check" style="display:flex;gap:6px;align-items:center">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <select name="cbs" style="min-width:150px" required>
+                <option value="">— CBS —</option>
+                <% cbs.forEach(function(a){ %>
+                  <option value="<%= a.id %>" <%= l.transaction_account_id === a.id ? 'selected' : '' %>><%= a.code %></option>
+                <% }) %>
+              </select>
+              <select name="wbs" style="min-width:120px">
+                <option value="">— WBS —</option>
+                <% wbs.forEach(function(w){ %>
+                  <option value="<%= w.id %>" <%= l.wbs_node_id === w.id ? 'selected' : '' %>><%= w.wbs_code %></option>
+                <% }) %>
+              </select>
+              <button class="btn pri sm" type="submit">Check</button>
+            </form>
+            <form method="post" action="/expenses/<%= l.id %>/reject" style="margin-top:4px">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <input type="hidden" name="reason" value="Rejected by Cost Controller">
+              <button class="btn sm" type="submit">Reject</button>
+            </form>
+          <% } else if (l.status === 'draft') { %>
+            <span class="dim">waits for a Cost Controller</span>
+          <% } %>
+        </td>
+      </tr>
+      <% }) %>
+      <% if (!lines.length) { %>
+      <tr><td colspan="9" class="empty">No usage lines yet. The advance shows as unreported until someone enters how it was spent.</td></tr>
+      <% } %>
+    </tbody>
+  </table></div>
+  <div class="fbar bot">
+    <span class="dim"><%= projectName %><% if (adv.description) { %> · <%= adv.description %><% } %></span>
+  </div>
+</div>

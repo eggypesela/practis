@@ -24,9 +24,9 @@
     <a href="/ledger" class="<%= _active === 'Ledger' ? 'on' : '' %>"><svg><use href="#i-book"/></svg><span class="lbl">Ledger</span></a>
     <a href="/import" class="<%= _active === 'Import' ? 'on' : '' %>"><svg><use href="#i-in"/></svg><span class="lbl">Import</span></a>
     <a href="/queue" class="<%= _active === 'Tagging queue' ? 'on' : '' %>"><svg><use href="#i-check"/></svg><span class="lbl">Tagging queue</span><% if (_untagged) { %><span class="pill"><%= _untagged %></span><% } %></a>
-    <a href="#"><svg><use href="#i-cash"/></svg><span class="lbl">Cash advances</span></a>
-    <a href="#"><svg><use href="#i-file"/></svg><span class="lbl">Expense reports</span></a>
-    <a href="#"><svg><use href="#i-check"/></svg><span class="lbl">Reconciliation</span></a>
+    <a href="/advances" class="<%= _active === 'Cash advances' ? 'on' : '' %>"><svg><use href="#i-cash"/></svg><span class="lbl">Cash advances</span></a>
+    <a href="/expenses" class="<%= _active === 'Expense reports' ? 'on' : '' %>"><svg><use href="#i-file"/></svg><span class="lbl">Expense reports</span></a>
+    <a href="/reconciliation" class="<%= _active === 'Reconciliation' ? 'on' : '' %>"><svg><use href="#i-check"/></svg><span class="lbl">Reconciliation</span></a>
     <a href="#"><svg><use href="#i-in"/></svg><span class="lbl">Revenue</span></a>
     <% if (typeof isAdmin !== 'undefined' && isAdmin) { %>
     <div class="grp caps">Administration</div>

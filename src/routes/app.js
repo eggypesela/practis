@@ -301,4 +301,272 @@ router.post('/queue/tag', (req, res) => {
   res.redirect(`/queue?tagged=${tagged}`);
 });
 
+// ---- module 5: Cash Advance + Expense Report + reconciliation -----------------
+//
+// The spec's rule (R2-1..R2-3): a Project Admin ENTERS the month's cash-advance
+// usage lines; a Cost Controller CHECKS them (assigns/confirms CBS + WBS) and
+// that check is FINAL — no Finance approval step. Only CHECKED lines feed actual
+// cost (v_cbs_actual), and Finance's bulk settlement stays out of the cost basis
+// so nothing is counted twice (R2-18).
+
+const { capabilities, checkSoD } = require('../lib/permissions');
+
+// Refuse a page the signed-in user has no role for. Renders 403 with the reason
+// rather than silently hiding the link.
+function requireCapability(flag, message) {
+  return (req, res, next) => {
+    const caps = capabilities(req.user);
+    if (!caps[flag]) {
+      return res.status(403).render('403', {
+        layout: 'layout-app', title: 'Not allowed', subtitle: message,
+        crumb: `${res.locals.project?.name || ''} · blocked`, active: '',
+        projectName: res.locals.project?.name || 'No project',
+        untaggedCount: res.locals.project ? q.untaggedCount(res.locals.project.id).n : 0,
+      });
+    }
+    req.caps = caps;
+    next();
+  };
+}
+
+router.get('/advances', requireCapability('canReconcile', 'Cash advances are visible to Finance, the Cost Controller and the Project Admin.'),
+  (req, res) => {
+    const proj = res.locals.project;
+    if (!proj) return res.redirect('/');
+    const advances = q.advancesForProject(proj.id);
+    const openAmount = advances
+      .filter((a) => a.status === 'open' || a.status === 'settling')
+      .reduce((s, a) => s + (a.unreported_amount || 0), 0);
+    page(res, 'Cash advances', `${proj.name} · money handed out for project expenses · one pot per project`,
+      `${proj.name} / Cash advances`, 'advances', {
+        active: 'Cash advances',
+        actions: req.caps.canOpenAdvance
+          ? '<a class="btn pri" href="/advances/new"><svg><use href="#i-plus"/></svg>New cash advance</a>' : '',
+        locals: {
+          advances, openAmount, summary: q.lpbSummary(proj.id),
+          caps: req.caps, fmt,
+          saved: typeof req.query.saved !== 'undefined' ? Number(req.query.saved) : null,
+        },
+      });
+  });
+
+router.get('/advances/new', requireCapability('canOpenAdvance', 'Only a Project Admin, PM or Finance can open a cash advance.'),
+  (req, res) => {
+    const proj = res.locals.project;
+    if (!proj) return res.redirect('/');
+    page(res, 'New cash advance', `${proj.name} · opens a pot that Expense Report lines are reported against`,
+      `${proj.name} / Cash advances / New`, 'advance-new', {
+        active: 'Cash advances',
+        locals: { defaultDate: new Date().toISOString().slice(0, 10), fmt },
+      });
+  });
+
+router.post('/advances', requireCapability('canOpenAdvance', 'Only a Project Admin, PM or Finance can open a cash advance.'),
+  (req, res) => {
+    const proj = res.locals.project;
+    if (!proj) return res.redirect('/');
+    const amount = Number(req.body.amount);
+    const renderErr = (msg, status = 400) => res.status(status).render('advance-new', {
+      layout: 'layout-app', title: 'New cash advance',
+      subtitle: `${proj.name} · the cash advance was rejected`,
+      crumb: `${proj.name} / Cash advances / New`, active: 'Cash advances', actions: '',
+      projectName: proj.name, defaultDate: new Date().toISOString().slice(0, 10),
+      fmt, error: msg, form: req.body,
+      untaggedCount: q.untaggedCount(proj.id).n,
+    });
+
+    if (!Number.isInteger(amount) || amount === 0) {
+      return renderErr('Amount must be a non-zero whole rupiah figure.');
+    }
+    const recipientType = ['employee', 'project_admin', 'supplier'].includes(req.body.recipient_type)
+      ? req.body.recipient_type : null;
+
+    let id;
+    try {
+      id = q.insertAdvance({
+        project_id: proj.id,
+        advance_no: req.body.advance_no || null,
+        recipient_type: recipientType,
+        amount,
+        submission_date: req.body.submission_date || null,
+        approved_date: req.body.approved_date || null,
+        issued_date: req.body.issued_date || req.body.approved_date || null,
+        description: req.body.description || null,
+        currency: 'IDR',
+        status: 'open',
+      }).lastInsertRowid;
+    } catch (err) {
+      // the money-integrity trigger is the floor
+      return renderErr(err.message, 409);
+    }
+    q.audit('cash_advance', id, 'create', req.user.id, null,
+      { project_id: proj.id, amount, advance_no: req.body.advance_no || null });
+    res.redirect(`/advances/${id}?saved=1`);
+  });
+
+// One pot + its Expense Report detail. The entry form is shown to the roles that
+// may enter; the check controls to the roles that may check.
+router.get('/advances/:id', requireCapability('canReconcile', 'Cash advances are visible to Finance, the Cost Controller and the Project Admin.'),
+  (req, res) => {
+    const proj = res.locals.project;
+    if (!proj) return res.redirect('/');
+    const adv = q.advanceById(Number(req.params.id));
+    if (!adv || adv.project_id !== proj.id) return res.redirect('/advances');
+    const lines = q.lpbLinesForAdvance(adv.id);
+    page(res, `Cash advance ${adv.advance_no || '#' + adv.id}`,
+      `${proj.name} · ${adv.description || 'advance pot'} · Expense Report detail`,
+      `${proj.name} / Cash advances / ${adv.advance_no || '#' + adv.id}`, 'advance', {
+        active: 'Cash advances',
+        locals: {
+          adv, lines, caps: req.caps, fim: fmt,
+          cbs: q.cbsOptions(), wbs: q.wbsOptions(proj.id),
+          defaultDate: new Date().toISOString().slice(0, 10),
+          total: lines.reduce((s, l) => s + Math.abs(l.amount), 0),
+          draftCount: lines.filter((l) => l.status === 'draft').length,
+          saved: typeof req.query.saved !== 'undefined',
+          error: typeof req.query.error !== 'undefined' ? req.query.error : null,
+          flash: typeof req.query.checked !== 'undefined' ? Number(req.query.checked) : null,
+          fmt,
+        },
+      });
+  });
+
+// ENTER a usage line (Project Admin side). Lines land as draft; they contribute
+// nothing to actual cost until a Cost Controller checks them.
+router.post('/advances/:id/lines', requireCapability('canEnterExpense', 'Only a Project Admin or PM can enter Expense Report lines.'),
+  (req, res) => {
+    const proj = res.locals.project;
+    if (!proj) return res.redirect('/');
+    const adv = q.advanceById(Number(req.params.id));
+    if (!adv || adv.project_id !== proj.id) return res.redirect('/advances');
+
+    const fail = (msg) => res.redirect(`/advances/${adv.id}?error=${encodeURIComponent(msg)}`);
+
+    const amount = Number(req.body.amount);
+    if (!Number.isInteger(amount) || amount === 0) return fail('Amount must be a non-zero whole rupiah figure.');
+    const side = req.body.side === 'credit' ? 'credit' : 'debit';
+    const entryDate = req.body.entry_date || new Date().toISOString().slice(0, 10);
+
+    try {
+      const id = q.insertLpbLine({
+        cash_advance_id: adv.id,
+        project_id: proj.id,
+        lpb_no: req.body.lpb_no || adv.advance_no || null,
+        period_month: entryDate.slice(0, 7),
+        entry_date: entryDate,
+        description: req.body.description || null,
+        debit: side === 'debit' ? amount : 0,
+        credit: side === 'credit' ? amount : 0,
+        amount: side === 'debit' ? amount : -amount,
+        currency: 'IDR',
+        // The Cost Controller assigns the codes at check time; a Project Admin may
+        // propose them but the check is what makes them count.
+        transaction_account_id: req.body.cbs ? Number(req.body.cbs) : null,
+        wbs_node_id: req.body.wbs ? Number(req.body.wbs) : null,
+        status: 'draft',
+        created_by: req.user.id,
+      }).lastInsertRowid;
+      q.audit('lpb', id, 'create', req.user.id, null,
+        { advance_id: adv.id, amount, entry_date: entryDate, status: 'draft' });
+    } catch (err) {
+      return fail(err.message);
+    }
+    res.redirect(`/advances/${adv.id}?saved=1`);
+  });
+
+// CHECK a line (Cost Controller side) — the final act that rolls it into cost.
+// Separation of duties: the enterer cannot be the checker.
+router.post('/expenses/:lineId/check', requireCapability('canCheckExpense', 'Only a Cost Controller can check an Expense Report line.'),
+  (req, res) => {
+    const proj = res.locals.project;
+    if (!proj) return res.redirect('/');
+    const line = q.lpbLineById(Number(req.params.lineId));
+    if (!line || line.project_id !== proj.id) return res.redirect('/advances');
+
+    const back = `/advances/${line.cash_advance_id}`;
+    const fail = (msg) => res.redirect(`${back}?error=${encodeURIComponent(msg)}`);
+
+    // SoD is checked here AND the DB refuses an uncheckered/double check.
+    const sod = checkSoD({ line, actorId: req.user.id, caps: req.caps });
+    if (sod) return fail(sod);
+    if (line.status !== 'draft') return fail(`Line #${line.id} is already ${line.status}.`);
+
+    // The Cost Controller confirms the codes as part of the check.
+    const cbsId = req.body.cbs ? Number(req.body.cbs) : line.transaction_account_id;
+    const wbsId = req.body.wbs ? Number(req.body.wbs) : line.wbs_node_id;
+    if (!cbsId) return fail('A Cost Controller must assign a CBS account before the line can be checked.');
+
+    try {
+      const apply = db.transaction(() => {
+        if (cbsId !== line.transaction_account_id || wbsId !== line.wbs_node_id) {
+          db.prepare(`UPDATE lpb_statements SET transaction_account_id = ?, wbs_node_id = ? WHERE id = ?`)
+            .run(cbsId, wbsId ?? null, line.id);
+        }
+        const r = q.checkLpbLine(line.id, req.user.id);
+        if (r.changes !== 1) throw new Error('the line was already checked by someone else');
+        q.audit('lpb', line.id, 'check', req.user.id,
+          { status: line.status, transaction_account_id: line.transaction_account_id, wbs_node_id: line.wbs_node_id },
+          { status: 'checked', transaction_account_id: cbsId, wbs_node_id: wbsId ?? null });
+      });
+      apply();
+    } catch (err) {
+      return fail(err.message);
+    }
+    res.redirect(`${back}?checked=1`);
+  });
+
+// Reject a draft line with a reason, so the enterer knows why.
+router.post('/expenses/:lineId/reject', requireCapability('canCheckExpense', 'Only a Cost Controller can reject an Expense Report line.'),
+  (req, res) => {
+    const proj = res.locals.project;
+    if (!proj) return res.redirect('/');
+    const line = q.lpbLineById(Number(req.params.lineId));
+    if (!line || line.project_id !== proj.id) return res.redirect('/advances');
+    const back = `/advances/${line.cash_advance_id}`;
+    const reason = String(req.body.reason || '').trim();
+    const sod = checkSoD({ line, actorId: req.user.id, caps: req.caps });
+    if (sod) return res.redirect(`${back}?error=${encodeURIComponent(sod)}`);
+    if (line.status !== 'draft') return res.redirect(`${back}?error=${encodeURIComponent(`Line #${line.id} is already ${line.status}.`)}`);
+    if (!reason) return res.redirect(`${back}?error=${encodeURIComponent('A rejection needs a reason.')}`);
+
+    q.rejectLpbLine(line.id, reason, req.user.id);
+    q.audit('lpb', line.id, 'reject', req.user.id, { status: 'draft' }, { status: 'rejected', reason });
+    res.redirect(`${back}?saved=1`);
+  });
+
+// All Expense Report detail of the project, one list (the "Expense reports" nav).
+router.get('/expenses', requireCapability('canReconcile', 'Expense Report detail is visible to Finance, the Cost Controller and the Project Admin.'),
+  (req, res) => {
+    const proj = res.locals.project;
+    if (!proj) return res.redirect('/');
+    page(res, 'Expense reports', `${proj.name} · cash-advance usage entered line by line · only CHECKED lines become actual cost`,
+      `${proj.name} / Expense reports`, 'expenses', {
+        active: 'Expense reports',
+        locals: {
+          lines: q.lpbLinesForProject(proj.id), summary: q.lpbSummary(proj.id),
+          caps: req.caps, fmt,
+        },
+      });
+  });
+
+// R2-19: Finance's bulk settlement vs the detail lines, and the alarm when there
+// is no detail at all for a settlement Finance already booked.
+router.get('/reconciliation', requireCapability('canReconcile', 'Reconciliation is visible to Finance and the Cost Controller.'),
+  (req, res) => {
+    const proj = res.locals.project;
+    if (!proj) return res.redirect('/');
+    const rows = q.reconciliation(proj.id);
+    page(res, 'Reconciliation', `${proj.name} · Finance bulk settlement vs Project Admin detail, per Expense Report`,
+      `${proj.name} / Reconciliation`, 'reconciliation', {
+        active: 'Reconciliation',
+        locals: {
+          rows, fmt,
+          balanced: rows.filter((r) => r.status === 'balanced').length,
+          differing: rows.filter((r) => r.status === 'difference').length,
+          missing: rows.filter((r) => r.status === 'missing_detail').length,
+          awaiting: rows.filter((r) => r.status === 'awaiting_settlement').length,
+        },
+      });
+  });
+
 module.exports = router;

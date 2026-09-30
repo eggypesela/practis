@@ -1,0 +1,46 @@
+<%# Cash advance register: one pot per project. Shows how much of each pot has been
+    reported and CHECKED, because only checked lines become actual cost. %>
+<% if (saved) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b>Saved.</b> Cash advance #<%= saved %> opened.</div>
+<% } %>
+
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-cash"/></svg>Pots</div>
+    <div class="v"><%= advances.length %></div><div class="f">one per project (v1)</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-chart"/></svg>Still unreported</div>
+    <div class="v sm">Rp <%= fmt(openAmount) %></div><div class="f">advance out, not yet checked</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-file"/></svg>Expense Report lines</div>
+    <div class="v"><%= summary.total %></div><div class="f"><span class="wn"><%= summary.draft %> draft</span></div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Checked into cost</div>
+    <div class="v sm">Rp <%= fmt(summary.checked_amount) %></div>
+    <div class="f"><%= summary.checked %> lines · actual cost</div></div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Cash advances</h2><span class="r"><%= advances.length %> in <%= projectName %></span></div>
+  <div class="tw"><table>
+    <thead><tr><th>Advance no.</th><th>Recipient</th><th>Issued</th>
+      <th class="r">Amount</th><th class="r">Checked</th><th class="r">Unreported</th>
+      <th>Status</th><th></th></tr></thead>
+    <tbody>
+      <% advances.forEach(function(a){ %>
+      <tr>
+        <td class="mono"><a href="/advances/<%= a.id %>"><%= a.advance_no || '#' + a.id %></a></td>
+        <td><%= a.recipient_type || '—' %></td>
+        <td class="mono"><%= a.issued_date || a.approved_date || '—' %></td>
+        <td class="num">Rp <%= fmt(a.amount) %></td>
+        <td class="num">Rp <%= fmt(a.checked_amount) %>
+          <span class="dim"><%= a.line_count %> line<%= a.line_count === 1 ? '' : 's' %></span></td>
+        <td class="num"><%= a.unreported_amount === 0 ? '—' : 'Rp ' + fmt(a.unreported_amount) %></td>
+        <td><% if (a.status === 'open') { %><span class="chip wn">OPEN</span>
+          <% } else if (a.status === 'settling') { %><span class="chip bl">SETTLING</span>
+          <% } else { %><span class="chip ok"><%= a.status.toUpperCase() %></span><% } %></td>
+        <td><a class="btn sm" href="/advances/<%= a.id %>">Open</a></td>
+      </tr>
+      <% }) %>
+      <% if (!advances.length) { %>
+      <tr><td colspan="8" class="empty">No cash advances yet — the advance is money handed to a person for project expenses, and an Expense Report shows how it was spent.</td></tr>
+      <% } %>
+    </tbody>
+  </table></div>
+</div>

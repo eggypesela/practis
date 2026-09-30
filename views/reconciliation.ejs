@@ -1,0 +1,50 @@
+<%# R2-19 reconciliation. Three outcomes, and the third is the one that matters:
+    Finance booked a bulk settlement for an Expense Report that has NO detail at
+    all — money left the ledger with nothing behind it. %>
+<div class="grid k3">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Balanced</div>
+    <div class="v"><%= balanced %></div><div class="f">bulk = detail</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-info"/></svg>Difference</div>
+    <div class="v"><%= differing %></div><div class="f"><span class="wn">amounts disagree</span></div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-book"/></svg>Missing detail</div>
+    <div class="v"><%= missing %></div>
+    <div class="f"><span class="<%= missing ? 'dn' : 'up' %>">settled but unreported</span></div></div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Finance bulk vs Project Admin detail</h2>
+    <span class="r"><%= rows.length %> Expense Report<%= rows.length === 1 ? '' : 's' %></span></div>
+  <div class="tw"><table>
+    <thead><tr><th>Period</th><th>Expense Report</th><th class="r">Finance bulk</th>
+      <th class="r">Admin detail</th><th class="r">Difference</th><th>Status</th><th>What it means</th></tr></thead>
+    <tbody>
+      <% rows.forEach(function(r){ %>
+      <tr>
+        <td class="mono"><%= r.period_month || '—' %></td>
+        <td class="mono"><%= r.lpb_no || '—' %></td>
+        <td class="num"><%= r.finance_amount == null ? '—' : 'Rp ' + fmt(r.finance_amount) %></td>
+        <td class="num"><%= r.admin_detail_amount == null ? '—' : 'Rp ' + fmt(r.admin_detail_amount) %></td>
+        <td class="num"><%= r.difference == null || r.difference === 0 ? '—' : 'Rp ' + fmt(r.difference) %></td>
+        <td>
+          <% if (r.status === 'balanced') { %><span class="chip ok">BALANCED</span>
+          <% } else if (r.status === 'difference') { %><span class="chip wn">DIFFERENCE</span>
+          <% } else if (r.status === 'missing_detail') { %><span class="chip bd">MISSING DETAIL</span>
+          <% } else { %><span class="chip nt">AWAITING SETTLEMENT</span><% } %>
+        </td>
+        <td class="dim">
+          <% if (r.status === 'balanced') { %>Detail agrees with the settlement — nothing to do.
+          <% } else if (r.status === 'difference') { %>The detail lines do not add up to what Finance
+            settled. Find the missing or extra line before the cost report freezes.
+          <% } else if (r.status === 'missing_detail') { %>Finance booked the settlement but no usage
+            lines exist for it. Ask the Project Admin to report how the advance was spent.
+          <% } else { %>The Project Admin has reported this advance but Finance has not settled it in
+            the ledger yet. Nothing is wrong — it is simply outstanding.<% } %>
+        </td>
+      </tr>
+      <% }) %>
+      <% if (!rows.length) { %>
+      <tr><td colspan="7" class="empty">Nothing to reconcile — no Finance settlement and no detail lines on file for <%= projectName %>.</td></tr>
+      <% } %>
+    </tbody>
+  </table></div>
+</div>
