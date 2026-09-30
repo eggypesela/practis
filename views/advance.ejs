@@ -24,6 +24,23 @@
     <div class="v"><%= draftCount %></div><div class="f"><span class="<%= draftCount ? 'wn' : 'up' %>"><%= draftCount ? 'cost not yet counted' : 'all settled' %></span></div></div>
 </div>
 
+<% if (blockedCount) { %>
+<div class="errb" style="margin-top:12px"><div class="errb-tx">
+  <p><b><%= blockedCount %> line<%= blockedCount === 1 ? '' : 's' %> blocked.</b>
+  The line<%= blockedCount === 1 ? ' is' : 's are' %> fine — the project cannot book
+  <%= blockedCount === 1 ? 'it' : 'them' %> yet because a code is missing. Nothing here counts as
+  cost until the block is cleared. Fix the project setup, then clear the block below.</p>
+</div></div>
+<% } %>
+
+<% if (returned.length) { %>
+<div class="note wn" style="margin-top:12px"><svg><use href="#i-info"/></svg>
+  <span><b><%= returned.length %> line<%= returned.length === 1 ? '' : 's' %> returned to you.</b>
+  Re-enter the corrected figure and pick it under “Corrects a returned line” so the pair stays
+  linked — a returned line cannot be edited, the correction is a new line.</span>
+</div>
+<% } %>
+
 <% if (caps.canEnterExpense) { %>
 <div class="card" style="margin-top:12px">
   <div class="card-hd"><h2>Enter an Expense Report line</h2><span class="r">draft until checked</span></div>
@@ -43,6 +60,15 @@
       </div>
       <label class="fld">Description
         <input type="text" name="description" placeholder="What was bought / paid for"></label>
+      <% if (returned && returned.length) { %>
+      <label class="fld">Corrects a returned line <span class="dim">optional</span>
+        <select name="replaces">
+          <option value="">— this is a new line, not a correction —</option>
+          <% returned.forEach(function(r){ %>
+            <option value="<%= r.id %>">#<%= r.id %> · <%= r.status %> · Rp <%= fmt(Math.abs(r.amount)) %> · <%= r.reject_reason || r.block_reason %></option>
+          <% }) %>
+        </select></label>
+      <% } %>
       <div class="frow">
         <label class="fld">CBS account <span class="dim">optional — the Cost Controller confirms it</span>
           <select name="cbs"><option value="">— choose account —</option>
@@ -76,10 +102,14 @@
         <td><% if (l.cbs_code) { %><span class="chip ok"><%= l.cbs_code %></span><% } else { %><span class="chip nt">untagged</span><% } %></td>
         <td class="mono"><%= l.wbs_code || '—' %></td>
         <td><% if (l.status === 'checked') { %><span class="chip ok">CHECKED</span>
-          <% } else if (l.status === 'rejected') { %><span class="chip bd">REJECTED</span>
+          <% } else if (l.status === 'rejected') { %><span class="chip bd">RETURNED</span>
+          <% } else if (l.status === 'blocked') { %><span class="chip wn">BLOCKED</span>
           <% } else { %><span class="chip wn">DRAFT</span><% } %>
+          <% if (l.superseded_by) { %><span class="chip nt">replaced by #<%= l.superseded_by %></span><% } %>
           <% if (l.status === 'rejected' && l.reject_reason) { %>
-            <div class="dim"><%= l.reject_reason %></div><% } %></td>
+            <div class="dim"><%= l.reject_reason %></div><% } %>
+          <% if (l.status === 'blocked' && l.block_reason) { %>
+            <div class="dim"><%= l.block_reason %></div><% } %></td>
         <td><%= l.created_by_name || l.created_by_email || '—' %></td>
         <td><%= l.checked_by_name || l.checked_by_email || '—' %></td>
         <td>
@@ -101,13 +131,29 @@
               </select>
               <button class="btn pri sm" type="submit">Check</button>
             </form>
-            <form method="post" action="/expenses/<%= l.id %>/reject" style="margin-top:4px">
+            <%# Return it to the Project Admin: something about the LINE is wrong. %>
+            <form method="post" action="/expenses/<%= l.id %>/reject" style="margin-top:4px;display:flex;gap:6px">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-              <input type="hidden" name="reason" value="Rejected by Cost Controller">
-              <button class="btn sm" type="submit">Reject</button>
+              <input type="text" name="reason" placeholder="why it goes back" required style="min-width:150px">
+              <button class="btn sm" type="submit">Return</button>
+            </form>
+            <%# Block it: the line is fine, the PROJECT can't book it yet. %>
+            <form method="post" action="/expenses/<%= l.id %>/block" style="margin-top:4px;display:flex;gap:6px">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <input type="text" name="reason" placeholder="what the project is missing" required style="min-width:150px">
+              <button class="btn sm" type="submit">Block</button>
             </form>
           <% } else if (l.status === 'draft') { %>
             <span class="dim">waits for a Cost Controller</span>
+          <% } else if (l.status === 'blocked') { %>
+            <% if (caps.canCheckExpense) { %>
+            <form method="post" action="/expenses/<%= l.id %>/unblock">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button class="btn sm" type="submit">Clear block</button>
+            </form>
+            <% } else { %><span class="dim">the project is missing a code</span><% } %>
+          <% } else if (l.status === 'rejected') { %>
+            <span class="dim">re-enter the corrected line</span>
           <% } %>
         </td>
       </tr>

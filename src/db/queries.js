@@ -323,11 +323,53 @@ const _rejectLpbLine = db.prepare(`
      SET status = 'rejected', reject_reason = ?, checked_by = ?, checked_at = datetime('now')
    WHERE id = ? AND status = 'draft'`);
 
+// PARK a draft the project cannot book yet (no CBS/WBS code exists for it).
+//
+// Blocked is not rejected: nothing is wrong with the line, so it is not blamed on
+// the enterer, and — unlike a check or a rejection — it is NOT final. Clearing it
+// returns the line to draft, ready to be checked once the code exists.
+const _blockLpbLine = db.prepare(`
+  UPDATE lpb_statements
+     SET status = 'blocked', block_reason = ?, checked_by = ?, checked_at = datetime('now')
+   WHERE id = ? AND status = 'draft'`);
+
+// CLEAR a block: back to draft. Guarded so only a blocked line can come back.
+const _unblockLpbLine = db.prepare(`
+  UPDATE lpb_statements
+     SET status = 'draft', block_reason = NULL, checked_by = NULL, checked_at = NULL
+   WHERE id = ? AND status = 'blocked'`);
+
+// Mark a returned line as replaced by its correction. Guarded so it can only be
+// applied once, and only to a line that is actually waiting on a human.
+const _supersedeLpbLine = db.prepare(`
+  UPDATE lpb_statements
+     SET superseded_by = ?
+   WHERE id = ? AND project_id = ? AND status IN ('rejected','blocked')
+     AND superseded_by IS NULL`);
+
+const _lpbStalled = db.prepare(`
+  SELECT s.*, a.advance_no,
+         cu.full_name AS created_by_name, cu.email AS created_by_email,
+         ku.full_name AS checked_by_name, ku.email AS checked_by_email,
+         c.code AS cbs_code
+  FROM lpb_statements s
+  LEFT JOIN cash_advance a ON a.id = s.cash_advance_id
+  LEFT JOIN users cu ON cu.id = s.created_by
+  LEFT JOIN users ku ON ku.id = s.checked_by
+  LEFT JOIN transaction_accounts c ON c.id = s.transaction_account_id
+  WHERE s.project_id = ? AND s.status IN ('blocked','rejected')
+    -- A returned line that has already been re-entered is resolved: the
+    -- corrected line points back at it, so the pair reads as one story. Leaving
+    -- it in "needs attention" would nag forever about work already done.
+    AND s.superseded_by IS NULL
+  ORDER BY s.status, s.entry_date DESC, s.id DESC`);
+
 const _lpbSummary = db.prepare(`
   SELECT COUNT(*) AS total,
          COALESCE(SUM(status = 'draft'), 0)   AS draft,
          COALESCE(SUM(status = 'checked'), 0) AS checked,
          COALESCE(SUM(status = 'rejected'), 0) AS rejected,
+         COALESCE(SUM(status = 'blocked'), 0) AS blocked,
          COALESCE(SUM(CASE WHEN status = 'checked' THEN ABS(amount) ELSE 0 END), 0) AS checked_amount
   FROM lpb_statements WHERE project_id = ?`);
 
@@ -418,7 +460,13 @@ module.exports = {
   insertAdvance: (row) => _insertAdvance.run(row),
   checkLpbLine: (lineId, actorId) => _checkLpbLine.run(actorId, lineId),
   rejectLpbLine: (lineId, reason, actorId) => _rejectLpbLine.run(reason, actorId, lineId),
+  blockLpbLine: (lineId, reason, actorId) => _blockLpbLine.run(reason, actorId, lineId),
+  unblockLpbLine: (lineId) => _unblockLpbLine.run(lineId),
+  supersedeLpbLine: (oldId, newId, projectId) => _supersedeLpbLine.run(newId, oldId, projectId),
   lpbSummary: (projectId) => _lpbSummary.get(projectId),
+  // Blocked lines and rejected ones, project-wide: both are work waiting on a
+  // human, and neither counts as cost. Surfaced so neither can be quietly parked.
+  lpbStalled: (projectId) => _lpbStalled.all(projectId),
   reconciliation: (projectId) => _reconciliation.all(projectId),
   reconciliationAll: () => _reconciliationAll.all(),
 };

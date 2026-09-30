@@ -329,7 +329,7 @@ function requireCapability(flag, message) {
   };
 }
 
-router.get('/advances', requireCapability('canReconcile', 'Cash advances are visible to Finance, the Cost Controller and the Project Admin.'),
+router.get('/advances', requireCapability('canViewExpense', 'Cash advances are visible to the Project Admin, the Cost Controller and Finance.'),
   (req, res) => {
     const proj = res.locals.project;
     if (!proj) return res.redirect('/');
@@ -406,7 +406,7 @@ router.post('/advances', requireCapability('canOpenAdvance', 'Only a Project Adm
 
 // One pot + its Expense Report detail. The entry form is shown to the roles that
 // may enter; the check controls to the roles that may check.
-router.get('/advances/:id', requireCapability('canReconcile', 'Cash advances are visible to Finance, the Cost Controller and the Project Admin.'),
+router.get('/advances/:id', requireCapability('canViewExpense', 'Cash advances are visible to the Project Admin, the Cost Controller and Finance.'),
   (req, res) => {
     const proj = res.locals.project;
     if (!proj) return res.redirect('/');
@@ -423,6 +423,10 @@ router.get('/advances/:id', requireCapability('canReconcile', 'Cash advances are
           defaultDate: new Date().toISOString().slice(0, 10),
           total: lines.reduce((s, l) => s + Math.abs(l.amount), 0),
           draftCount: lines.filter((l) => l.status === 'draft').length,
+          // Lines waiting on a human: returned to the enterer, or blocked on a
+          // missing code. Both need chasing, so both are surfaced.
+          returned: lines.filter((l) => l.status === 'rejected' && !l.superseded_by),
+          blockedCount: lines.filter((l) => l.status === 'blocked').length,
           saved: typeof req.query.saved !== 'undefined',
           error: typeof req.query.error !== 'undefined' ? req.query.error : null,
           flash: typeof req.query.checked !== 'undefined' ? Number(req.query.checked) : null,
@@ -468,6 +472,18 @@ router.post('/advances/:id/lines', requireCapability('canEnterExpense', 'Only a 
       }).lastInsertRowid;
       q.audit('lpb', id, 'create', req.user.id, null,
         { advance_id: adv.id, amount, entry_date: entryDate, status: 'draft' });
+
+      // If this line corrects a returned one, link the pair. A rejection is final,
+      // so the fix always arrives as a new line; without this the returned line
+      // sits forever looking unresolved.
+      const replaces = Number(req.body.replaces || 0);
+      if (replaces) {
+        const old = q.lpbLineById(replaces);
+        if (old && old.project_id === proj.id && q.supersedeLpbLine(old.id, id, proj.id).changes === 1) {
+          q.audit('lpb', old.id, 'supersede', req.user.id,
+            { status: old.status }, { superseded_by: id });
+        }
+      }
     } catch (err) {
       return fail(err.message);
     }
@@ -534,8 +550,52 @@ router.post('/expenses/:lineId/reject', requireCapability('canCheckExpense', 'On
     res.redirect(`${back}?saved=1`);
   });
 
+// BLOCK a draft the project cannot book yet. Not a rejection: the line is fine,
+// the project is missing the code it needs. Stays visible and is reversible.
+router.post('/expenses/:lineId/block', requireCapability('canCheckExpense', 'Only a Cost Controller can block an Expense Report line.'),
+  (req, res) => {
+    const proj = res.locals.project;
+    if (!proj) return res.redirect('/');
+    const line = q.lpbLineById(Number(req.params.lineId));
+    if (!line || line.project_id !== proj.id) return res.redirect('/advances');
+    const back = `/advances/${line.cash_advance_id}`;
+    const fail = (msg) => res.redirect(`${back}?error=${encodeURIComponent(msg)}`);
+    const reason = String(req.body.reason || '').trim();
+
+    const sod = checkSoD({ line, actorId: req.user.id, caps: req.caps });
+    if (sod) return fail(sod);
+    if (line.status !== 'draft') return fail(`Line #${line.id} is already ${line.status}.`);
+    if (!reason) return fail('A block needs a reason — say what the project is missing.');
+
+    q.blockLpbLine(line.id, reason, req.user.id);
+    q.audit('lpb', line.id, 'block', req.user.id, { status: 'draft' }, { status: 'blocked', reason });
+    res.redirect(`${back}?saved=1`);
+  });
+
+// CLEAR a block: the missing code now exists, so the line goes back to draft and
+// can be checked normally. This is what makes blocked different from rejected —
+// one is final, the other is a pause.
+router.post('/expenses/:lineId/unblock', requireCapability('canCheckExpense', 'Only a Cost Controller can clear a block.'),
+  (req, res) => {
+    const proj = res.locals.project;
+    if (!proj) return res.redirect('/');
+    const line = q.lpbLineById(Number(req.params.lineId));
+    if (!line || line.project_id !== proj.id) return res.redirect('/advances');
+    const back = `/advances/${line.cash_advance_id}`;
+    if (line.status !== 'blocked') {
+      return res.redirect(`${back}?error=${encodeURIComponent(`Line #${line.id} is ${line.status}, not blocked.`)}`);
+    }
+    const r = q.unblockLpbLine(line.id);
+    if (r.changes !== 1) {
+      return res.redirect(`${back}?error=${encodeURIComponent('the line could not be returned to draft')}`);
+    }
+    q.audit('lpb', line.id, 'unblock', req.user.id,
+      { status: 'blocked', reason: line.block_reason }, { status: 'draft' });
+    res.redirect(`${back}?saved=1`);
+  });
+
 // All Expense Report detail of the project, one list (the "Expense reports" nav).
-router.get('/expenses', requireCapability('canReconcile', 'Expense Report detail is visible to Finance, the Cost Controller and the Project Admin.'),
+router.get('/expenses', requireCapability('canViewExpense', 'Expense Report detail is visible to the Project Admin, the Cost Controller and Finance.'),
   (req, res) => {
     const proj = res.locals.project;
     if (!proj) return res.redirect('/');
@@ -544,6 +604,9 @@ router.get('/expenses', requireCapability('canReconcile', 'Expense Report detail
         active: 'Expense reports',
         locals: {
           lines: q.lpbLinesForProject(proj.id), summary: q.lpbSummary(proj.id),
+          // Blocked + returned lines: real work waiting on a human, and neither
+          // counts as cost. Listed here so a parked line cannot go unnoticed.
+          stalled: q.lpbStalled(proj.id),
           caps: req.caps, fmt,
         },
       });

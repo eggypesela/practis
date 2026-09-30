@@ -29,17 +29,28 @@ function capabilities(user) {
   const roles = rolesOf(user.id);
   const isAdmin = user.is_system_admin === 1;
   const has = (...codes) => isAdmin || codes.some((c) => roles.includes(c));
+  const canEnterExpense = has('project_admin', 'project_manager');
+  const canCheckExpense = has('cost_controller', 'project_controller');
+  const canReconcile = has('finance', 'cost_controller', 'project_controller');
+  const canOpenAdvance = has('project_admin', 'project_manager', 'finance');
   return {
     roles,
     isAdmin,
     // Who may ENTER Expense Report detail.
-    canEnterExpense: has('project_admin', 'project_manager'),
+    canEnterExpense,
     // Who may CHECK it — deliberately disjoint from the enter set.
-    canCheckExpense: has('cost_controller', 'project_controller'),
+    canCheckExpense,
+    // Who may see the reconciliation screen (Finance vs detail). Not the Project
+    // Admin: they see their own project's detail, not Finance's settlement view.
+    canReconcile,
     // Who may open a Cash Advance pot.
-    canOpenAdvance: has('project_admin', 'project_manager', 'finance'),
-    // Who may see the reconciliation screen.
-    canReconcile: has('finance', 'cost_controller', 'project_controller'),
+    canOpenAdvance,
+    // Who may open the Cash Advance / Expense Report screens AT ALL. This is the
+    // union of the three families above, and it has to exist as its own flag:
+    // gating the pages on `canReconcile` locked the Project Admin out of the very
+    // screen that carries the ENTER form, so the workflow could not be started by
+    // the person whose job it is to start it.
+    canViewExpense: canEnterExpense || canCheckExpense || canReconcile,
   };
 }
 

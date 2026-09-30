@@ -224,6 +224,10 @@ test('C1.2 a checked line cannot be edited, un-checked or deleted', async () => 
 test('C1.3 a draft line cannot be checked without a checker identity', async () => {
   const adv = await openAdvance(700000, 'ADV-3003');
   const line = await enterLine(adv, 300000, 'No checker');
+  // Give the line a CBS account first, so the only rule it breaks is the one
+  // under test. Without this the CBS guard fires first and the test would pass
+  // or fail on a different guard than it claims to check.
+  db.prepare(`UPDATE lpb_statements SET transaction_account_id = ? WHERE id = ?`).run(cbsId(), line);
   assert.throws(
     () => db.prepare(`UPDATE lpb_statements SET status='checked' WHERE id = ?`).run(line),
     /requires checked_by and checked_at/);

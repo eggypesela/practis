@@ -3,13 +3,46 @@
 <div class="grid k4">
   <div class="card kpi"><div class="lbl"><svg><use href="#i-file"/></svg>Lines</div>
     <div class="v"><%= summary.total %></div><div class="f">across all pots</div></div>
-  <div class="card kpi"><div class="lbl"><svg><use href="#i-info"/></svg>Draft</div>
-    <div class="v"><%= summary.draft %></div><div class="f"><span class="wn">waiting for a checker</span></div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-info"/></svg>Needs attention</div>
+    <div class="v"><%= summary.draft + summary.blocked + summary.rejected %></div>
+    <div class="f"><span class="wn"><%= summary.draft %> draft · <%= summary.blocked %> blocked · <%= summary.rejected %> returned</span></div></div>
   <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Checked</div>
     <div class="v"><%= summary.checked %></div><div class="f">final · feeds actual cost</div></div>
   <div class="card kpi"><div class="lbl"><svg><use href="#i-chart"/></svg>Cost from detail</div>
     <div class="v sm">Rp <%= fmt(summary.checked_amount) %></div><div class="f">only checked lines</div></div>
 </div>
+
+<% if (stalled.length) { %>
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Needs attention</h2><span class="r"><%= stalled.length %> line<%= stalled.length === 1 ? '' : 's' %> not yet cost</span></div>
+  <div class="tw"><table>
+    <thead><tr><th>Date</th><th>Advance</th><th class="r">Amount</th><th>Status</th><th>Why</th><th class="r">Action</th></tr></thead>
+    <tbody>
+      <% stalled.forEach(function(s){ %>
+      <tr>
+        <td class="mono"><%= s.entry_date %></td>
+        <td class="mono"><% if (s.cash_advance_id) { %><a href="/advances/<%= s.cash_advance_id %>"><%= s.advance_no || '#' + s.cash_advance_id %></a><% } else { %>—<% } %></td>
+        <td class="num">Rp <%= fmt(Math.abs(s.amount)) %></td>
+        <td><% if (s.status === 'blocked') { %><span class="chip wn">BLOCKED</span><% } else { %><span class="chip bd">RETURNED</span><% } %></td>
+        <td class="dim"><%= s.block_reason || s.reject_reason %></td>
+        <td class="r">
+          <% if (s.status === 'blocked' && caps.canCheckExpense) { %>
+          <form method="post" action="/expenses/<%= s.id %>/unblock" style="display:inline">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button class="btn sm" type="submit">Clear block</button>
+          </form>
+          <% } else if (s.status === 'rejected') { %>
+          <a class="btn sm" href="/advances/<%= s.cash_advance_id %>">Re-enter</a>
+          <% } else { %><span class="dim">a Cost Controller clears it</span><% } %>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table></div>
+  <div class="fbar bot"><span class="dim">A blocked line is fine — the project cannot book it yet.
+    A returned line needs the Project Admin to re-enter the corrected figure. Neither counts as cost.</span></div>
+</div>
+<% } %>
 
 <div class="card" style="margin-top:12px">
   <div class="card-hd"><h2>Expense Report detail</h2><span class="r">latest <%= lines.length %></span></div>
@@ -26,8 +59,10 @@
         <td><% if (l.cbs_code) { %><span class="chip ok"><%= l.cbs_code %></span><% } else { %><span class="chip nt">untagged</span><% } %></td>
         <td class="mono"><%= l.wbs_code || '—' %></td>
         <td><% if (l.status === 'checked') { %><span class="chip ok">CHECKED</span>
-          <% } else if (l.status === 'rejected') { %><span class="chip bd">REJECTED</span>
-          <% } else { %><span class="chip wn">DRAFT</span><% } %></td>
+          <% } else if (l.status === 'rejected') { %><span class="chip bd">RETURNED</span>
+          <% } else if (l.status === 'blocked') { %><span class="chip wn">BLOCKED</span>
+          <% } else { %><span class="chip wn">DRAFT</span><% } %>
+          <% if (l.superseded_by) { %><span class="chip nt">replaced by #<%= l.superseded_by %></span><% } %></td>
         <td><%= l.created_by_name || '—' %></td>
         <td><%= l.checked_by_name || '—' %></td>
       </tr>
