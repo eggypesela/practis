@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>PRACTIS — mono font comparison</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Roboto+Mono:wght@400;500;600&family=Martian+Mono:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500;600&family=DM+Mono:wght@400;500&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--t1:#0f172a;--t2:#475569;--t3:#8b95a5;--border:#e8eaee;--bg:#f7f8fa;--accent:#2563eb}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,sans-serif;background:var(--bg);color:var(--t1);font-size:13px;padding:18px 20px 40px}
+h1{font-size:18px;font-weight:650;letter-spacing:-.02em}
+p.sub{font-size:12.5px;color:var(--t3);margin:2px 0 16px}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(430px,1fr))}
+.card{background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 1px 2px rgba(15,23,42,.05);overflow:hidden}
+.hd{display:flex;align-items:center;gap:8px;padding:10px 13px;border-bottom:1px solid var(--border)}
+.hd h2{font-size:13px;font-weight:650}
+.tag{margin-left:auto;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:5px;
+  background:#eff5ff;color:var(--accent);border:1px solid #cfe0ff}
+.body{padding:11px 13px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--t3);padding:5px 8px;border-bottom:1px solid var(--border)}
+th.r,td.r{text-align:right}
+td{padding:6px 8px;border-bottom:1px solid #f1f3f6}
+tr:last-child td{border-bottom:0}
+.n{font-variant-numeric:tabular-nums;text-align:right}
+.money{font-size:13px;font-weight:500}
+.big{font-size:22px;font-weight:600;letter-spacing:-.01em;margin:2px 0 8px}
+.ids{font-size:11.5px;color:var(--t2);margin-top:8px;line-height:1.7}
+.kpis{display:flex;gap:14px;flex-wrap:wrap}
+.kpis div{flex:1;min-width:130px}
+.kpis .l{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--t3)}
+.kpis .v{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px}
+.m0 .m{font-family:Inter,sans-serif;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.m1 .m{font-family:"IBM Plex Mono",monospace}
+.m2 .m{font-family:"Roboto Mono",monospace}
+.m3 .m{font-family:"Martian Mono",monospace}
+.m4 .m{font-family:"Spline Sans Mono",monospace}
+.m5 .m{font-family:"DM Mono",monospace}
+.m6 .m{font-family:"Geist Mono",monospace}
+.note{grid-column:1/-1;background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 14px;
+  font-size:12.5px;color:var(--t2)}
+.note b{color:var(--t1)}
+</style></head><body>
+<h1>Mono font for money — pick one</h1>
+<p class="sub">Same PRACTIS data, same size. JetBrains Mono removed. Look at digit alignment, how heavy it feels, and how the rupiah blocks read.</p>
+
+<div class="grid">
+  <div class="card m0"><div class="hd"><h2>Inter tabular-nums</h2><span class="tag" style="background:#f0fdf4;color:#047857;border-color:#bbf7d0">= PocketStash</span></div>
+    <div class="body"><div class="big m">Rp 12.480.000.000</div>
+      <div class="kpis m"><div><div class="l">Debit</div><div class="v">8.912.000.000</div></div>
+        <div><div class="l">Credit</div><div class="v">8.912.000.000</div></div>
+        <div><div class="l">Untagged</div><div class="v">44</div></div></div>
+      <table class="m"><thead><tr><th>Date</th><th>Doc</th><th class="r">Amount</th></tr></thead>
+        <tbody><tr><td>2026-03-20</td><td>CASHIN-0114</td><td class="n money">300.000.000</td></tr>
+        <tr><td>2026-03-18</td><td>INV-0224</td><td class="n money">400.000.000</td></tr>
+        <tr><td>2026-03-17</td><td>LPB-003</td><td class="n money">18.000.000</td></tr></tbody></table>
+      <div class="ids m">0123456789 · 0 vs O · 1 vs l · 8.912.000.000</div></div></div>
+
+  <div class="card m1"><div class="hd"><h2>IBM Plex Mono</h2><span class="tag">technical · squared</span></div>
+    <div class="body"><div class="big m">Rp 12.480.000.000</div>
+      <div class="kpis m"><div><div class="l">Debit</div><div class="v">8.912.000.000</div></div>
+        <div><div class="l">Credit</div><div class="v">8.912.000.000</div></div>
+        <div><div class="l">Untagged</div><div class="v">44</div></div></div>
+      <table class="m"><thead><tr><th>Date</th><th>Doc</th><th class="r">Amount</th></tr></thead>
+        <tbody><tr><td>2026-03-20</td><td>CASHIN-0114</td><td class="n money">300.000.000</td></tr>
+        <tr><td>2026-03-18</td><td>INV-0224</td><td class="n money">400.000.000</td></tr>
+        <tr><td>2026-03-17</td><td>LPB-003</td><td class="n money">18.000.000</td></tr></tbody></table>
+      <div class="ids m">0123456789 · 0 vs O · 1 vs l · 8.912.000.000</div></div></div>
+
+  <div class="card m6"><div class="hd"><h2>Geist Mono</h2><span class="tag">tight · modern</span></div>
+    <div class="body"><div class="big m">Rp 12.480.000.000</div>
+      <div class="kpis m"><div><div class="l">Debit</div><div class="v">8.912.000.000</div></div>
+        <div><div class="l">Credit</div><div class="v">8.912.000.000</div></div>
+        <div><div class="l">Untagged</div><div class="v">44</div></div></div>
+      <table class="m"><thead><tr><th>Date</th><th>Doc</th><th class="r">Amount</th></tr></thead>
+        <tbody><tr><td>2026-03-20</td><td>CASHIN-0114</td><td class="n money">300.000.000</td></tr>
+        <tr><td>2026-03-18</td><td>INV-0224</td><td class="n money">400.000.000</td></tr>
+        <tr><td>2026-03-17</td><td>LPB-003</td><td class="n money">18.000.000</td></tr></tbody></table>
+      <div class="ids m">0123456789 · 0 vs O · 1 vs l · 8.912.000.000</div></div></div>
+
+  <div class="card m2"><div class="hd"><h2>Roboto Mono</h2><span class="tag">neutral · safe</span></div>
+    <div class="body"><div class="big m">Rp 12.480.000.000</div>
+      <div class="kpis m"><div><div class="l">Debit</div><div class="v">8.912.000.000</div></div>
+        <div><div class="l">Credit</div><div class="v">8.912.000.000</div></div>
+        <div><div class="l">Untagged</div><div class="v">44</div></div></div>
+      <table class="m"><thead><tr><th>Date</th><th>Doc</th><th class="r">Amount</th></tr></thead>
+        <tbody><tr><td>2026-03-20</td><td>CASHIN-0114</td><td class="n money">300.000.000</td></tr>
+        <tr><td>2026-03-18</td><td>INV-0224</td><td class="n money">400.000.000</td></tr>
+        <tr><td>2026-03-17</td><td>LPB-003</td><td class="n money">18.000.000</td></tr></tbody></table>
+      <div class="ids m">0123456789 · 0 vs O · 1 vs l · 8.912.000.000</div></div></div>
+
+  <div class="card m4"><div class="hd"><h2>Spline Sans Mono</h2><span class="tag">soft · geometric</span></div>
+    <div class="body"><div class="big m">Rp 12.480.000.000</div>
+      <div class="kpis m"><div><div class="l">Debit</div><div class="v">8.912.000.000</div></div>
+        <div><div class="l">Credit</div><div class="v">8.912.000.000</div></div>
+        <div><div class="l">Untagged</div><div class="v">44</div></div></div>
+      <table class="m"><thead><tr><th>Date</th><th>Doc</th><th class="r">Amount</th></tr></thead>
+        <tbody><tr><td>2026-03-20</td><td>CASHIN-0114</td><td class="n money">300.000.000</td></tr>
+        <tr><td>2026-03-18</td><td>INV-0224</td><td class="n money">400.000.000</td></tr>
+        <tr><td>2026-03-17</td><td>LPB-003</td><td class="n money">18.000.000</td></tr></tbody></table>
+      <div class="ids m">0123456789 · 0 vs O · 1 vs l · 8.912.000.000</div></div></div>
+
+  <div class="card m5"><div class="hd"><h2>DM Mono</h2><span class="tag">light · low contrast</span></div>
+    <div class="body"><div class="big m">Rp 12.480.000.000</div>
+      <div class="kpis m"><div><div class="l">Debit</div><div class="v">8.912.000.000</div></div>
+        <div><div class="l">Credit</div><div class="v">8.912.000.000</div></div>
+        <div><div class="l">Untagged</div><div class="v">44</div></div></div>
+      <table class="m"><thead><tr><th>Date</th><th>Doc</th><th class="r">Amount</th></tr></thead>
+        <tbody><tr><td>2026-03-20</td><td>CASHIN-0114</td><td class="n money">300.000.000</td></tr>
+        <tr><td>2026-03-18</td><td>INV-0224</td><td class="n money">400.000.000</td></tr>
+        <tr><td>2026-03-17</td><td>LPB-003</td><td class="n money">18.000.000</td></tr></tbody></table>
+      <div class="ids m">0123456789 · 0 vs O · 1 vs l · 8.912.000.000</div></div></div>
+
+  <div class="card m3"><div class="hd"><h2>Martian Mono</h2><span class="tag">wide · very technical</span></div>
+    <div class="body"><div class="big m" style="font-size:18px">Rp 12.480.000.000</div>
+      <div class="kpis m"><div><div class="l">Debit</div><div class="v" style="font-size:13px">8.912.000.000</div></div>
+        <div><div class="l">Credit</div><div class="v" style="font-size:13px">8.912.000.000</div></div>
+        <div><div class="l">Untagged</div><div class="v">44</div></div></div>
+      <table class="m"><thead><tr><th>Date</th><th>Doc</th><th class="r">Amount</th></tr></thead>
+        <tbody><tr><td>2026-03-20</td><td>CASHIN-0114</td><td class="n money">300.000.000</td></tr>
+        <tr><td>2026-03-18</td><td>INV-0224</td><td class="n money">400.000.000</td></tr>
+        <tr><td>2026-03-17</td><td>LPB-003</td><td class="n money">18.000.000</td></tr></tbody></table>
+      <div class="ids m">0123456789 · 0 vs O · 1 vs l · 8.912.000.000</div></div></div>
+
+  <div class="note"><b>Answer to your question:</b> PocketStash already uses <b>Inter</b> — its body font is Inter and its
+    money class is just Inter with <code>tabular-nums</code> (no separate mono font). So "same as PocketStash" and "Inter"
+    are the same choice — shown first above.<br><br>
+    <b>My recommendation: Inter tabular-nums too.</b> One font for everything, numbers still align perfectly because of
+    tabular figures, and both apps look like siblings. Mono fonts (Plex/Geist/…) only add value if you want money to look
+    visibly "machine-typed" — a deliberate style, not a necessity.</div>
+</div>
+</body></html>

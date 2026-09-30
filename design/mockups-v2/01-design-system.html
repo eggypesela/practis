@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PRACTIS — Design system</title>
+<link rel="stylesheet" href="fonts-local.css">
+<link rel="stylesheet" href="app.css">
+</head><body>
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-grid" viewBox="0 0 24 24"><path d="M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 5.5A1.5 1.5 0 0 1 4.5 4h4.2c.5 0 .8.2 1.1.5L11 6h8.5A1.5 1.5 0 0 1 21 7.5v11A1.5 1.5 0 0 1 19.5 20h-15A1.5 1.5 0 0 1 3 18.5z"/></symbol>
+<symbol id="i-book" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M4 2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm2 4v2h12V6Zm0 4v2h12v-2Zm0 4v2h8v-2Z"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M4 2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm10.6 6.2-5 5-2.2-2.2-1.4 1.4 3.6 3.6 6.4-6.4Z"/></symbol>
+<symbol id="i-in" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm-1 3.5h2v6.5h3l-4 4.6L8 12h3Z"/></symbol>
+<symbol id="i-out" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm-1 16.5h2V12h3l-4-4.6L8 12h3Z"/></symbol>
+<symbol id="i-tree" viewBox="0 0 24 24"><path d="M3 3h6v4H3zm0 7h6v4H3zm0 7h6v4H3zm12-7h6v4h-6zM9.2 4.6h1.8v14.8H9.2zm1.8 6.7h4v1.8h-4z"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="M12 3l5 5h-3v6H10V8H7zM5 18h14v2H5z"/></symbol>
+<symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20h16v1.6H4zM6.5 12h2.6v6H6.5zm4.6-5h2.6v11h-2.6zm4.6 3h2.6v8h-2.6z"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M5 2h14v20H5Zm3 4v2h8V6Zm0 4v2h8v-2Zm0 4v2h5v-2Z"/></symbol>
+<symbol id="i-gear" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M10.6 2h2.8l.4 2.7c.7.2 1.4.5 2 .9l2.3-1.5 2 2-1.5 2.3c.4.6.7 1.3.9 2l2.7.4v2.8l-2.7.4c-.2.7-.5 1.4-.9 2l1.5 2.3-2 2-2.3-1.5c-.6.4-1.3.7-2 .9L13.4 22h-2.8l-.4-2.7c-.7-.2-1.4-.5-2-.9l-2.3 1.5-2-2 1.5-2.3c-.4-.6-.7-1.3-.9-2L1.8 13.2v-2.8l2.7-.4c.2-.7.5-1.4.9-2L4 5.7l2-2 2.3 1.5c.6-.4 1.3-.7 2-.9zm1.4 6.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M10.5 3a7.5 7.5 0 1 0 4.6 13.4l4.2 4.2 1.4-1.4-4.2-4.2A7.5 7.5 0 0 0 10.5 3Zm0 2a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11Z"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M12 2a6 6 0 0 0-6 6v3.6L4 15v1.5h16V15l-2-3.4V8a6 6 0 0 0-6-6zm0 20a2.6 2.6 0 0 0 2.5-2h-5A2.6 2.6 0 0 0 12 22z"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7z"/></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="M12 15.4 5.6 9 7 7.6l5 5 5-5 1.4 1.4z"/></symbol>
+<symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 5h18v2H3zm0 6h18v2H3zm0 6h18v2H3z"/></symbol>
+<symbol id="i-dl" viewBox="0 0 24 24"><path d="M11 3h2v9h3.5L12 17 7.5 12H11zM5 19h14v2H5z"/></symbol>
+<symbol id="i-cart" viewBox="0 0 24 24"><path d="M7 18a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm10 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM3 3h3l2.6 11h10l2.4-8H6.2"/></symbol>
+<symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 2 1.5 21h21zM11 9h2v6h-2zm0 8h2v2h-2z"/></symbol>
+<symbol id="i-badge" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2a6 6 0 1 0 0 12 6 6 0 0 0 0-12Zm2.6 10.6-1.4 1.4-1.8-1.8-3 3-1.4-1.4 3-3L8.6 9 10 7.6l1.8 1.8 3-3 1.4 1.4-3 3zM6 15l-2 7 8-4 8 4-2-7a8 8 0 0 1-12 0Z"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><path d="M9 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 2c-3.3 0-6 1.8-6 4v2h12v-2c0-2.2-2.7-4-6-4zm7-2a3 3 0 1 0 0-6v6zm1 2c-2 .1-3.5 1-4.4 2.2.8-.1 1.6.1 2.3.4 1.4.5 2.6 1.4 3.1 2.4H22v-2c0-1.8-2.2-3.2-5-3z"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 5h-2v6l4.6 2.8 1-1.7-3.6-2.2z"/></symbol>
+<symbol id="i-cash" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M3 6h18a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Zm2 3v6h14V9zm7 1.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M12 3 2 11h2.5v10h6v-6h3v6h6V11H22z"/></symbol>
+</defs></svg>
+<div class="shell">
+<aside class="sb">
+  <div class="brand">
+    <div class="mark"><svg width="15" height="15"><use href="#i-book"/></svg></div>
+    <div class="brand-txt"><b>PRACTIS</b><span>Cost Control</span></div>
+  </div>
+  <nav class="nav"><div class="grp caps">Portfolio</div><a href="#" data-proj="0"><svg><use href="#i-grid"/></svg><span class="lbl">Dashboard</span></a><a href="#" data-proj="0"><svg><use href="#i-folder"/></svg><span class="lbl">Projects</span></a><a href="#" data-proj="0"><svg><use href="#i-chart"/></svg><span class="lbl">Reports</span></a><div class="pctx"><span class="pc-lbl caps">Project</span><button class="pc-btn"><span class="pc-dot"></span><span class="pc-name">Citarum Bridge</span><svg class="pc-chev"><use href="#i-chev"/></svg></button></div><a href="#" data-proj="1"><svg><use href="#i-home"/></svg><span class="lbl">Overview</span></a><a href="#" data-proj="1"><svg><use href="#i-tree"/></svg><span class="lbl">WBS</span></a><a href="#" data-proj="1"><svg><use href="#i-chart"/></svg><span class="lbl">CBS plan</span></a><a href="#" data-proj="1"><svg><use href="#i-book"/></svg><span class="lbl">Ledger</span></a><a href="#" data-proj="1"><svg><use href="#i-check"/></svg><span class="lbl">Tagging queue</span><span class="pill">44</span></a><a href="#" data-proj="1"><svg><use href="#i-cash"/></svg><span class="lbl">Cash advances</span></a><a href="#" data-proj="1"><svg><use href="#i-file"/></svg><span class="lbl">Expense reports</span><span class="pill">2</span></a><a href="#" data-proj="1"><svg><use href="#i-check"/></svg><span class="lbl">Reconciliation</span></a><a href="#" data-proj="1"><svg><use href="#i-in"/></svg><span class="lbl">Revenue</span></a><a href="#" data-proj="1"><svg><use href="#i-cart"/></svg><span class="lbl">Procurement</span></a><a href="#" data-proj="1"><svg><use href="#i-badge"/></svg><span class="lbl">Acceptance</span></a><a href="#" data-proj="1"><svg><use href="#i-dl"/></svg><span class="lbl">Update report</span></a><a href="#" data-proj="1"><svg><use href="#i-file"/></svg><span class="lbl">BCR register</span></a><div class="grp caps">Administration</div><a href="#" data-proj="0"><svg><use href="#i-users"/></svg><span class="lbl">Users & roles</span></a><a href="#" data-proj="0"><svg><use href="#i-gear"/></svg><span class="lbl">Master data</span></a><a href="#" data-proj="0"><svg><use href="#i-clock"/></svg><span class="lbl">Jobs</span></a></nav>
+  <div class="sb-foot">
+    <div class="av">RC</div>
+    <div class="who"><b>Ayu Kusuma</b><span>Administrator</span></div>
+  </div>
+</aside>
+<main class="main">
+<header class="top">
+  <button class="iconbtn"><svg><use href="#i-menu"/></svg></button>
+  <div class="crumb"><span class="hide">Citarum Bridge</span><span class="sep hide">/</span><b>Design system</b></div>
+  <div class="search"><svg><use href="#i-search"/></svg>
+    <input placeholder="Search documents…"></div>
+  <button class="iconbtn"><svg><use href="#i-bell"/></svg></button>
+  <div class="avatarbtn">RC</div>
+</header>
+<div class="wrap">
+  <div class="hd"><div><h1>Design system</h1><p>PRACTIS · blue #2563eb · Inter · dense · minimal filled icons</p></div><div class="act"><button class="btn pri sm"><svg><use href="#i-plus"/></svg>New</button></div></div>
+<div class="ds">
+  <div class="card">
+    <div class="card-hd"><h2>Color</h2><span class="r">one accent only</span></div>
+    <div class="pal">
+      <figure><div class="c" style="background:#2563eb;color:#fff"></div><figcaption>accent<br>#2563eb</figcaption></figure><figure><div class="c" style="background:#1d4ed8;color:#fff"></div><figcaption>accent hover<br>#1d4ed8</figcaption></figure>
+      <figure><div class="c" style="background:#eff5ff;color:#0f172a"></div><figcaption>accent soft<br>#eff5ff</figcaption></figure><figure><div class="c" style="background:#15803d;color:#fff"></div><figcaption>ok<br>#15803d</figcaption></figure>
+      <figure><div class="c" style="background:#b45309;color:#fff"></div><figcaption>warn<br>#b45309</figcaption></figure><figure><div class="c" style="background:#b91c1c;color:#fff"></div><figcaption>bad<br>#b91c1c</figcaption></figure>
+      <figure><div class="c" style="background:#0f172a;color:#fff"></div><figcaption>text 1<br>#0f172a</figcaption></figure><figure><div class="c" style="background:#8b95a5;color:#fff"></div><figcaption>text 3<br>#8b95a5</figcaption></figure>
+      <figure><div class="c" style="background:#e8eaee;color:#0f172a"></div><figcaption>border<br>#e8eaee</figcaption></figure><figure><div class="c" style="background:#fafbfc;color:#0f172a"></div><figcaption>surface 2<br>#fafbfc</figcaption></figure><figure><div class="c" style="background:#f7f8fa;color:#0f172a"></div><figcaption>bg<br>#f7f8fa</figcaption></figure>
+    </div>
+    <div class="tok" style="border-top:1px solid var(--border)">
+      <span class="sub">Money semantics fixed</span>
+      <code class="mono">green in · red over/unpaid</code></div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd"><h2>Type</h2><span class="r">Inter · tabular numerals</span></div>
+    <div class="tsc"><span style="font-size:19px;font-weight:650;letter-spacing:-.02em">Page title</span>
+      <span class="m">19 / 650</span></div>
+    <div class="tsc"><span style="font-size:13px;font-weight:620">Card title</span>
+      <span class="m">13 / 620</span></div>
+    <div class="tsc"><span style="font-size:12.5px">Body &amp; table cell</span>
+      <span class="m">12.5 / 400</span></div>
+    <div class="tsc"><span class="caps">Table header</span><span class="m">10.5 / 600 caps</span></div>
+    <div class="tsc"><span class="num" style="font-size:20px;font-weight:620">Rp 12.480.000.000</span>
+      <span class="m">mono tabular</span></div>
+    <div class="tsc"><span class="mono" style="font-size:12.5px">CASHIN-0114</span>
+      <span class="m">mono ids</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd"><h2>Spacing &amp; radius</h2></div>
+    <div class="tok"><span>4px grid · card gap</span><code>12px</code></div><div class="tok"><span>card padding</span><code>12–13px</code></div>
+    <div class="tok"><span>row height (dense)</span><code>31px</code></div><div class="tok"><span>input / button height</span><code>30–31px</code></div>
+    <div class="tok"><span>radius · control</span><code>7px</code></div><div class="tok"><span>radius · card</span><code>10px</code></div>
+    <div class="tok"><span>radius · chip</span><code>5px</code></div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd"><h2>Status chips</h2><span class="r">dot + tinted bg</span></div>
+    <div class="rowi"><span class="nm">ok</span><span class="chip ok">ON TRACK</span> <span class="chip ok">CHECKED</span>
+      <span class="chip ok">RECONCILED</span></div>
+    <div class="rowi"><span class="nm">warn</span><span class="chip wn">WATCH</span> <span class="chip wn">UNCHECKED</span>
+      <span class="chip wn">MISMATCH</span></div>
+    <div class="rowi"><span class="nm">bad</span><span class="chip bd">OVER</span> <span class="chip bd">OVERDUE</span>
+      <span class="chip bd">EXPENSE</span></div>
+    <div class="rowi"><span class="nm">neutral / info</span><span class="chip bl">PENDING</span>
+      <span class="chip nt">FUNDING</span> <span class="chip nt">EXCLUDED</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd"><h2>Buttons</h2></div>
+    <div class="rowi"><span class="nm">primary</span>
+      <button class="btn pri"><svg><use href="#i-plus"/></svg>New project</button>
+      <button class="btn pri sm"><svg><use href="#i-plus"/></svg>Small</button></div>
+    <div class="rowi"><span class="nm">secondary</span>
+      <button class="btn"><svg><use href="#i-dl"/></svg>Export</button>
+      <button class="btn sm">Small</button></div>
+    <div class="rowi"><span class="nm">danger</span>
+      <button class="btn dgr">Flag mismatch</button>
+      <button class="iconbtn"><svg><use href="#i-search"/></svg></button>
+      <button class="iconbtn"><svg><use href="#i-bell"/></svg></button></div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd"><h2>Icons</h2><span class="r">minimal filled · 16px nav / 15px action</span></div>
+    <div class="rowi" style="gap:16px">
+      <svg style="width:18px;height:18px;color:var(--t2)"><use href="#i-grid"/></svg><svg style="width:18px;height:18px;color:var(--t2)"><use href="#i-folder"/></svg><svg style="width:18px;height:18px;color:var(--t2)"><use href="#i-book"/></svg><svg style="width:18px;height:18px;color:var(--t2)"><use href="#i-check"/></svg><svg style="width:18px;height:18px;color:var(--t2)"><use href="#i-in"/></svg><svg style="width:18px;height:18px;color:var(--t2)"><use href="#i-out"/></svg><svg style="width:18px;height:18px;color:var(--t2)"><use href="#i-tree"/></svg><svg style="width:18px;height:18px;color:var(--t2)"><use href="#i-up"/></svg><svg style="width:18px;height:18px;color:var(--t2)"><use href="#i-chart"/></svg><svg style="width:18px;height:18px;color:var(--t2)"><use href="#i-file"/></svg><svg style="width:18px;height:18px;color:var(--t2)"><use href="#i-gear"/></svg><svg style="width:18px;height:18px;color:var(--t2)"><use href="#i-search"/></svg><svg style="width:18px;height:18px;color:var(--t2)"><use href="#i-bell"/></svg><svg style="width:18px;height:18px;color:var(--t2)"><use href="#i-warn"/></svg><svg style="width:18px;height:18px;color:var(--t2)"><use href="#i-dl"/></svg><svg style="width:18px;height:18px;color:var(--t2)"><use href="#i-plus"/></svg>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd"><h2>Navigation</h2><span class="r">expanded · collapsed · mobile</span></div>
+    <div class="rowi" style="gap:16px;align-items:stretch">
+      <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">
+        <div style="width:210px;padding:8px;background:var(--surface)">
+          <a class="nav-on" style="display:flex;align-items:center;gap:9px;height:31px;padding:0 8px;
+             border-radius:6px;background:var(--accent-soft);color:var(--accent);font-weight:600">
+            <svg style="width:16px;height:16px"><use href="#i-grid"/></svg>Dashboard</a>
+          <a style="display:flex;align-items:center;gap:9px;height:31px;padding:0 8px;border-radius:6px;
+             color:var(--t2)"><svg style="width:16px;height:16px"><use href="#i-book"/></svg>Ledger</a>
+        </div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden">
+        <div style="width:56px;padding:8px;background:var(--surface)">
+          <div style="height:31px;display:grid;place-items:center;border-radius:6px;
+            background:var(--accent-soft);color:var(--accent)"><svg style="width:16px;height:16px">
+            <use href="#i-grid"/></svg></div>
+          <div style="height:31px;display:grid;place-items:center;color:var(--t2)">
+            <svg style="width:16px;height:16px"><use href="#i-book"/></svg></div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--t3);max-width:230px">
+        ≤900px: sidebar slides in over a scrim behind a menu button. Dense tables scroll
+        horizontally; short lists restack as rows.
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+          <b style="color:var(--t1)">Scope rule.</b> Dashboard, Projects and Reports are
+          portfolio-wide. Every money screen (Ledger, Tagging queue, Cash advances,
+          Expense reports, Reconciliation, Revenue) belongs to the project chosen in the
+          switcher, and its route carries the project id.</div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

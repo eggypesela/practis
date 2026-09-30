@@ -1,0 +1,22 @@
+/* Local Inter — PRACTIS mockups. Avoids network font fetching (this box is offline).
+   Inter-400/500/600/700 woff2 downloaded from Google Fonts, served locally. */
+@font-face {
+  font-family: "Inter";
+  src: url("fonts/Inter-400.woff2") format("woff2");
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Inter";
+  src: url("fonts/Inter-500.woff2") format("woff2");
+  font-weight: 500; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Inter";
+  src: url("fonts/Inter-600.woff2") format("woff2");
+  font-weight: 600; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Inter";
+  src: url("fonts/Inter-700.woff2") format("woff2");
+  font-weight: 700; font-style: normal; font-display: swap;
+}

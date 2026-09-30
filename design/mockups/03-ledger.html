@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PRACTIS — Ledger</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #fafafa; --surface: #ffffff; --surface-2: #f4f4f5;
+  --border-08: rgba(31,41,55,0.08); --border-12: rgba(31,41,55,0.12);
+  --text-1: #111827; --text-2: #4b5563; --text-3: #6b7280; --text-4: #9ca3af;
+  --accent: #0f766e; --accent-soft: rgba(15,118,110,0.10);
+  --danger: #dc2626; --danger-soft: rgba(220,38,38,0.10);
+  --success: #15803d; --success-soft: rgba(21,128,61,0.12);
+  --warn: #b45309; --warn-soft: rgba(180,83,9,0.12);
+  --shadow-card: 0 1px 1px rgba(17,24,39,0.05), 0 2px 2px rgba(17,24,39,0.05), 0 8px 16px -8px rgba(17,24,39,0.08);
+  --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+body { font-family: var(--font-ui); background: var(--bg); color: var(--text-1); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.caps-label { font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); }
+.card { background: var(--surface); border: 1px solid var(--border-08); border-radius: 6px; box-shadow: var(--shadow-card); }
+.chip { display:inline-flex; align-items:center; padding:2px 8px; font-size:11px; font-weight:600; border-radius:4px; }
+.inp { background:var(--surface); border:1px solid var(--border-12); border-radius:6px; padding:6px 10px; font-size:13px; color:var(--text-1); }
+.inp:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); }
+@media (max-width: 900px) {
+  body { max-width: 100% !important; overflow-x: hidden !important; }
+  .fixed.inset-y-0 { position: static !important; width: 100% !important; height: auto !important; flex-direction: row !important; align-items: center !important; padding: 8px 16px !important; }
+  .fixed.inset-y-0 nav { display: none !important; }
+  .fixed.inset-y-0 .border-t { display: none !important; }
+  .fixed.inset-y-0 .border-b { border-bottom: none !important; padding: 0 !important; }
+  .ml-52 { margin-left: 0 !important; padding: 16px !important; }
+  .grid.grid-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .card.overflow-hidden { overflow-x: auto !important; }
+  .flex.items-start.justify-between { flex-direction: column !important; gap: 12px !important; }
+  .w-56 { width: 100% !important; }
+  table { min-width: 720px !important; }
+  .text-\[16px\] { font-size: 14px !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- ============ SIDEBAR ============ -->
+<div class="fixed inset-y-0 left-0 w-52 bg-[#111827] text-white flex flex-col">
+  <div class="px-4 py-4 border-b border-white/10">
+    <div class="text-[15px] font-semibold tracking-tight">PRACTIS</div>
+    <div class="caps-label text-[10px] mt-0.5" style="color:#9ca3af">Cost Control</div>
+  </div>
+  <nav class="flex-1 py-2 px-2 space-y-0.5 text-[13px]">
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">Dashboard</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">Projects</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] bg-white/10 font-medium">Ledger</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">LPB Reconciliation</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">Receivable Register</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">Payable Register</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">WBS / CBS</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">Imports</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">Reports</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">BCR Register</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">Settings</a>
+  </nav>
+  <div class="px-4 py-3 border-t border-white/10 text-[12px] text-gray-400">
+    <div class="font-medium text-gray-200">Ayu Kusuma</div>
+    <div>Administrator</div>
+  </div>
+</div>
+
+<!-- ============ MAIN ============ -->
+<div class="ml-52 p-6">
+
+  <!-- Page header -->
+  <div class="flex items-start justify-between mb-4">
+    <div>
+      <h1 class="text-[26px] font-semibold tracking-tight">Ledger</h1>
+      <p class="text-[13px] text-[var(--text-2)] mt-0.5">Accounting-ledger · all projects · immutable entries</p>
+    </div>
+    <button class="px-3 py-1.5 text-[13px] font-medium text-white rounded-[6px]" style="background:var(--accent)">+ Add Entry</button>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="card p-3 mb-4 flex flex-wrap items-center gap-2">
+    <input class="inp w-56" placeholder="Search document_no, description..." />
+    <select class="inp">
+      <option>All projects</option>
+      <option>Citarum Bridge</option>
+      <option>Gedung Dinas PUPR</option>
+    </select>
+    <select class="inp">
+      <option>All types</option>
+      <option>Income</option>
+      <option>Expense</option>
+      <option>Receivable</option>
+      <option>Payable</option>
+    </select>
+    <select class="inp">
+      <option>All status</option>
+      <option>Cost unchecked</option>
+      <option>Cost checked</option>
+    </select>
+    <select class="inp">
+      <option>Mar 2026</option>
+      <option>Feb 2026</option>
+      <option>Jan 2026</option>
+    </select>
+    <span class="mono text-[12px] text-[var(--text-3)] ml-auto">2,340 rows · Rp 8.912.000.000 total</span>
+  </div>
+
+  <!-- Summary strip -->
+  <div class="grid grid-cols-4 gap-4 mb-4">
+    <div class="card p-3">
+      <div class="caps-label mb-0.5">Total Debit</div>
+      <div class="mono text-[16px] font-semibold">8.912.000.000</div>
+    </div>
+    <div class="card p-3">
+      <div class="caps-label mb-0.5">Total Credit</div>
+      <div class="mono text-[16px] font-semibold">8.912.000.000</div>
+    </div>
+    <div class="card p-3">
+      <div class="caps-label mb-0.5">Cost Checked</div>
+      <div class="mono text-[16px] font-semibold text-[var(--success)]">2,296 / 2,340</div>
+    </div>
+    <div class="card p-3">
+      <div class="caps-label mb-0.5">Untagged Queue</div>
+      <div class="mono text-[16px] font-semibold text-[var(--warn)]">44 lines</div>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="card overflow-hidden">
+    <table class="w-full text-[13px]">
+      <thead>
+        <tr style="background:var(--surface-2)">
+          <th class="caps-label px-3 py-2 text-left">Date</th>
+          <th class="caps-label px-3 py-2 text-left">Doc No.</th>
+          <th class="caps-label px-3 py-2 text-left">Description</th>
+          <th class="caps-label px-3 py-2 text-left">Type</th>
+          <th class="caps-label px-3 py-2 text-left">Project</th>
+          <th class="caps-label px-3 py-2 text-right">Debit</th>
+          <th class="caps-label px-3 py-2 text-right">Credit</th>
+          <th class="caps-label px-3 py-2 text-left">Cost</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="border-t hover:bg-[#f9fafb]" style="border-color:var(--border-08)">
+          <td class="mono px-3 py-2 text-[12px]">2026-03-20</td>
+          <td class="mono px-3 py-2">CASHIN-01</td>
+          <td class="px-3 py-2 truncate max-w-[220px]">Payment received — progress billing</td>
+          <td class="px-3 py-2"><span class="chip" style="background:var(--accent-soft);color:var(--accent)">RECEIVABLE</span></td>
+          <td class="px-3 py-2 text-[12px] text-[var(--text-2)]">Citarum Bridge</td>
+          <td class="mono px-3 py-2 text-right">300.000.000</td>
+          <td class="mono px-3 py-2 text-right text-[var(--text-3)]">—</td>
+          <td class="px-3 py-2"><span class="chip" style="background:var(--success-soft);color:var(--success)">CHECKED</span></td>
+        </tr>
+        <tr class="border-t hover:bg-[#f9fafb]" style="border-color:var(--border-08)">
+          <td class="mono px-3 py-2 text-[12px]">2026-03-20</td>
+          <td class="mono px-3 py-2">PO-9001</td>
+          <td class="px-3 py-2 truncate max-w-[220px]">Payment on cement invoice</td>
+          <td class="px-3 py-2"><span class="chip" style="background:var(--warn-soft);color:var(--warn)">PAYABLE</span></td>
+          <td class="px-3 py-2 text-[12px] text-[var(--text-2)]">Gedung Dinas PUPR</td>
+          <td class="mono px-3 py-2 text-right text-[var(--text-3)]">—</td>
+          <td class="mono px-3 py-2 text-right">30.000.000</td>
+          <td class="px-3 py-2"><span class="chip" style="background:var(--success-soft);color:var(--success)">CHECKED</span></td>
+        </tr>
+        <tr class="border-t hover:bg-[#f9fafb]" style="border-color:var(--border-08)">
+          <td class="mono px-3 py-2 text-[12px]">2026-03-18</td>
+          <td class="mono px-3 py-2">INV-0224</td>
+          <td class="px-3 py-2 truncate max-w-[220px]">Progress billing invoice — milestone 4</td>
+          <td class="px-3 py-2"><span class="chip" style="background:var(--accent-soft);color:var(--accent)">RECEIVABLE</span></td>
+          <td class="px-3 py-2 text-[12px] text-[var(--text-2)]">Citarum Bridge</td>
+          <td class="mono px-3 py-2 text-right text-[var(--text-3)]">—</td>
+          <td class="mono px-3 py-2 text-right">400.000.000</td>
+          <td class="px-3 py-2"><span class="chip" style="background:var(--warn-soft);color:var(--warn)">UNCHECKED</span></td>
+        </tr>
+        <tr class="border-t hover:bg-[#f9fafb]" style="border-color:var(--border-08)">
+          <td class="mono px-3 py-2 text-[12px]">2026-03-15</td>
+          <td class="mono px-3 py-2">LPB-003</td>
+          <td class="px-3 py-2 truncate max-w-[220px]">Split mismatch — finance vs admin</td>
+          <td class="px-3 py-2"><span class="chip" style="background:var(--danger-soft);color:var(--danger)">LPB</span></td>
+          <td class="px-3 py-2 text-[12px] text-[var(--text-2)]">Rumah Sakit Tipe C</td>
+          <td class="mono px-3 py-2 text-right">20.000.000</td>
+          <td class="mono px-3 py-2 text-right">18.000.000</td>
+          <td class="px-3 py-2"><span class="chip" style="background:var(--warn-soft);color:var(--warn)">UNCHECKED</span></td>
+        </tr>
+        <tr class="border-t hover:bg-[#f9fafb]" style="border-color:var(--border-08)">
+          <td class="mono px-3 py-2 text-[12px]">2026-03-12</td>
+          <td class="mono px-3 py-2">PO-0897</td>
+          <td class="px-3 py-2 truncate max-w-[220px]">Structural steel — batch 2</td>
+          <td class="px-3 py-2"><span class="chip" style="background:var(--warn-soft);color:var(--warn)">PAYABLE</span></td>
+          <td class="px-3 py-2 text-[12px] text-[var(--text-2)]">Citarum Bridge</td>
+          <td class="mono px-3 py-2 text-right">150.000.000</td>
+          <td class="mono px-3 py-2 text-right text-[var(--text-3)]">—</td>
+          <td class="px-3 py-2"><span class="chip" style="background:var(--success-soft);color:var(--success)">CHECKED</span></td>
+        </tr>
+        <tr class="border-t hover:bg-[#f9fafb]" style="border-color:var(--border-08)">
+          <td class="mono px-3 py-2 text-[12px]">2026-03-10</td>
+          <td class="mono px-3 py-2">SAL-001</td>
+          <td class="px-3 py-2 truncate max-w-[220px]">March payroll — site crew</td>
+          <td class="px-3 py-2"><span class="chip" style="background:var(--danger-soft);color:var(--danger)">EXPENSE</span></td>
+          <td class="px-3 py-2 text-[12px] text-[var(--text-2)]">Rumah Sakit Tipe C</td>
+          <td class="mono px-3 py-2 text-right">85.000.000</td>
+          <td class="mono px-3 py-2 text-right text-[var(--text-3)]">—</td>
+          <td class="px-3 py-2"><span class="chip" style="background:var(--success-soft);color:var(--success)">CHECKED</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Footer -->
+  <div class="flex items-center justify-between mt-3 text-[12px] text-[var(--text-3)]">
+    <div class="mono">Showing 1–6 of 2,340</div>
+    <div class="flex gap-1">
+      <button class="px-2 py-1 border rounded-[4px]" style="border-color:var(--border-12)">Prev</button>
+      <button class="px-2 py-1 border rounded-[4px] font-medium text-white" style="background:var(--accent)">1</button>
+      <button class="px-2 py-1 border rounded-[4px]" style="border-color:var(--border-12)">2</button>
+      <button class="px-2 py-1 border rounded-[4px]" style="border-color:var(--border-12)">3</button>
+      <button class="px-2 py-1 border rounded-[4px]" style="border-color:var(--border-12)">Next</button>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

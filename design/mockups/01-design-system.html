@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PRACTIS Design System — Enterprise Ledger</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* ===== Option A: Enterprise Ledger ===== */
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --surface-2: #f4f4f5;
+  --surface-3: #e9e9eb;
+  --border: #1f2937;
+  --border-08: rgba(31,41,55,0.08);
+  --border-12: rgba(31,41,55,0.12);
+  --text-1: #111827;
+  --text-2: #4b5563;
+  --text-3: #6b7280;
+  --text-4: #9ca3af;
+  --accent: #0f766e;
+  --accent-hover: #115e59;
+  --accent-soft: rgba(15,118,110,0.10);
+  --danger: #dc2626;
+  --danger-soft: rgba(220,38,38,0.10);
+  --success: #15803d;
+  --success-soft: rgba(21,128,61,0.12);
+  --warn: #b45309;
+  --warn-soft: rgba(180,83,9,0.12);
+  --radius-1: 2px;
+  --radius-2: 4px;
+  --radius-3: 6px;
+  --radius-4: 8px;
+  --shadow-whisper: 0 1px 1px rgba(17,24,39,0.04), 0 2px 2px rgba(17,24,39,0.04);
+  --shadow-card: 0 1px 1px rgba(17,24,39,0.05), 0 2px 2px rgba(17,24,39,0.05), 0 8px 16px -8px rgba(17,24,39,0.08);
+  --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+body { font-family: var(--font-ui); background: var(--bg); color: var(--text-1); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.caps-label { font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); }
+.card { background: var(--surface); border: 1px solid var(--border-08); border-radius: var(--radius-3); box-shadow: var(--shadow-card); }
+.swatch { border-radius: var(--radius-2); border: 1px solid var(--border-08); }
+.token-row { display: flex; align-items: center; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--border-08); }
+.token-row:last-child { border-bottom: none; }
+</style>
+</head>
+<body class="p-8">
+
+<!-- ============ HEADER ============ -->
+<div class="max-w-5xl mx-auto">
+  <div class="caps-label mb-2">PRACTIS Design System · v0.1</div>
+  <h1 class="text-3xl font-semibold tracking-tight mb-1">Enterprise Ledger</h1>
+  <p class="text-sm text-[var(--text-2)] mb-6">Light theme · construction cost management · dense tables · mono numerals · one accent</p>
+
+  <!-- ============ TOKENS ============ -->
+  <section class="mb-8">
+    <h2 class="caps-label mb-3">01 · Color Tokens</h2>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div>
+        <div class="swatch h-14 mb-1" style="background:#111827"></div>
+        <div class="mono text-xs">--text-1 · #111827</div>
+      </div>
+      <div>
+        <div class="swatch h-14 mb-1" style="background:#4b5563"></div>
+        <div class="mono text-xs">--text-2 · #4b5563</div>
+      </div>
+      <div>
+        <div class="swatch h-14 mb-1" style="background:#6b7280"></div>
+        <div class="mono text-xs">--text-3 · #6b7280</div>
+      </div>
+      <div>
+        <div class="swatch h-14 mb-1" style="background:#f4f4f5"></div>
+        <div class="mono text-xs">--surface-2 · #f4f4f5</div>
+      </div>
+      <div>
+        <div class="swatch h-14 mb-1" style="background:#0f766e"></div>
+        <div class="mono text-xs">--accent · #0f766e</div>
+      </div>
+      <div>
+        <div class="swatch h-14 mb-1" style="background:#dc2626"></div>
+        <div class="mono text-xs">--danger · #dc2626</div>
+      </div>
+      <div>
+        <div class="swatch h-14 mb-1" style="background:#15803d"></div>
+        <div class="mono text-xs">--success · #15803d</div>
+      </div>
+      <div>
+        <div class="swatch h-14 mb-1" style="background:#b45309"></div>
+        <div class="mono text-xs">--warn · #b45309</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ TYPOGRAPHY ============ -->
+  <section class="mb-8">
+    <h2 class="caps-label mb-3">02 · Typography</h2>
+    <div class="card p-6">
+      <div class="grid grid-cols-2 gap-6">
+        <div>
+          <div class="caps-label mb-2">UI — Inter</div>
+          <div class="text-[26px] font-semibold tracking-tight mb-1">Page title · 26px/600</div>
+          <div class="text-[17px] font-semibold mb-1">Section title · 17px/600</div>
+          <div class="text-[13px] font-medium mb-1">Table header · 13px/500</div>
+          <div class="text-[13px] text-[var(--text-2)]">Body · 13px/400</div>
+        </div>
+        <div>
+          <div class="caps-label mb-2">Mono — JetBrains Mono (data)</div>
+          <div class="mono text-[20px] font-semibold mb-1">Rp 1.234.567.890</div>
+          <div class="mono text-[13px] mb-1">INV-0224 · 2026-03-14</div>
+          <div class="mono text-[11px] text-[var(--text-3)] caps">CHECKED · CASHIN-01</div>
+          <div class="mono text-[13px] text-[var(--accent)]">+Rp 300.000.000</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ COMPONENTS ============ -->
+  <section class="mb-8">
+    <h2 class="caps-label mb-3">03 · Buttons</h2>
+    <div class="card p-6 flex flex-wrap gap-3 items-center">
+      <button class="px-3 py-1.5 text-[13px] font-medium text-white rounded-[6px]" style="background:var(--accent)">Primary action</button>
+      <button class="px-3 py-1.5 text-[13px] font-medium rounded-[6px] border" style="border-color:var(--border-12); color:var(--text-2)">Secondary</button>
+      <button class="px-3 py-1.5 text-[13px] font-medium text-[var(--danger)] rounded-[6px] border" style="border-color:var(--danger); background:var(--danger-soft)">Danger</button>
+      <button class="px-3 py-1.5 text-[13px] font-medium text-[var(--text-3)] rounded-[6px]" disabled>Disabled</button>
+    </div>
+  </section>
+
+  <section class="mb-8">
+    <h2 class="caps-label mb-3">04 · Status Chips (10-16% opacity bg)</h2>
+    <div class="card p-6 flex flex-wrap gap-3 items-center">
+      <span class="px-2 py-0.5 text-[11px] font-semibold rounded-[4px]" style="background:var(--success-soft); color:var(--success)">CHECKED</span>
+      <span class="px-2 py-0.5 text-[11px] font-semibold rounded-[4px]" style="background:var(--warn-soft); color:var(--warn)">PENDING</span>
+      <span class="px-2 py-0.5 text-[11px] font-semibold rounded-[4px]" style="background:var(--danger-soft); color:var(--danger)">OVER</span>
+      <span class="px-2 py-0.5 text-[11px] font-semibold rounded-[4px]" style="background:rgba(107,114,128,0.12); color:var(--text-2)">DRAFT</span>
+      <span class="px-2 py-0.5 text-[11px] font-semibold rounded-[4px]" style="background:var(--accent-soft); color:var(--accent)">ACTIVE</span>
+    </div>
+  </section>
+
+  <!-- ============ TABLE ============ -->
+  <section class="mb-8">
+    <h2 class="caps-label mb-3">05 · Dense Table (36px rows, sticky header, mono numbers)</h2>
+    <div class="card overflow-hidden">
+      <table class="w-full text-[13px]">
+        <thead>
+          <tr class="text-left" style="background:var(--surface-2)">
+            <th class="caps-label px-3 py-2 font-medium">Document</th>
+            <th class="caps-label px-3 py-2 text-right font-medium">Amount</th>
+            <th class="caps-label px-3 py-2 text-right font-medium">Outstanding</th>
+            <th class="caps-label px-3 py-2 font-medium">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="border-t" style="border-color:var(--border-08)">
+            <td class="mono px-3 py-2">INV-0224</td>
+            <td class="mono px-3 py-2 text-right">400.000.000</td>
+            <td class="mono px-3 py-2 text-right text-[var(--warn)]">60.000.000</td>
+            <td class="px-3 py-2"><span class="px-2 py-0.5 text-[11px] font-semibold rounded-[4px]" style="background:var(--warn-soft); color:var(--warn)">PARTIAL</span></td>
+          </tr>
+          <tr class="border-t" style="border-color:var(--border-08)">
+            <td class="mono px-3 py-2">INV-0231</td>
+            <td class="mono px-3 py-2 text-right">125.000.000</td>
+            <td class="mono px-3 py-2 text-right text-[var(--success)]">0</td>
+            <td class="px-3 py-2"><span class="px-2 py-0.5 text-[11px] font-semibold rounded-[4px]" style="background:var(--success-soft); color:var(--success)">SETTLED</span></td>
+          </tr>
+          <tr class="border-t" style="border-color:var(--border-08)">
+            <td class="mono px-3 py-2">PO-9001</td>
+            <td class="mono px-3 py-2 text-right">90.000.000</td>
+            <td class="mono px-3 py-2 text-right text-[var(--danger)]">90.000.000</td>
+            <td class="px-3 py-2"><span class="px-2 py-0.5 text-[11px] font-semibold rounded-[4px]" style="background:var(--danger-soft); color:var(--danger)">UNPAID</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ TYPOGRAPHY / RADIUS ============ -->
+  <section class="mb-8">
+    <h2 class="caps-label mb-3">06 · Radius + Shadow</h2>
+    <div class="card p-6 flex gap-4 items-center">
+      <div class="w-14 h-14" style="border:1px solid var(--border-12); border-radius:2px; background:white"></div>
+      <div class="w-14 h-14" style="border:1px solid var(--border-12); border-radius:4px; background:white"></div>
+      <div class="w-14 h-14" style="border:1px solid var(--border-12); border-radius:6px; background:white"></div>
+      <div class="w-14 h-14" style="border:1px solid var(--border-12); border-radius:8px; background:white"></div>
+      <div class="mono text-xs ml-2">2px · 4px · 6px · 8px — nothing pill-shaped</div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

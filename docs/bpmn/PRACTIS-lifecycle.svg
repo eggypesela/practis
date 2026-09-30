@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="1600" height="1150" viewBox="0 0 1600 1150"
+     font-family="Arial, Helvetica, sans-serif" font-size="11">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+    <marker id="arrowD" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#888"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1600" height="1150" fill="#ffffff"/>
+
+  <!-- ============ LANES (swimlanes) ============ -->
+  <!-- vertical lanes x: 0-1600 -->
+  <!-- Admin -->
+  <rect x="0" y="40" width="1600" height="110" fill="#f5f7fa" stroke="#999" stroke-width="1"/>
+  <text x="14" y="90" font-size="12" font-weight="bold" fill="#333">Administrator</text>
+  <!-- PM -->
+  <rect x="0" y="150" width="1600" height="110" fill="#f0f4f8" stroke="#999" stroke-width="1"/>
+  <text x="14" y="200" font-size="12" font-weight="bold" fill="#333">Project Manager</text>
+  <!-- Project Controller -->
+  <rect x="0" y="260" width="1600" height="110" fill="#eef4ee" stroke="#999" stroke-width="1"/>
+  <text x="14" y="310" font-size="12" font-weight="bold" fill="#333">Project Controller</text>
+  <!-- Cost Controller -->
+  <rect x="0" y="370" width="1600" height="110" fill="#fbf4e8" stroke="#999" stroke-width="1"/>
+  <text x="14" y="420" font-size="12" font-weight="bold" fill="#333">Cost Controller</text>
+  <!-- Finance -->
+  <rect x="0" y="480" width="1600" height="110" fill="#fdf0f0" stroke="#999" stroke-width="1"/>
+  <text x="14" y="530" font-size="12" font-weight="bold" fill="#333">Finance</text>
+  <!-- Procurement -->
+  <rect x="0" y="590" width="1600" height="90" fill="#f7f2fc" stroke="#999" stroke-width="1"/>
+  <text x="14" y="630" font-size="12" font-weight="bold" fill="#333">Procurement</text>
+  <!-- Project Admin -->
+  <rect x="0" y="680" width="1600" height="90" fill="#fff8e6" stroke="#999" stroke-width="1"/>
+  <text x="14" y="720" font-size="12" font-weight="bold" fill="#333">Project Admin</text>
+  <!-- Human Capital -->
+  <rect x="0" y="770" width="1600" height="70" fill="#eef6fb" stroke="#999" stroke-width="1"/>
+  <text x="14" y="800" font-size="12" font-weight="bold" fill="#333">Human Capital</text>
+
+  <text x="800" y="22" font-size="14" font-weight="bold" fill="#222" text-anchor="middle">PRACTIS — Project &amp; Cost Control (full lifecycle BPMN)</text>
+
+  <!-- headers x labels for phases -->
+  <text x="150" y="39" font-size="11" fill="#777" text-anchor="middle" transform="translate(0,28)">INITIATION</text>
+
+  <!-- ============ NODES ============ -->
+  <!-- ADMIN LANE -->
+  <!-- start -->
+  <circle cx="40" cy="95" r="11" fill="#fff" stroke="#333" stroke-width="1.5"/>
+  <!-- master data -->
+  <rect x="80" y="75" width="150" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="155" y="94" text-anchor="middle" fill="#222">Load master data</text>
+  <text x="155" y="106" text-anchor="middle" fill="#666" font-size="9">(auto-approved)</text>
+  <!-- teams -->
+  <rect x="270" y="75" width="140" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="340" y="94" text-anchor="middle" fill="#222">Teams + invites</text>
+
+  <!-- PM LANE -->
+  <!-- client register -->
+  <rect x="80" y="185" width="150" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="155" y="204" text-anchor="middle" fill="#222">Client register</text>
+  <!-- project register -->
+  <rect x="340" y="185" width="150" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="415" y="204" text-anchor="middle" fill="#222">Project register</text>
+  <!-- revenue method -->
+  <rect x="560" y="185" width="150" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="635" y="204" text-anchor="middle" fill="#222">Revenue method</text>
+  <!-- BCR approve -->
+  <rect x="1180" y="185" width="140" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="1250" y="204" text-anchor="middle" fill="#222">Approve BCR</text>
+  <!-- close operational -->
+  <rect x="1410" y="185" width="160" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="1490" y="204" text-anchor="middle" fill="#222">Close: operational</text>
+
+  <!-- PROJECT CONTROLLER LANE -->
+  <!-- WBS+RBS baseline -->
+  <rect x="80" y="295" width="160" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="160" y="314" text-anchor="middle" fill="#222">WBS + RBS baseline</text>
+  <!-- progress update -->
+  <rect x="460" y="295" width="150" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="535" y="314" text-anchor="middle" fill="#222">Progress update</text>
+  <text x="535" y="326" text-anchor="middle" fill="#666" font-size="9">(milestone ticks)</text>
+  <!-- WBS forecast -->
+  <rect x="900" y="295" width="140" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="970" y="314" text-anchor="middle" fill="#222">WBS forecast</text>
+  <!-- compile report -->
+  <rect x="1080" y="295" width="160" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="1160" y="314" text-anchor="middle" fill="#222">Compile PPR</text>
+  <text x="1160" y="326" text-anchor="middle" fill="#666" font-size="9">(SPI/CPI/receivables)</text>
+  <!-- initiate BCR -->
+  <rect x="1280" y="295" width="140" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="1350" y="314" text-anchor="middle" fill="#222">Initiate BCR</text>
+  <!-- close contractual -->
+  <rect x="1410" y="380" width="160" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="1490" y="399" text-anchor="middle" fill="#222">Close: contractual</text>
+
+  <!-- COST CONTROLLER LANE -->
+  <!-- CBS baseline -->
+  <rect x="290" y="405" width="150" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="365" y="424" text-anchor="middle" fill="#222">CBS baseline</text>
+  <text x="365" y="436" text-anchor="middle" fill="#666" font-size="9">(money book)</text>
+  <!-- cost update -->
+  <rect x="660" y="405" width="150" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="735" y="424" text-anchor="middle" fill="#222">Cost update</text>
+  <text x="735" y="436" text-anchor="middle" fill="#666" font-size="9">(CBS actuals)</text>
+  <!-- tag ledger -->
+  <rect x="850" y="405" width="150" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="925" y="424" text-anchor="middle" fill="#222">Tag ledger CBS</text>
+  <!-- CBS forecast -->
+  <rect x="1050" y="405" width="150" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="1125" y="424" text-anchor="middle" fill="#222">CBS forecast</text>
+  <text x="1125" y="436" text-anchor="middle" fill="#666" font-size="9">(EAC + override)</text>
+
+  <!-- FINANCE LANE -->
+  <!-- verify client -->
+  <rect x="270" y="515" width="140" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="340" y="534" text-anchor="middle" fill="#222">Verify client</text>
+  <!-- verify project -->
+  <rect x="420" y="515" width="140" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="490" y="534" text-anchor="middle" fill="#222">Verify project</text>
+  <!-- verify CBS -->
+  <rect x="450" y="515" width="140" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="520" y="534" text-anchor="middle" fill="#222">Verify CBS</text>
+  <!-- actuals -->
+  <rect x="700" y="515" width="140" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="770" y="534" text-anchor="middle" fill="#222">Actuals import</text>
+  <!-- invoices -->
+  <rect x="880" y="515" width="150" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="955" y="534" text-anchor="middle" fill="#222">Receivables/Payables</text>
+  <!-- revenue -->
+  <rect x="1060" y="515" width="140" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="1130" y="534" text-anchor="middle" fill="#222">Recognize revenue</text>
+  <!-- close financial -->
+  <rect x="1410" y="515" width="160" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="1490" y="534" text-anchor="middle" fill="#222">Close: financial</text>
+
+  <!-- PROCUREMENT -->
+  <!-- supplier register -->
+  <rect x="80" y="625" width="160" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="160" y="644" text-anchor="middle" fill="#222">Supplier register</text>
+  <!-- procurement -->
+  <rect x="820" y="625" width="150" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="895" y="644" text-anchor="middle" fill="#222">Procurement run</text>
+
+  <!-- PROJECT ADMIN -->
+  <!-- padmin update -->
+  <rect x="460" y="715" width="150" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="535" y="734" text-anchor="middle" fill="#222">Progress entry</text>
+  <!-- invoice status -->
+  <rect x="1060" y="715" width="160" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="1140" y="734" text-anchor="middle" fill="#222">Invoice status</text>
+
+  <!-- HR -->
+  <!-- hr contracts -->
+  <rect x="700" y="805" width="190" height="40" rx="6" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="795" y="824" text-anchor="middle" fill="#222">HR: employment/contracts</text>
+
+  <!-- ============ GATEWAYS ============ -->
+  <!-- project tier (skipped v1? no — used in BCR approval) -->
+  <path d="M 1330 90 l 22 22 l -22 22 l -22 -22 z" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="1330" y="95" text-anchor="middle" font-size="9" fill="#666">tier?</text>
+
+  <!-- BCR approved -->
+  <path d="M 1330 330 l 22 22 l -22 22 l -22 -22 z" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="1330" y="335" text-anchor="middle" font-size="9" fill="#666">BCR ok?</text>
+
+  <!-- work done -->
+  <path d="M 1330 590 l 22 22 l -22 22 l -22 -22 z" fill="#fff" stroke="#333" stroke-width="1.2"/>
+  <text x="1330" y="595" text-anchor="middle" font-size="9" fill="#666">work 100%?</text>
+
+  <!-- ============ EDGES (simplified straight lines for readability) ============ -->
+  <!-- Admin flow -->
+  <line x1="51" y1="95" x2="80" y2="95" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="230" y1="95" x2="270" y2="95" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+  <!-- PM chain -->
+  <line x1="155" y1="205" x2="415" y2="205" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <!-- parallel launch to revenue + baseline -->
+  <line x1="490" y1="205" x2="560" y2="205" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="635" y1="225" x2="160" y2="315" stroke="#888" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrowD)"/>
+  <line x1="635" y1="225" x2="365" y2="425" stroke="#888" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrowD)"/>
+
+  <!-- baseline chain -->
+  <line x1="160" y1="335" x2="200" y2="425" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="365" y1="445" x2="365" y2="505" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="520" y1="515" x2="676" y2="205" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+  <!-- monthly loop: planning -> progress -->
+  <line x1="676" y1="205" x2="535" y2="295" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="535" y1="335" x2="535" y2="380" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="535" y1="420" x2="660" y2="420" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="735" y1="420" x2="850" y2="420" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="925" y1="420" x2="925" y2="500" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <!-- actuals -> invoices -> revenue -> forecast -->
+  <line x1="770" y1="555" x2="770" y2="600" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="770" y1="600" x2="895" y2="620" stroke="#888" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrowD)"/>
+  <line x1="770" y1="600" x2="795" y2="800" stroke="#888" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrowD)"/>
+  <line x1="770" y1="555" x2="880" y2="535" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="1030" y1="535" x2="1060" y2="535" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="1130" y1="555" x2="970" y2="335" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <!-- forecast -> report -> BCR -->
+  <line x1="970" y1="295" x2="1160" y2="295" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="1240" y1="315" x2="1350" y2="315" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="1350" y1="295" x2="1350" y2="205" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <!-- BCR approval -> loop back (re-baseline) -->
+  <line x1="1250" y1="205" x2="675" y2="205" stroke="#cc4444" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <!-- close chain -->
+  <line x1="1490" y1="225" x2="1490" y2="465" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="1490" y1="465" x2="1490" y2="515" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+  <line x1="1490" y1="555" x2="1490" y2="620" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+  <!-- end event (closing) -->
+  <circle cx="1490" cy="880" r="12" fill="#fff" stroke="#333" stroke-width="1.6"/>
+  <circle cx="1490" cy="880" r="6" fill="#333"/>
+  <text x="1490" y="905" text-anchor="middle" font-size="10" fill="#666">Project archived</text>
+
+  <!-- legend -->
+  <g transform="translate(30, 925)">
+    <rect x="0" y="0" width="300" height="80" fill="#fafafa" stroke="#ccc"/>
+    <text x="10" y="18" font-weight="bold" fill="#444">Legend</text>
+    <rect x="10" y="28" width="16" height="14" rx="3" fill="#fff" stroke="#333"/>
+    <text x="32" y="40" fill="#333">Task (activity)</text>
+    <path d="M 12 62 l 12 12 l -12 12 l -12 -12 z" fill="#fff" stroke="#333"/>
+    <text x="32" y="72" fill="#333">Gateway (decision)</text>
+    <circle cx="18" cy="92" r="9" fill="#fff" stroke="#333"/>
+    <text x="32" y="96" fill="#333">Start / End event</text>
+    <line x1="10" y1="112" x2="40" y2="112" stroke="#555" stroke-width="1.4" marker-end="url(#arrow)"/>
+    <text x="48" y="115" fill="#333">Sequence flow</text>
+    <line x1="120" y1="112" x2="150" y2="112" stroke="#cc4444" stroke-width="1.4" marker-end="url(#arrow)"/>
+    <text x="158" y="115" fill="#cc4444">re-baseline</text>
+  </g>
+</svg>

@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PRACTIS — Dashboard</title>
+<link rel="stylesheet" href="fonts-local.css">
+<link rel="stylesheet" href="app.css">
+</head><body>
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-grid" viewBox="0 0 24 24"><path d="M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 5.5A1.5 1.5 0 0 1 4.5 4h4.2c.5 0 .8.2 1.1.5L11 6h8.5A1.5 1.5 0 0 1 21 7.5v11A1.5 1.5 0 0 1 19.5 20h-15A1.5 1.5 0 0 1 3 18.5z"/></symbol>
+<symbol id="i-book" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M4 2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm2 4v2h12V6Zm0 4v2h12v-2Zm0 4v2h8v-2Z"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M4 2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm10.6 6.2-5 5-2.2-2.2-1.4 1.4 3.6 3.6 6.4-6.4Z"/></symbol>
+<symbol id="i-in" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm-1 3.5h2v6.5h3l-4 4.6L8 12h3Z"/></symbol>
+<symbol id="i-out" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm-1 16.5h2V12h3l-4-4.6L8 12h3Z"/></symbol>
+<symbol id="i-tree" viewBox="0 0 24 24"><path d="M3 3h6v4H3zm0 7h6v4H3zm0 7h6v4H3zm12-7h6v4h-6zM9.2 4.6h1.8v14.8H9.2zm1.8 6.7h4v1.8h-4z"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="M12 3l5 5h-3v6H10V8H7zM5 18h14v2H5z"/></symbol>
+<symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20h16v1.6H4zM6.5 12h2.6v6H6.5zm4.6-5h2.6v11h-2.6zm4.6 3h2.6v8h-2.6z"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M5 2h14v20H5Zm3 4v2h8V6Zm0 4v2h8v-2Zm0 4v2h5v-2Z"/></symbol>
+<symbol id="i-gear" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M10.6 2h2.8l.4 2.7c.7.2 1.4.5 2 .9l2.3-1.5 2 2-1.5 2.3c.4.6.7 1.3.9 2l2.7.4v2.8l-2.7.4c-.2.7-.5 1.4-.9 2l1.5 2.3-2 2-2.3-1.5c-.6.4-1.3.7-2 .9L13.4 22h-2.8l-.4-2.7c-.7-.2-1.4-.5-2-.9l-2.3 1.5-2-2 1.5-2.3c-.4-.6-.7-1.3-.9-2L1.8 13.2v-2.8l2.7-.4c.2-.7.5-1.4.9-2L4 5.7l2-2 2.3 1.5c.6-.4 1.3-.7 2-.9zm1.4 6.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6Z"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M10.5 3a7.5 7.5 0 1 0 4.6 13.4l4.2 4.2 1.4-1.4-4.2-4.2A7.5 7.5 0 0 0 10.5 3Zm0 2a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11Z"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M12 2a6 6 0 0 0-6 6v3.6L4 15v1.5h16V15l-2-3.4V8a6 6 0 0 0-6-6zm0 20a2.6 2.6 0 0 0 2.5-2h-5A2.6 2.6 0 0 0 12 22z"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7z"/></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="M12 15.4 5.6 9 7 7.6l5 5 5-5 1.4 1.4z"/></symbol>
+<symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 5h18v2H3zm0 6h18v2H3zm0 6h18v2H3z"/></symbol>
+<symbol id="i-dl" viewBox="0 0 24 24"><path d="M11 3h2v9h3.5L12 17 7.5 12H11zM5 19h14v2H5z"/></symbol>
+<symbol id="i-cart" viewBox="0 0 24 24"><path d="M7 18a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm10 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM3 3h3l2.6 11h10l2.4-8H6.2"/></symbol>
+<symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 2 1.5 21h21zM11 9h2v6h-2zm0 8h2v2h-2z"/></symbol>
+<symbol id="i-badge" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2a6 6 0 1 0 0 12 6 6 0 0 0 0-12Zm2.6 10.6-1.4 1.4-1.8-1.8-3 3-1.4-1.4 3-3L8.6 9 10 7.6l1.8 1.8 3-3 1.4 1.4-3 3zM6 15l-2 7 8-4 8 4-2-7a8 8 0 0 1-12 0Z"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><path d="M9 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm0 2c-3.3 0-6 1.8-6 4v2h12v-2c0-2.2-2.7-4-6-4zm7-2a3 3 0 1 0 0-6v6zm1 2c-2 .1-3.5 1-4.4 2.2.8-.1 1.6.1 2.3.4 1.4.5 2.6 1.4 3.1 2.4H22v-2c0-1.8-2.2-3.2-5-3z"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 5h-2v6l4.6 2.8 1-1.7-3.6-2.2z"/></symbol>
+<symbol id="i-cash" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M3 6h18a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Zm2 3v6h14V9zm7 1.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M12 3 2 11h2.5v10h6v-6h3v6h6V11H22z"/></symbol>
+</defs></svg>
+<div class="shell">
+<aside class="sb">
+  <div class="brand">
+    <div class="mark"><svg width="15" height="15"><use href="#i-book"/></svg></div>
+    <div class="brand-txt"><b>PRACTIS</b><span>Cost Control</span></div>
+  </div>
+  <nav class="nav"><div class="grp caps">Portfolio</div><a href="#" data-proj="0" class="on"><svg><use href="#i-grid"/></svg><span class="lbl">Dashboard</span></a><a href="#" data-proj="0"><svg><use href="#i-folder"/></svg><span class="lbl">Projects</span></a><a href="#" data-proj="0"><svg><use href="#i-chart"/></svg><span class="lbl">Reports</span></a><div class="pctx"><span class="pc-lbl caps">Project</span><button class="pc-btn"><span class="pc-dot"></span><span class="pc-name">Citarum Bridge</span><svg class="pc-chev"><use href="#i-chev"/></svg></button></div><a href="#" data-proj="1"><svg><use href="#i-home"/></svg><span class="lbl">Overview</span></a><a href="#" data-proj="1"><svg><use href="#i-tree"/></svg><span class="lbl">WBS</span></a><a href="#" data-proj="1"><svg><use href="#i-chart"/></svg><span class="lbl">CBS plan</span></a><a href="#" data-proj="1"><svg><use href="#i-book"/></svg><span class="lbl">Ledger</span></a><a href="#" data-proj="1"><svg><use href="#i-check"/></svg><span class="lbl">Tagging queue</span><span class="pill">44</span></a><a href="#" data-proj="1"><svg><use href="#i-cash"/></svg><span class="lbl">Cash advances</span></a><a href="#" data-proj="1"><svg><use href="#i-file"/></svg><span class="lbl">Expense reports</span><span class="pill">2</span></a><a href="#" data-proj="1"><svg><use href="#i-check"/></svg><span class="lbl">Reconciliation</span></a><a href="#" data-proj="1"><svg><use href="#i-in"/></svg><span class="lbl">Revenue</span></a><a href="#" data-proj="1"><svg><use href="#i-cart"/></svg><span class="lbl">Procurement</span></a><a href="#" data-proj="1"><svg><use href="#i-badge"/></svg><span class="lbl">Acceptance</span></a><a href="#" data-proj="1"><svg><use href="#i-dl"/></svg><span class="lbl">Update report</span></a><a href="#" data-proj="1"><svg><use href="#i-file"/></svg><span class="lbl">BCR register</span></a><div class="grp caps">Administration</div><a href="#" data-proj="0"><svg><use href="#i-users"/></svg><span class="lbl">Users & roles</span></a><a href="#" data-proj="0"><svg><use href="#i-gear"/></svg><span class="lbl">Master data</span></a><a href="#" data-proj="0"><svg><use href="#i-clock"/></svg><span class="lbl">Jobs</span></a></nav>
+  <div class="sb-foot">
+    <div class="av">RC</div>
+    <div class="who"><b>Ayu Kusuma</b><span>Administrator</span></div>
+  </div>
+</aside>
+<main class="main">
+<header class="top">
+  <button class="iconbtn"><svg><use href="#i-menu"/></svg></button>
+  <div class="crumb"><b>Portfolio</b><span class="sep">/</span><b>Dashboard</b></div>
+  <div class="search"><svg><use href="#i-search"/></svg>
+    <input placeholder="Search documents…"></div>
+  <button class="iconbtn"><svg><use href="#i-bell"/></svg></button>
+  <div class="avatarbtn">RC</div>
+</header>
+<div class="wrap">
+  <div class="hd"><div><h1>Dashboard</h1><p>Portfolio overview · Friday, 25 Sep 2026</p></div><div class="act"><button class="btn"><svg><use href="#i-dl"/></svg>Export</button><button class="btn pri"><svg><use href="#i-plus"/></svg>New project</button></div></div>
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-folder"/></svg>Active projects</div>
+    <div class="v">5</div><div class="f"><span class="up">+1</span> this month</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-chart"/></svg>Contract value</div>
+    <div class="v sm">Rp 12.480.000.000</div><div class="f">across 5 projects</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-book"/></svg>Cost to date</div>
+    <div class="v sm">Rp 9.252.000.000</div>
+    <div class="f"><span class="wn">74%</span> of contract</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-in"/></svg>Receivable outstanding</div>
+    <div class="v sm">Rp 1.240.000.000</div>
+    <div class="f"><span class="dn">3 invoices</span> overdue &gt; 30d</div></div>
+</div>
+
+<div class="grid k2" style="margin-top:12px">
+  <div class="card">
+    <div class="card-hd"><h2>Projects</h2><a class="r" href="#">View all</a></div>
+    <div class="tw"><table>
+      <thead><tr><th>Project</th><th class="r">Contract</th><th class="r">Cost to date</th>
+        <th>Progress</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><div class="tname">Citarum Bridge</div><div class="sub">PRJ-2401 · Bridge</div></td>
+          <td class="num">4.200.000.000</td><td class="num">3.150.000.000</td>
+          <td><div class="bar" style="width:78px"><i class="ok" style="width:75%"></i></div>
+            <div class="sub mono">75%</div></td>
+          <td><span class="chip ok">ON TRACK</span></td></tr>
+        <tr><td><div class="tname">Gedung Dinas PUPR</div><div class="sub">PRJ-2402 · Building</div></td>
+          <td class="num">3.600.000.000</td><td class="num">2.952.000.000</td>
+          <td><div class="bar" style="width:78px"><i class="wn" style="width:82%"></i></div>
+            <div class="sub mono">82%</div></td>
+          <td><span class="chip wn">WATCH</span></td></tr>
+        <tr><td><div class="tname">Rumah Sakit Tipe C</div><div class="sub">PRJ-2403 · Building</div></td>
+          <td class="num">2.880.000.000</td><td class="num">2.010.000.000</td>
+          <td><div class="bar" style="width:78px"><i class="ok" style="width:70%"></i></div>
+            <div class="sub mono">70%</div></td>
+          <td><span class="chip ok">ON TRACK</span></td></tr>
+        <tr><td><div class="tname">Irigasi Saluran Sekunder</div><div class="sub">PRJ-2404 · Irrigation</div></td>
+          <td class="num">1.200.000.000</td><td class="num">450.000.000</td>
+          <td><div class="bar" style="width:78px"><i class="ok" style="width:38%"></i></div>
+            <div class="sub mono">38%</div></td>
+          <td><span class="chip ok">ON TRACK</span></td></tr>
+        <tr><td><div class="tname">Gedung Serbaguna</div><div class="sub">PRJ-2405 · Building</div></td>
+          <td class="num">600.000.000</td><td class="num">690.000.000</td>
+          <td><div class="bar" style="width:78px"><i class="bd" style="width:100%"></i></div>
+            <div class="sub mono dn">115%</div></td>
+          <td><span class="chip bd">OVER</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd"><h2>Needs attention</h2><span class="r">4 open</span></div>
+    <div class="rows">
+      <div class="row"><div class="ic bd"><svg><use href="#i-warn"/></svg></div>
+        <div class="tx"><div class="t">Cement invoice unpaid <span class="chip bd">OVER</span></div>
+          <div class="d">PO-9001 · Gedung Dinas PUPR · 45 days past due</div></div>
+        <div class="tm">90.000.000</div></div>
+      <div class="row"><div class="ic wn"><svg><use href="#i-check"/></svg></div>
+        <div class="tx"><div class="t">LPB split mismatch <span class="chip wn">CHECK</span></div>
+          <div class="d">LPB-003 · finance 20.000.000 vs admin 18.000.000</div></div>
+        <div class="tm">2.000.000</div></div>
+      <div class="row"><div class="ic bl"><svg><use href="#i-up"/></svg></div>
+        <div class="tx"><div class="t">Import staged <span class="chip bl">IMPORT</span></div>
+          <div class="d">ledger-mar26.xlsx · awaiting confirmation</div></div>
+        <div class="tm">2.340 rows</div></div>
+      <div class="row"><div class="ic wn"><svg><use href="#i-book"/></svg></div>
+        <div class="tx"><div class="t">Untagged cost lines <span class="chip nt">QUEUE</span></div>
+          <div class="d">No WBS/CBS tag · blocks cost reporting</div></div>
+        <div class="tm">44 lines</div></div>
+    </div>
+    <div class="card-hd" style="border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+      <h2 style="color:var(--t3);font-weight:600;font-size:12px">Resolved this week</h2>
+      <span class="r" style="color:var(--t3)">2</span></div>
+    <div class="rows">
+      <div class="row"><div class="ic ok"><svg><use href="#i-in"/></svg></div>
+        <div class="tx"><div class="t">Progress billing received <span class="chip ok">CLEAR</span></div>
+          <div class="d">INV-0224 · milestone 4 · Rumah Sakit Tipe C</div></div>
+        <div class="tm">400.000.000</div></div>
+      <div class="row"><div class="ic ok"><svg><use href="#i-check"/></svg></div>
+        <div class="tx"><div class="t">Retainage cleared <span class="chip ok">CLEAR</span></div>
+          <div class="d">RET-0044 · 10% milestone 4 · released</div></div>
+        <div class="tm">40.000.000</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="grid k2" style="margin-top:12px">
+  <div class="card">
+    <div class="card-hd"><h2>CPI / SPI trend</h2><span class="r">12 months · parity = 1.0</span></div>
+    <div class="chart">
+      <svg viewBox="0 0 560 182" role="img" aria-label="CPI and SPI trend, 12 months">
+        <!-- grid -->
+        <g stroke="#e8ecf2" stroke-width="1">
+          <line x1="46" y1="18" x2="540" y2="18"/>
+          <line x1="46" y1="64" x2="540" y2="64"/>
+          <line x1="46" y1="110" x2="540" y2="110"/>
+          <line x1="46" y1="156" x2="540" y2="156"/>
+        </g>
+        <!-- parity line 1.0 -->
+        <line x1="46" y1="64" x2="540" y2="64" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4 3"/>
+        <text x="4" y="22" class="ax">1.10</text>
+        <text x="10" y="68" class="ax">1.00</text>
+        <text x="4" y="114" class="ax">0.90</text>
+        <text x="4" y="160" class="ax">0.80</text>
+        <!-- month labels: 12 months Nov'25..Oct'26 -->
+        <g class="ax" text-anchor="middle">
+          <text x="46" y="172">Nov</text><text x="87" y="172">Dec</text>
+          <text x="128" y="172">Jan</text><text x="169" y="172">Feb</text>
+          <text x="210" y="172">Mar</text><text x="251" y="172">Apr</text>
+          <text x="292" y="172">May</text><text x="333" y="172">Jun</text>
+          <text x="374" y="172">Jul</text><text x="415" y="172">Aug</text>
+          <text x="456" y="172">Sep</text><text x="497" y="172">Oct</text>
+        </g>
+        <!-- SPI (green): 1.03 -> 0.96 -->
+        <polyline fill="none" stroke="#22c55e" stroke-width="2"
+          points="46,50.2 87,54.8 128,59.4 169,64.0 210,68.6 252,73.2 293,70.9 334,73.2 375,75.5 416,77.8 457,80.1 498,82.4"/>
+        <circle cx="498" cy="82.4" r="3" fill="#22c55e"/>
+        <!-- CPI (blue): 1.05 -> 0.88 -->
+        <polyline fill="none" stroke="#2563eb" stroke-width="2"
+          points="46,41.0 87,50.2 128,59.4 169,68.6 210,77.8 252,87.0 293,91.6 334,96.2 375,100.8 416,105.4 457,110.0 498,119.2"/>
+        <circle cx="498" cy="119.2" r="3" fill="#2563eb"/>
+      </svg>
+      <div class="legend">
+        <span><i class="lg cpi"></i>CPI 0.88</span>
+        <span><i class="lg spi"></i>SPI 0.96</span>
+        <span class="lgt">drifting — Citarum behind plan</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd"><h2>Cashflow forecast</h2><span class="r">planned vs actual · cumulative</span></div>
+    <div class="chart">
+      <svg viewBox="0 0 560 182" role="img" aria-label="Cashflow forecast, planned vs actual">
+        <g stroke="#e8ecf2" stroke-width="1">
+          <line x1="46" y1="18" x2="540" y2="18"/>
+          <line x1="46" y1="64" x2="540" y2="64"/>
+          <line x1="46" y1="110" x2="540" y2="110"/>
+          <line x1="46" y1="156" x2="540" y2="156"/>
+        </g>
+        <text x="4" y="22" class="ax">4.2 mld</text>
+        <text x="4" y="68" class="ax">2.8</text>
+        <text x="4" y="114" class="ax">1.4</text>
+        <text x="4" y="160" class="ax">0</text>
+        <g class="ax" text-anchor="middle">
+          <text x="72" y="176">Apr</text><text x="162" y="176">May</text>
+          <text x="252" y="176">Jun</text><text x="342" y="176">Jul</text>
+          <text x="432" y="176">Aug</text><text x="522" y="176">Sep</text>
+        </g>
+        <!-- planned (dashed gray) -->
+        <polyline fill="none" stroke="#94a3b8" stroke-width="2" stroke-dasharray="5 3"
+          points="72,22 162,40 252,60 342,72 432,82 522,90"/>
+        <!-- actual (blue) cumulative cost -->
+        <polyline fill="none" stroke="#2563eb" stroke-width="2"
+          points="72,46 162,60 252,80 342,104 432,124 522,138"/>
+        <circle cx="522" cy="138" r="3" fill="#2563eb"/>
+      </svg>
+      <div class="legend">
+        <span><i class="lg act"></i>Actual</span>
+        <span><i class="lg pln"></i>Planned</span>
+        <span class="lgt">−Rp 1.1 mld below plan</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="grid k3b" style="margin-top:12px">
+  <div class="card">
+    <div class="card-hd"><h2>Cost by category</h2><span class="r">Mar 2026</span></div>
+    <div class="mix">
+      <div class="m"><span class="n">Materials</span>
+        <span class="b"><i style="width:100%"></i></span><span class="v">3.900.000.000</span></div>
+      <div class="m"><span class="n">Subcontractor</span>
+        <span class="b"><i style="width:73%"></i></span><span class="v">2.850.000.000</span></div>
+      <div class="m"><span class="n">Direct labor</span>
+        <span class="b"><i style="width:39%"></i></span><span class="v">1.520.000.000</span></div>
+      <div class="m"><span class="n">Equipment rental</span>
+        <span class="b"><i style="width:17%"></i></span><span class="v">650.000.000</span></div>
+      <div class="m"><span class="n">Overhead</span>
+        <span class="b"><i style="width:9%"></i></span><span class="v">332.000.000</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd"><h2>Project cash position</h2><span class="r">net</span></div>
+    <div class="tw"><table>
+      <thead><tr><th>Project</th><th class="r">Billed</th><th class="r">Paid</th>
+        <th class="r">Outstanding</th></tr></thead>
+      <tbody>
+        <tr><td class="tname">Rumah Sakit Tipe C</td><td class="num">400.000.000</td>
+          <td class="num">300.000.000</td><td class="num">60.000.000</td></tr>
+        <tr><td class="tname">Gedung Dinas PUPR</td><td class="num">90.000.000</td>
+          <td class="num">30.000.000</td><td class="num">60.000.000</td></tr>
+        <tr><td class="tname">Citarum Bridge</td><td class="num">240.000.000</td>
+          <td class="num mut">—</td><td class="num">240.000.000</td></tr>
+        <tr class="tot"><td>Total</td><td class="num">730.000.000</td>
+          <td class="num">330.000.000</td><td class="num">360.000.000</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd"><h2>Recent activity</h2><a class="r" href="#">Audit log</a></div>
+    <div class="rows">
+      <div class="row"><div class="ic bl"><svg><use href="#i-book"/></svg></div>
+        <div class="tx"><div class="t">Ledger entry posted</div>
+          <div class="d">CASHIN-0114 · 300.000.000</div></div>
+        <div class="tm">09:41</div></div>
+      <div class="row"><div class="ic wn"><svg><use href="#i-check"/></svg></div>
+        <div class="tx"><div class="t">LPB-003 flagged</div>
+          <div class="d">split mismatch · needs correction</div></div>
+        <div class="tm">08:57</div></div>
+      <div class="row"><div class="ic bl"><svg><use href="#i-up"/></svg></div>
+        <div class="tx"><div class="t">Import staged</div>
+          <div class="d">ledger-mar26.xlsx · 2.340 rows</div></div>
+        <div class="tm">08:12</div></div>
+      <div class="row"><div class="ic ok"><svg><use href="#i-tree"/></svg></div>
+        <div class="tx"><div class="t">WBS tags applied</div>
+          <div class="d">PO-0897 · steel structure</div></div>
+        <div class="tm">Yst</div></div>
+    </div>
+  </div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

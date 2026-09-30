@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PRACTIS — Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #fafafa; --surface: #ffffff; --surface-2: #f4f4f5; --surface-3: #e9e9eb;
+  --border-08: rgba(31,41,55,0.08); --border-12: rgba(31,41,55,0.12);
+  --text-1: #111827; --text-2: #4b5563; --text-3: #6b7280; --text-4: #9ca3af;
+  --accent: #0f766e; --accent-hover: #115e59; --accent-soft: rgba(15,118,110,0.10);
+  --danger: #dc2626; --danger-soft: rgba(220,38,38,0.10);
+  --success: #15803d; --success-soft: rgba(21,128,61,0.12);
+  --warn: #b45309; --warn-soft: rgba(180,83,9,0.12);
+  --shadow-card: 0 1px 1px rgba(17,24,39,0.05), 0 2px 2px rgba(17,24,39,0.05), 0 8px 16px -8px rgba(17,24,39,0.08);
+  --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+body { font-family: var(--font-ui); background: var(--bg); color: var(--text-1); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.caps-label { font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-3); }
+.card { background: var(--surface); border: 1px solid var(--border-08); border-radius: 6px; box-shadow: var(--shadow-card); }
+.chip { display:inline-flex; align-items:center; padding:2px 8px; font-size:11px; font-weight:600; border-radius:4px; }
+@media (max-width: 900px) {
+  body { max-width: 100% !important; overflow-x: hidden !important; }
+  .fixed.inset-y-0 { position: static !important; width: 100% !important; height: auto !important; flex-direction: row !important; align-items: center !important; padding: 8px 16px !important; }
+  .fixed.inset-y-0 nav { display: none !important; }
+  .fixed.inset-y-0 .border-t { display: none !important; }
+  .fixed.inset-y-0 .border-b { border-bottom: none !important; padding: 0 !important; }
+  .ml-52 { margin-left: 0 !important; padding: 16px !important; }
+  .grid.grid-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .card.overflow-hidden { overflow-x: auto !important; }
+  .flex.items-start.justify-between { flex-direction: column !important; gap: 12px !important; }
+  table { min-width: 720px !important; }
+  .text-\[28px\] { font-size: clamp(14px, 3.8vw, 16px) !important; line-height: 1.25 !important; letter-spacing: -0.01em !important; }
+  .card.overflow-hidden table { display: none; }
+  .card.overflow-hidden .proj-stack { display: block !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- ============ SIDEBAR ============ -->
+<div class="fixed inset-y-0 left-0 w-52 bg-[#111827] text-white flex flex-col" style="background:#111827">
+  <div class="px-4 py-4 border-b border-white/10">
+    <div class="text-[15px] font-semibold tracking-tight">PRACTIS</div>
+    <div class="caps-label text-[10px] mt-0.5" style="color:#9ca3af">Cost Control</div>
+  </div>
+  <nav class="flex-1 py-2 px-2 space-y-0.5 text-[13px]">
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] bg-white/10 font-medium">Dashboard</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">Projects</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">Ledger</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">LPB Reconciliation</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">Receivable Register</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">Payable Register</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">WBS / CBS</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">Imports</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">Reports</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">BCR Register</a>
+    <a class="flex items-center gap-2 px-2 py-1.5 rounded-[4px] text-gray-300 hover:bg-white/5">Settings</a>
+  </nav>
+  <div class="px-4 py-3 border-t border-white/10 text-[12px] text-gray-400">
+    <div class="font-medium text-gray-200">Ayu Kusuma</div>
+    <div>Administrator</div>
+  </div>
+</div>
+
+<!-- ============ MAIN ============ -->
+<div class="ml-52 p-6">
+
+  <!-- Page header -->
+  <div class="flex items-start justify-between mb-6">
+    <div>
+      <h1 class="text-[26px] font-semibold tracking-tight">Dashboard</h1>
+      <p class="text-[13px] text-[var(--text-2)] mt-0.5">Portfolio overview · Friday, 25 Sep 2026</p>
+    </div>
+    <div class="flex gap-2">
+      <button class="px-3 py-1.5 text-[13px] font-medium text-[var(--text-2)] border rounded-[6px]" style="border-color:var(--border-12)">Export</button>
+      <button class="px-3 py-1.5 text-[13px] font-medium text-white rounded-[6px]" style="background:var(--accent)">+ New Project</button>
+    </div>
+  </div>
+
+  <!-- KPI row -->
+  <div class="grid grid-cols-4 gap-4 mb-6">
+    <div class="card p-4">
+      <div class="caps-label mb-1">Active Projects</div>
+      <div class="mono text-[28px] font-semibold leading-none">5</div>
+      <div class="text-[12px] text-[var(--success)] mt-1 mono">+1 this month</div>
+    </div>
+    <div class="card p-4">
+      <div class="caps-label mb-1">Portfolio Contract Value</div>
+      <div class="mono text-[28px] font-semibold leading-none whitespace-nowrap">Rp 12.480.000.000</div>
+      <div class="text-[12px] text-[var(--text-3)] mt-1">across 5 projects</div>
+    </div>
+    <div class="card p-4">
+      <div class="caps-label mb-1">Total Cost to Date</div>
+      <div class="mono text-[28px] font-semibold leading-none whitespace-nowrap">Rp 8.912.000.000</div>
+      <div class="mono text-[12px] text-[var(--warn)] mt-1">71% of contract</div>
+    </div>
+    <div class="card p-4">
+      <div class="caps-label mb-1">Receivable Outstanding</div>
+      <div class="mono text-[28px] font-semibold leading-none whitespace-nowrap">Rp 1.240.000.000</div>
+      <div class="mono text-[12px] text-[var(--danger)] mt-1">3 invoices overdue &gt; 30d</div>
+    </div>
+  </div>
+
+  <!-- Alerts -->
+  <div class="card p-4 mb-6">
+    <div class="caps-label mb-2">Notifications</div>
+    <div class="space-y-1.5 text-[13px]">
+      <div class="flex items-center gap-2"><span class="chip" style="background:var(--danger-soft);color:var(--danger)">OVER</span><span class="mono">PO-9001</span><span class="text-[var(--text-2)]">Cement invoice unpaid 90M — 45 days past due</span></div>
+      <div class="flex items-center gap-2"><span class="chip" style="background:var(--warn-soft);color:var(--warn)">COST CHECK</span><span class="mono">LPB-003</span><span class="text-[var(--text-2)]">Split mismatch: Finance 20M vs Admin 18M</span></div>
+      <div class="flex items-center gap-2"><span class="chip" style="background:var(--accent-soft);color:var(--accent)">IMPORT</span><span class="mono">ledger-mar26.xlsx</span><span class="text-[var(--text-2)]">2,340 rows staged — awaiting confirmation</span></div>
+    </div>
+  </div>
+
+  <!-- Table: Project status -->
+  <div class="card overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-3 border-b" style="border-color:var(--border-08)">
+      <div class="text-[15px] font-semibold">Projects</div>
+      <button class="text-[12px] font-medium" style="color:var(--accent)">View all</button>
+    </div>
+    <table class="w-full text-[13px]">
+      <thead>
+        <tr style="background:var(--surface-2)">
+          <th class="caps-label px-4 py-2 text-left">Project</th>
+          <th class="caps-label px-4 py-2 text-right">Contract</th>
+          <th class="caps-label px-4 py-2 text-right">Cost to date</th>
+          <th class="caps-label px-4 py-2 text-right">% Used</th>
+          <th class="caps-label px-4 py-2 text-right">Receivable</th>
+          <th class="caps-label px-4 py-2 text-left">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="border-t hover:bg-[#f9fafb]" style="border-color:var(--border-08)">
+          <td class="px-4 py-2 font-medium">Citarum Bridge</td>
+          <td class="mono px-4 py-2 text-right">4.200.000.000</td>
+          <td class="mono px-4 py-2 text-right">3.150.000.000</td>
+          <td class="mono px-4 py-2 text-right text-[var(--success)]">75%</td>
+          <td class="mono px-4 py-2 text-right text-[var(--warn)]">240.000.000</td>
+          <td class="px-4 py-2"><span class="chip" style="background:var(--success-soft);color:var(--success)">ON TRACK</span></td>
+        </tr>
+        <tr class="border-t hover:bg-[#f9fafb]" style="border-color:var(--border-08)">
+          <td class="px-4 py-2 font-medium">Gedung Dinas PUPR</td>
+          <td class="mono px-4 py-2 text-right">3.600.000.000</td>
+          <td class="mono px-4 py-2 text-right">2.952.000.000</td>
+          <td class="mono px-4 py-2 text-right text-[var(--warn)]">82%</td>
+          <td class="mono px-4 py-2 text-right text-[var(--danger)]">400.000.000</td>
+          <td class="px-4 py-2"><span class="chip" style="background:var(--warn-soft);color:var(--warn)">WATCH</span></td>
+        </tr>
+        <tr class="border-t hover:bg-[#f9fafb]" style="border-color:var(--border-08)">
+          <td class="px-4 py-2 font-medium">Rumah Sakit Tipe C</td>
+          <td class="mono px-4 py-2 text-right">2.880.000.000</td>
+          <td class="mono px-4 py-2 text-right">2.010.000.000</td>
+          <td class="mono px-4 py-2 text-right">70%</td>
+          <td class="mono px-4 py-2 text-right text-[var(--success)]">0</td>
+          <td class="px-4 py-2"><span class="chip" style="background:var(--success-soft);color:var(--success)">ON TRACK</span></td>
+        </tr>
+        <tr class="border-t hover:bg-[#f9fafb]" style="border-color:var(--border-08)">
+          <td class="px-4 py-2 font-medium">IRIGASI Saluran Sekunder</td>
+          <td class="mono px-4 py-2 text-right">1.200.000.000</td>
+          <td class="mono px-4 py-2 text-right">450.000.000</td>
+          <td class="mono px-4 py-2 text-right text-[var(--success)]">38%</td>
+          <td class="mono px-4 py-2 text-right">0</td>
+          <td class="px-4 py-2"><span class="chip" style="background:var(--success-soft);color:var(--success)">ON TRACK</span></td>
+        </tr>
+        <tr class="border-t hover:bg-[#f9fafb]" style="border-color:var(--border-08)">
+          <td class="px-4 py-2 font-medium">Gedung Serbaguna</td>
+          <td class="mono px-4 py-2 text-right">600.000.000</td>
+          <td class="mono px-4 py-2 text-right">690.000.000</td>
+          <td class="mono px-4 py-2 text-right text-[var(--danger)]">115%</td>
+          <td class="mono px-4 py-2 text-right">0</td>
+          <td class="px-4 py-2"><span class="chip" style="background:var(--danger-soft);color:var(--danger)">OVER</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Mobile: stacked project cards -->
+    <div class="proj-stack hidden">
+      <div class="p-3 border-b" style="border-color:var(--border-08)">
+        <div class="flex justify-between items-center"><span class="font-medium">Citarum Bridge</span><span class="chip" style="background:var(--success-soft);color:var(--success)">ON TRACK</span></div>
+        <div class="mono text-[12px] text-[var(--text-2)] mt-1">Contract 4.200.000.000 · Cost 3.150.000.000 · 75%</div>
+        <div class="mono text-[12px] text-[var(--warn)]">Receivable 240.000.000</div>
+      </div>
+      <div class="p-3 border-b" style="border-color:var(--border-08)">
+        <div class="flex justify-between items-center"><span class="font-medium">Gedung Dinas PUPR</span><span class="chip" style="background:var(--warn-soft);color:var(--warn)">WATCH</span></div>
+        <div class="mono text-[12px] text-[var(--text-2)] mt-1">Contract 3.600.000.000 · Cost 2.952.000.000 · 82%</div>
+        <div class="mono text-[12px] text-[var(--danger)]">Receivable 400.000.000</div>
+      </div>
+      <div class="p-3 border-b" style="border-color:var(--border-08)">
+        <div class="flex justify-between items-center"><span class="font-medium">Rumah Sakit Tipe C</span><span class="chip" style="background:var(--success-soft);color:var(--success)">ON TRACK</span></div>
+        <div class="mono text-[12px] text-[var(--text-2)] mt-1">Contract 2.880.000.000 · Cost 2.010.000.000 · 70%</div>
+        <div class="mono text-[12px] text-[var(--text-3)]">Receivable 0</div>
+      </div>
+      <div class="p-3 border-b" style="border-color:var(--border-08)">
+        <div class="flex justify-between items-center"><span class="font-medium">IRIGASI Saluran Sekunder</span><span class="chip" style="background:var(--success-soft);color:var(--success)">ON TRACK</span></div>
+        <div class="mono text-[12px] text-[var(--text-2)] mt-1">Contract 1.200.000.000 · Cost 450.000.000 · 38%</div>
+        <div class="mono text-[12px] text-[var(--text-3)]">Receivable 0</div>
+      </div>
+      <div class="p-3">
+        <div class="flex justify-between items-center"><span class="font-medium">Gedung Serbaguna</span><span class="chip" style="background:var(--danger-soft);color:var(--danger)">OVER</span></div>
+        <div class="mono text-[12px] text-[var(--text-2)] mt-1">Contract 600.000.000 · Cost 690.000.000 · 115%</div>
+        <div class="mono text-[12px] text-[var(--text-3)]">Receivable 0</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

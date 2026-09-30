@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/BPMNDI"
+             xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+             id="def_practis" targetNamespace="http://practis.example.com/bpmn"
+             exporter="bpmnx" exporterVersion="1.0">
+  <collaboration id="collab_practis" name="PRACTIS Project &amp; Cost Control">
+    <participant id="pool_company" name="Company (internal)" processRef="proc_company" />
+  </collaboration>
+
+  <process id="proc_company" name="PRACTIS full lifecycle" isExecutable="false">
+    <!-- ============ LANES ============ -->
+    <laneSet id="laneset_main">
+      <lane id="lane_admin" name="Administrator">
+        <flowNodeRef>start_admin</flowNodeRef>
+        <flowNodeRef>task_master_data</flowNodeRef>
+        <flowNodeRef>task_teams</flowNodeRef>
+        <flowNodeRef>task_approve_register</flowNodeRef>
+        <flowNodeRef>task_approve_baseline</flowNodeRef>
+      </lane>
+      <lane id="lane_pm" name="Project Manager">
+        <flowNodeRef>start_pm</flowNodeRef>
+        <flowNodeRef>task_client_register</flowNodeRef>
+        <flowNodeRef>task_project_register</flowNodeRef>
+        <flowNodeRef>task_revenue_method</flowNodeRef>
+        <flowNodeRef>task_validate</flowNodeRef>
+        <flowNodeRef>task_approve_bcr</flowNodeRef>
+        <flowNodeRef>task_close_operational</flowNodeRef>
+      </lane>
+      <lane id="lane_controller" name="Project Controller">
+        <flowNodeRef>task_wbs_rbs_baseline</flowNodeRef>
+        <flowNodeRef>task_progress_update</flowNodeRef>
+        <flowNodeRef>task_wbs_forecast</flowNodeRef>
+        <flowNodeRef>task_compile_report</flowNodeRef>
+        <flowNodeRef>task_initiate_bcr</flowNodeRef>
+        <flowNodeRef>task_close_contractual</flowNodeRef>
+      </lane>
+      <lane id="lane_cost" name="Cost Controller">
+        <flowNodeRef>task_cbs_baseline</flowNodeRef>
+        <flowNodeRef>task_cost_update</flowNodeRef>
+        <flowNodeRef>task_cbs_forecast</flowNodeRef>
+        <flowNodeRef>task_tags_ledger</flowNodeRef>
+      </lane>
+      <lane id="lane_finance" name="Finance">
+        <flowNodeRef>task_verify_client</flowNodeRef>
+        <flowNodeRef>task_verify_project</flowNodeRef>
+        <flowNodeRef>task_verify_cbs</flowNodeRef>
+        <flowNodeRef>task_verify_bcr</flowNodeRef>
+        <flowNodeRef>task_actuals_in</flowNodeRef>
+        <flowNodeRef>task_invoices</flowNodeRef>
+        <flowNodeRef>task_revenue</flowNodeRef>
+        <flowNodeRef>task_close_financial</flowNodeRef>
+      </lane>
+      <lane id="lane_proc" name="Procurement">
+        <flowNodeRef>task_supplier_register</flowNodeRef>
+        <flowNodeRef>task_procurement</flowNodeRef>
+      </lane>
+      <lane id="lane_padmin" name="Project Admin">
+        <flowNodeRef>task_padmin_update</flowNodeRef>
+        <flowNodeRef>task_invoice_status</flowNodeRef>
+      </lane>
+      <lane id="lane_hr" name="Human Capital">
+        <flowNodeRef>task_hr_contracts</flowNodeRef>
+      </lane>
+    </laneSet>
+
+    <!-- ============ FLOW NODES ============ -->
+    <startEvent id="start_admin" name="Admin start: master data" />
+    <startEvent id="start_pm" name="PM start: new project" />
+
+    <task id="task_master_data" name="Load master data (auto-approved)" />
+    <task id="task_teams" name="Create teams, send invites" />
+    <task id="task_client_register" name="Initiate client register" />
+    <task id="task_verify_client" name="Verify client" />
+    <task id="task_project_register" name="Initiate project register" />
+    <task id="task_verify_project" name="Verify project" />
+    <task id="task_revenue_method" name="Set revenue recognition method" />
+    <task id="task_approve_register" name="Approve register" />
+    <task id="task_supplier_register" name="Register supplier" />
+    <task id="task_procurement" name="Run procurement" />
+    <task id="task_hr_contracts" name="Update employment/contract data" />
+    <task id="task_wbs_rbs_baseline" name="Draft WBS+RBS baseline" />
+    <task id="task_cbs_baseline" name="Draft CBS baseline (money book)" />
+    <task id="task_verify_cbs" name="Verify CBS baseline (Finance)" />
+    <task id="task_approve_baseline" name="Approve baseline plan" />
+    <task id="task_progress_update" name="Post progress update (milestone ticks)" />
+    <task id="task_padmin_update" name="Post progress update (entry)" />
+    <task id="task_cost_update" name="Post cost update (CBS actuals)" />
+    <task id="task_tags_ledger" name="Tag ledger with CBS category" />
+    <task id="task_actuals_in" name="Import/pay ledger actuals" />
+    <task id="task_invoices" name="Manage receivable/payable + 4 dates" />
+    <task id="task_invoice_status" name="Track invoice status" />
+    <task id="task_revenue" name="Recognize revenue (per method)" />
+    <task id="task_wbs_forecast" name="Forecast WBS" />
+    <task id="task_cbs_forecast" name="Forecast CBS (EAC + override)" />
+    <task id="task_compile_report" name="Compile PPR report pack (SPI/CPI)" />
+    <task id="task_initiate_bcr" name="Initiate BCR" />
+    <task id="task_approve_bcr" name="Approve BCR" />
+    <task id="task_verify_bcr" name="Verify BCR (Finance)" />
+    <task id="task_close_operational" name="Close: operational" />
+    <task id="task_close_financial" name="Close: financial" />
+    <task id="task_close_contractual" name="Close: contractual (retention)" />
+
+    <exclusiveGateway id="gw_small_large" name="Project tier?" />
+    <exclusiveGateway id="gw_work_done" name="Work done?" />
+    <exclusiveGateway id="gw_bcr_approved" name="BCR approved?" />
+    <exclusiveGateway id="gw_operational_closed" name="Operationally closed?" />
+
+    <parallelGateway id="para_launch" name="Launch: plan + registers in parallel" />
+
+    <endEvent id="end_planning" name="Baseline approved &amp; frozen" />
+    <endEvent id="end_monthly" name="Month closed (period snapshot)" />
+    <endEvent id="end_closed" name="Project closed (archived)" />
+
+    <!-- ============ SEQUENCE FLOWS ============ -->
+    <!-- Admin one-time -->
+    <sequenceFlow id="sf_admin_start" sourceRef="start_admin" targetRef="task_master_data" />
+    <sequenceFlow id="sf_master_teams" sourceRef="task_master_data" targetRef="task_teams" />
+
+    <!-- Initiation: client + project + supplier -->
+    <sequenceFlow id="sf_pm_start" sourceRef="start_pm" targetRef="task_client_register" />
+    <sequenceFlow id="sf_client_verify" sourceRef="task_client_register" targetRef="task_verify_client" />
+    <sequenceFlow id="sf_client_approve" sourceRef="task_verify_client" targetRef="task_approve_register" />
+    <sequenceFlow id="sf_project" sourceRef="task_approve_register" targetRef="task_project_register" />
+    <sequenceFlow id="sf_project_verify_fin" sourceRef="task_project_register" targetRef="task_verify_project" />
+    <sequenceFlow id="sf_project_verify_pm" sourceRef="task_verify_project" targetRef="para_launch" />
+    <sequenceFlow id="sf_supplier" sourceRef="task_approve_register" targetRef="task_supplier_register" />
+
+    <!-- Planning -->
+    <sequenceFlow id="sf_launch_wbs" sourceRef="para_launch" targetRef="task_wbs_rbs_baseline" />
+    <sequenceFlow id="sf_launch_rev" sourceRef="para_launch" targetRef="task_revenue_method" />
+    <sequenceFlow id="sf_wbs_rev" sourceRef="task_revenue_method" targetRef="task_wbs_rbs_baseline" />
+    <sequenceFlow id="sf_wbs_cbs" sourceRef="task_wbs_rbs_baseline" targetRef="task_cbs_baseline" />
+    <sequenceFlow id="sf_cbs_verify" sourceRef="task_cbs_baseline" targetRef="task_verify_cbs" />
+    <sequenceFlow id="sf_verify_approve" sourceRef="task_verify_cbs" targetRef="task_approve_baseline" />
+    <sequenceFlow id="sf_approve_end" sourceRef="task_approve_baseline" targetRef="end_planning" />
+
+    <!-- Execution loop (monthly) -->
+    <sequenceFlow id="sf_plan_progress" sourceRef="end_planning" targetRef="task_progress_update" />
+    <sequenceFlow id="sf_progress_admin" sourceRef="end_planning" targetRef="task_padmin_update" />
+    <sequenceFlow id="sf_admin_merge" sourceRef="task_padmin_update" targetRef="task_progress_update" />
+    <sequenceFlow id="sf_progress_cost" sourceRef="task_progress_update" targetRef="task_cost_update" />
+    <sequenceFlow id="sf_cost_tags" sourceRef="task_cost_update" targetRef="task_tags_ledger" />
+    <sequenceFlow id="sf_tags_actuals" sourceRef="task_tags_ledger" targetRef="task_actuals_in" />
+    <sequenceFlow id="sf_actuals_inv" sourceRef="task_actuals_in" targetRef="task_invoices" />
+    <sequenceFlow id="sf_actuals_proc" sourceRef="task_actuals_in" targetRef="task_procurement" />
+    <sequenceFlow id="sf_actuals_hr" sourceRef="task_actuals_in" targetRef="task_hr_contracts" />
+
+    <!-- Monitoring: forecast + report -->
+    <sequenceFlow id="sf_inv_rev" sourceRef="task_invoices" targetRef="task_revenue" />
+    <sequenceFlow id="sf_rev_wbsf" sourceRef="task_revenue" targetRef="task_wbs_forecast" />
+    <sequenceFlow id="sf_wbsf_cbsf" sourceRef="task_wbs_forecast" targetRef="task_cbs_forecast" />
+    <sequenceFlow id="sf_cbsf_report" sourceRef="task_cbs_forecast" targetRef="task_compile_report" />
+
+    <!-- BCR -->
+    <sequenceFlow id="sf_report_bcr" sourceRef="task_compile_report" targetRef="task_initiate_bcr" />
+    <sequenceFlow id="sf_bcr_verify" sourceRef="task_initiate_bcr" targetRef="task_verify_bcr" />
+    <sequenceFlow id="sf_bcr_approve" sourceRef="task_verify_bcr" targetRef="task_approve_bcr" />
+    <sequenceFlow id="sf_bcr_gw" sourceRef="task_approve_bcr" targetRef="gw_bcr_approved" />
+    <sequenceFlow id="sf_bcr_yes" sourceRef="gw_bcr_approved" targetRef="end_monthly" />
+
+    <!-- Close-out -->
+    <sequenceFlow id="sf_month_gw" sourceRef="end_monthly" targetRef="gw_work_done" />
+    <sequenceFlow id="sf_work_no" sourceRef="gw_work_done" targetRef="end_planning" />
+    <sequenceFlow id="sf_work_yes" sourceRef="gw_work_done" targetRef="task_close_operational" />
+    <sequenceFlow id="sf_op_gw" sourceRef="task_close_operational" targetRef="gw_operational_closed" />
+    <sequenceFlow id="sf_op_yes" sourceRef="gw_operational_closed" targetRef="task_close_financial" />
+    <sequenceFlow id="sf_fin_close" sourceRef="task_close_financial" targetRef="task_close_contractual" />
+    <sequenceFlow id="sf_contract_end" sourceRef="task_close_contractual" targetRef="end_closed" />
+  </process>
+</definitions>

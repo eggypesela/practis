@@ -1,0 +1,543 @@
+{
+ "schema": {
+  "a_calendars": [
+   "date",
+   "period",
+   "year",
+   "month",
+   "day",
+   "day_of_week",
+   "week_of_month",
+   "week_of_year",
+   "quarter"
+  ],
+  "a_cashflow_categories": [
+   "account_code",
+   "name",
+   "category",
+   "inflow_outflow",
+   "hidden",
+   "description"
+  ],
+  "a_chart_of_accounts": [
+   "account_code",
+   "name",
+   "category",
+   "subcategory",
+   "debit_credit",
+   "hidden",
+   "description"
+  ],
+  "a_client_register": [
+   "id",
+   "industry_id",
+   "name",
+   "address",
+   "correspondence_person",
+   "email",
+   "phone",
+   "description"
+  ],
+  "a_employee_register": [
+   "id",
+   "team_code",
+   "name",
+   "position",
+   "email",
+   "phone",
+   "start_date",
+   "end_date",
+   "description"
+  ],
+  "a_industry_type": [
+   "id",
+   "name",
+   "description"
+  ],
+  "a_month_names": [
+   "month",
+   "month_no",
+   "name_long",
+   "name_short"
+  ],
+  "a_project_type": [
+   "id",
+   "name",
+   "description"
+  ],
+  "a_rbs_table": [
+   "rbs_code",
+   "name",
+   "description"
+  ],
+  "a_supplier_register": [
+   "id",
+   "type",
+   "name",
+   "address",
+   "correspondence_person",
+   "email",
+   "phone",
+   "description"
+  ],
+  "a_team_register": [
+   "team_code",
+   "name",
+   "description"
+  ],
+  "a_transaction_accounts": [
+   "sub_rbs_code",
+   "wbs_code",
+   "rbs_code",
+   "name",
+   "hidden",
+   "description"
+  ],
+  "a_wbs_table": [
+   "wbs_code",
+   "name",
+   "description"
+  ],
+  "b_procurement_register": [
+   "document_no",
+   "type",
+   "project_code",
+   "sub_rbs_code",
+   "supplier_id",
+   "item",
+   "purchase_date",
+   "delivery_date",
+   "amount",
+   "payment_terms",
+   "description"
+  ],
+  "b_project_acceptance_register": [
+   "acceptance_no",
+   "project_code",
+   "sequence",
+   "percentage_progress",
+   "document_date",
+   "submission_date",
+   "approved_date",
+   "description"
+  ],
+  "b_project_register": [
+   "project_code",
+   "project_type_id",
+   "contract_no",
+   "name",
+   "client_id",
+   "amount",
+   "team_code",
+   "payment_terms",
+   "start_date",
+   "end_date",
+   "description"
+  ],
+  "c_accounting_ledger": [
+   "id",
+   "transaction_id",
+   "date",
+   "account_code",
+   "debit",
+   "credit",
+   "amount",
+   "project_code",
+   "description",
+   "cashflow_code",
+   "type",
+   "reference_no",
+   "sub_rbs_code",
+   "date_adjustment"
+  ],
+  "c_dropping_register": [
+   "memo_no",
+   "project_code",
+   "sequence",
+   "amount",
+   "submission_date",
+   "approved_date",
+   "description"
+  ],
+  "c_lpb_ledger": [
+   "id",
+   "project_code",
+   "lpb_no",
+   "date",
+   "description",
+   "sub_rbs_code",
+   "debit",
+   "credit",
+   "amount"
+  ],
+  "c_payable_register": [
+   "invoice_no",
+   "document_no",
+   "sequence",
+   "description",
+   "amount",
+   "reimburse_amount",
+   "vat",
+   "total_amount",
+   "invoice_date",
+   "submission_date",
+   "due_date",
+   "payment_date"
+  ],
+  "c_project_cost_adjustment": [
+   "id",
+   "project_code",
+   "sub_rbs_code",
+   "date",
+   "amount"
+  ],
+  "c_project_execution_budget": [
+   "id",
+   "project_code",
+   "sub_rbs_code",
+   "date",
+   "amount"
+  ],
+  "c_receivable_register": [
+   "invoice_no",
+   "acceptance_no",
+   "description",
+   "amount",
+   "reimburse_amount",
+   "vat",
+   "total_amount",
+   "invoice_date",
+   "submission_date",
+   "due_date",
+   "payment_date"
+  ],
+  "x_receivable_register": [
+   "project_code",
+   "project_name",
+   "client_name",
+   "sequence",
+   "acceptance_no",
+   "invoice_no",
+   "description",
+   "percentage_progress",
+   "amount",
+   "reimburse_amount",
+   "vat",
+   "total_amount",
+   "bapp_document_date",
+   "bapp_submission_date",
+   "bapp_approved_date",
+   "invoice_date",
+   "receivable_submission_date",
+   "due_date",
+   "payment_date"
+  ],
+  "x_working_ledger": [
+   "id",
+   "transaction_id",
+   "date",
+   "account_code",
+   "account_name",
+   "amount",
+   "project_code",
+   "description",
+   "type",
+   "reference_no",
+   "sub_rbs_code",
+   "transaction_category",
+   "date_adjustment"
+  ],
+  "y_accounting_lpb_ledger": [
+   "id",
+   "transaction_id",
+   "date",
+   "account_code",
+   "debit",
+   "credit",
+   "amount",
+   "project_code",
+   "description",
+   "cashflow_code",
+   "type",
+   "reference_no",
+   "sub_rbs_code",
+   "date_adjustment"
+  ],
+  "y_lpb": [
+   "id",
+   "transaction_id",
+   "date",
+   "account_code",
+   "debit",
+   "credit",
+   "amount",
+   "project_code",
+   "description",
+   "cashflow_code",
+   "type",
+   "reference_no",
+   "sub_rbs_code",
+   "date_adjustment"
+  ],
+  "z_dropping": [
+   "Project Code",
+   "Ref No",
+   "Description",
+   "Amount",
+   "Date"
+  ],
+  "z_evm": [
+   "Project Code",
+   "Period",
+   "Revenue",
+   "Cummulative Revenue",
+   "Income",
+   "Cummulative Income",
+   "Expense",
+   "Cummulative Expense"
+  ],
+  "z_expense": [
+   "Project Code",
+   "Period",
+   "Cost Code",
+   "Amount",
+   "Cummulative Amount"
+  ],
+  "z_income": [
+   "Project Code",
+   "Period",
+   "Ref No",
+   "Amount",
+   "Cummulative Amount"
+  ],
+  "z_lpb_ledger": [
+   "project_code",
+   "reference_no",
+   "description",
+   "amount",
+   "date_adjustment"
+  ],
+  "z_payable": [
+   "project_code",
+   "reference_no",
+   "invoice_amount",
+   "invoice_date",
+   "payment_date"
+  ],
+  "z_receivable": [
+   "project_code",
+   "reference_no",
+   "invoice_amount",
+   "invoice_date",
+   "payment_date"
+  ],
+  "z_revenue": [
+   "Project Code",
+   "Period",
+   "Amount",
+   "Cummulative Amount"
+  ]
+ },
+ "edges": [
+  [
+   "a_calendars",
+   "a_month_names",
+   ""
+  ],
+  [
+   "a_client_register",
+   "a_industry_type",
+   ""
+  ],
+  [
+   "a_employee_register",
+   "a_calendars",
+   ""
+  ],
+  [
+   "a_employee_register",
+   "a_calendars",
+   ""
+  ],
+  [
+   "a_employee_register",
+   "a_team_register",
+   ""
+  ],
+  [
+   "a_transaction_accounts",
+   "a_rbs_table",
+   ""
+  ],
+  [
+   "a_transaction_accounts",
+   "a_wbs_table",
+   ""
+  ],
+  [
+   "b_procurement_register",
+   "a_calendars",
+   ""
+  ],
+  [
+   "b_procurement_register",
+   "a_calendars",
+   ""
+  ],
+  [
+   "b_procurement_register",
+   "a_supplier_register",
+   ""
+  ],
+  [
+   "b_procurement_register",
+   "a_transaction_accounts",
+   ""
+  ],
+  [
+   "b_procurement_register",
+   "b_project_register",
+   ""
+  ],
+  [
+   "b_project_acceptance_register",
+   "a_calendars",
+   ""
+  ],
+  [
+   "b_project_acceptance_register",
+   "a_calendars",
+   ""
+  ],
+  [
+   "b_project_acceptance_register",
+   "a_calendars",
+   ""
+  ],
+  [
+   "b_project_acceptance_register",
+   "b_project_register",
+   ""
+  ],
+  [
+   "b_project_register",
+   "a_calendars",
+   ""
+  ],
+  [
+   "b_project_register",
+   "a_calendars",
+   ""
+  ],
+  [
+   "b_project_register",
+   "a_client_register",
+   ""
+  ],
+  [
+   "b_project_register",
+   "a_project_type",
+   ""
+  ],
+  [
+   "b_project_register",
+   "a_team_register",
+   ""
+  ],
+  [
+   "c_accounting_ledger",
+   "a_calendars",
+   ""
+  ],
+  [
+   "c_accounting_ledger",
+   "a_cashflow_categories",
+   ""
+  ],
+  [
+   "c_accounting_ledger",
+   "a_chart_of_accounts",
+   ""
+  ],
+  [
+   "c_accounting_ledger",
+   "a_transaction_accounts",
+   ""
+  ],
+  [
+   "c_accounting_ledger",
+   "b_project_register",
+   ""
+  ],
+  [
+   "c_dropping_register",
+   "a_calendars",
+   ""
+  ],
+  [
+   "c_dropping_register",
+   "a_calendars",
+   ""
+  ],
+  [
+   "c_dropping_register",
+   "b_project_register",
+   ""
+  ],
+  [
+   "c_lpb_ledger",
+   "a_calendars",
+   ""
+  ],
+  [
+   "c_lpb_ledger",
+   "a_transaction_accounts",
+   ""
+  ],
+  [
+   "c_lpb_ledger",
+   "b_project_register",
+   ""
+  ],
+  [
+   "c_payable_register",
+   "b_procurement_register",
+   ""
+  ],
+  [
+   "c_project_cost_adjustment",
+   "a_calendars",
+   ""
+  ],
+  [
+   "c_project_cost_adjustment",
+   "a_transaction_accounts",
+   ""
+  ],
+  [
+   "c_project_cost_adjustment",
+   "b_project_register",
+   ""
+  ],
+  [
+   "c_project_execution_budget",
+   "a_calendars",
+   ""
+  ],
+  [
+   "c_project_execution_budget",
+   "a_transaction_accounts",
+   ""
+  ],
+  [
+   "c_project_execution_budget",
+   "b_project_register",
+   ""
+  ],
+  [
+   "c_receivable_register",
+   "b_project_acceptance_register",
+   ""
+  ]
+ ]
+}
