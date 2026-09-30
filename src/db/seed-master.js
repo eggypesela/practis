@@ -8,6 +8,26 @@ const COST_CATEGORIES = [
   ['SUB', 'Subcontract'], ['OVH', 'Overhead'], ['TAX', 'Taxes & levies'],
 ];
 
+// Chart of accounts (legacy a_chart_of_accounts). Real production codes are
+// 15-char account strings; seed a representative set so import resolution has
+// something to hit. Production seeding replaces this with the real export.
+const CHART_OF_ACCOUNTS = [
+  ['100000000000001', 'Cash & bank', '1. Assets', 'Cash', 'Debit'],
+  ['110000000000001', 'Accounts receivable', '1. Assets', 'Receivables', 'Debit'],
+  ['200000000000001', 'Accounts payable', '2. Liability', 'Payables', 'Credit'],
+  ['400000000000001', 'Revenue - construction', '4. Income', 'Revenue', 'Credit'],
+  ['500000000000001', 'Direct cost - materials', '5. Expense', 'Direct cost', 'Debit'],
+  ['500000000000002', 'Direct cost - labour', '5. Expense', 'Direct cost', 'Debit'],
+  ['500000000000003', 'Direct cost - equipment', '5. Expense', 'Direct cost', 'Debit'],
+];
+
+// Cashflow categories (legacy a_cashflow_categories)
+const CASHFLOW_CATEGORIES = [
+  ['10001', 'Cash in - client payment', '1. Operation', 'Inflow'],
+  ['20001', 'Cash out - supplier payment', '1. Operation', 'Outflow'],
+  ['30001', 'Cash out - labour', '1. Operation', 'Outflow'],
+];
+
 // CBS / transaction accounts (code = legacy sub_rbs_code). These are the tags the
 // Cost Controller applies to ledger lines, so each one is a real cost bucket.
 const CBS_ACCOUNTS = [
@@ -50,6 +70,27 @@ function main() {
   const insCat = db.prepare('INSERT OR IGNORE INTO cost_categories (code, name) VALUES (?, ?)');
   for (const [code, name] of COST_CATEGORIES) insCat.run(code, name);
 
+  // chart of accounts (legacy a_chart_of_accounts)
+  const insCoa = db.prepare(`
+    INSERT OR IGNORE INTO chart_of_accounts
+      (code, name, category, subcategory, account_type, normal_side)
+    VALUES (?, ?, ?, ?, ?, ?)`);
+  for (const [code, name, cat, sub, side] of CHART_OF_ACCOUNTS) {
+    const acctType = cat.startsWith('1.') ? 'asset' : cat.startsWith('2.') ? 'liability'
+      : cat.startsWith('3.') ? 'equity' : cat.startsWith('4.') ? 'income' : 'expense';
+    insCoa.run(code, name, cat, sub, acctType, side.toLowerCase());
+  }
+
+  // cashflow categories (legacy a_cashflow_categories)
+  const insCf = db.prepare(`
+    INSERT OR IGNORE INTO cashflow_categories
+      (code, name, category, inflow_outflow, direction)
+    VALUES (?, ?, ?, ?, ?)`);
+  for (const [code, name, cat, io] of CASHFLOW_CATEGORIES) {
+    const dir = io.toLowerCase() === 'inflow' ? 'in' : 'out';
+    insCf.run(code, name, cat, dir, dir);
+  }
+
   // wbs_code master = the company-standard menu (parents before children).
   const insWbsCode = db.prepare('INSERT OR IGNORE INTO wbs_code (code, name, parent_code) VALUES (?, ?, ?)');
   for (const [parent, code, name] of WBS) insWbsCode.run(code, name, parent);
@@ -73,6 +114,8 @@ function main() {
 
   const counts = {
     cost_categories: db.prepare('SELECT COUNT(*) n FROM cost_categories').get().n,
+    chart_of_accounts: db.prepare('SELECT COUNT(*) n FROM chart_of_accounts').get().n,
+    cashflow_categories: db.prepare('SELECT COUNT(*) n FROM cashflow_categories').get().n,
     transaction_accounts: db.prepare('SELECT COUNT(*) n FROM transaction_accounts').get().n,
     wbs_nodes: db.prepare('SELECT COUNT(*) n FROM wbs_nodes WHERE project_id = ?').get(project.id).n,
   };

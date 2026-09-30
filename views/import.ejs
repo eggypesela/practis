@@ -1,0 +1,127 @@
+<%# TS-04 import screen: upload a fixed-template CSV, read the staged preview with
+    row-level errors, then confirm. The ledger changes only on confirm. %>
+<div class="card" style="margin-bottom:12px">
+  <div class="card-hd"><h2>Upload ledger CSV</h2><span class="r">max 10 MB · .csv</span></div>
+  <div class="fbody">
+    <label class="fld">CSV file
+      <input type="file" id="import-file" accept=".csv,text/csv"></label>
+    <div class="fnote"><svg><use href="#i-info"/></svg><span>Columns are matched by name
+      (<b>transaction_id, date, account_code, debit, credit</b> required). A re-uploaded row is
+      <b>skipped, never overwritten</b>.</span></div>
+    <button class="btn pri wide" type="button" id="import-stage"><svg><use href="#i-in"/></svg>Stage file</button>
+    <div id="import-msg" class="errb" style="display:none" role="alert"></div>
+  </div>
+</div>
+
+<div class="card" id="import-preview" style="margin-bottom:12px;display:none">
+  <div class="card-hd"><h2>Preview</h2><span class="r" id="pv-name"></span></div>
+  <div class="fbody">
+    <div class="grid k3">
+      <div class="card kpi"><div class="lbl">Rows in file</div><div class="v" id="pv-rows">0</div></div>
+      <div class="card kpi"><div class="lbl">New lines</div><div class="v" id="pv-new">0</div>
+        <div class="f">will be posted</div></div>
+      <div class="card kpi"><div class="lbl">Skipped</div><div class="v" id="pv-skip">0</div>
+        <div class="f"><span class="wn">duplicates / invalid</span></div></div>
+    </div>
+    <div id="pv-errors" style="margin-top:12px"></div>
+    <div class="fnote"><svg><use href="#i-info"/></svg><span><b>Confirming posts lines to the
+      immutable ledger.</b> Corrections afterwards are reversing + new lines, never edits.</span></div>
+    <button class="btn pri wide" type="button" id="import-confirm"><svg><use href="#i-check"/></svg>Confirm import</button>
+    <div id="import-result" class="note ok" style="display:none"></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-hd"><h2>Recent imports</h2><span class="r"><%= batches.length %> shown</span></div>
+  <div class="tw"><table>
+    <thead><tr><th>Batch</th><th>File</th><th>Project</th><th>Status</th>
+      <th class="r">Rows</th><th class="r">Inserted</th><th class="r">Skipped</th>
+      <th>Uploaded</th><th>By</th></tr></thead>
+    <tbody>
+      <% batches.forEach(function(b){ %>
+      <tr>
+        <td class="mono">#<%= b.id %></td>
+        <td><%= b.original_name || b.filename || '—' %></td>
+        <td class="mono"><%= b.project_code || '—' %></td>
+        <td>
+          <% if (b.status === 'confirmed') { %><span class="chip ok">CONFIRMED</span>
+          <% } else if (b.status === 'staged' || b.status === 'previewed') { %><span class="chip wn">STAGED</span>
+          <% } else { %><span class="chip wn"><%= b.status.toUpperCase() %></span><% } %>
+        </td>
+        <td class="num"><%= b.row_count || 0 %></td>
+        <td class="num"><%= b.inserted_count || 0 %></td>
+        <td class="num"><%= b.skipped_count || 0 %></td>
+        <td class="mono"><%= (b.confirmed_at || b.imported_at || '').slice(0, 16) %></td>
+        <td><%= b.uploaded_by_email || '—' %></td>
+      </tr>
+      <% }) %>
+      <% if (!batches.length) { %>
+      <tr><td colspan="9" class="dim">No imports yet.</td></tr>
+      <% } %>
+    </tbody>
+  </table></div>
+</div>
+
+<script>
+(function(){
+  var csrf = (document.querySelector('meta[name=csrf-token]') || {}).content || '';
+  var batchId = null;
+
+  var msg = document.getElementById('import-msg');
+  function showMsg(text){ msg.textContent = text; msg.style.display = text ? '' : 'none'; }
+
+  function post(url, opts){
+    opts = opts || {};
+    opts.headers = Object.assign({ 'x-csrf-token': csrf }, opts.headers || {});
+    return fetch(url, opts).then(function(r){ return r.json().then(function(j){ return { status: r.status, body: j }; }); });
+  }
+
+  document.getElementById('import-stage').addEventListener('click', function(){
+    var input = document.getElementById('import-file');
+    if (!input.files || !input.files[0]) { showMsg('Choose a CSV file first.'); return; }
+    showMsg('');
+    var fd = new FormData();
+    fd.append('file', input.files[0]);
+    post('/api/imports', { method: 'POST', body: fd }).then(function(res){
+      if (res.status !== 201) { showMsg((res.body.error && res.body.error.message) || 'Upload failed.'); return; }
+      batchId = res.body.batchId;
+      return loadPreview(batchId);
+    }).catch(function(){ showMsg('Upload failed — network error.'); });
+  });
+
+  function loadPreview(id){
+    return post('/api/imports/' + id + '/preview', { method: 'GET' }).then(function(res){
+      if (res.status !== 200) { showMsg((res.body.error && res.body.error.message) || 'Preview failed.'); return; }
+      var p = res.body;
+      document.getElementById('import-preview').style.display = '';
+      document.getElementById('pv-name').textContent = p.originalName || ('batch #' + p.batchId);
+      document.getElementById('pv-rows').textContent = p.rowCount;
+      document.getElementById('pv-new').textContent = p.newCount;
+      document.getElementById('pv-skip').textContent = p.skippedCount + ((p.invalid && p.invalid.length) ? ' + ' + p.invalid.length + ' invalid' : '');
+      var box = document.getElementById('pv-errors');
+      box.innerHTML = '';
+      (p.invalid || []).slice(0, 50).forEach(function(e){
+        var d = document.createElement('div');
+        d.className = 'dim';
+        d.textContent = 'line ' + e.line + (e.transaction_id ? ' (' + e.transaction_id + ')' : '') + ': ' + (e.errors || []).join('; ');
+        box.appendChild(d);
+      });
+    });
+  }
+
+  document.getElementById('import-confirm').addEventListener('click', function(){
+    if (!batchId) return;
+    this.disabled = true;
+    var self = this;
+    post('/api/imports/' + batchId + '/confirm', { method: 'POST' }).then(function(res){
+      self.disabled = false;
+      if (res.status !== 200) { showMsg((res.body.error && res.body.error.message) || 'Confirm failed.'); return; }
+      var out = document.getElementById('import-result');
+      out.style.display = '';
+      out.innerHTML = '<svg><use href="#i-check"/></svg><b>Imported.</b> ' + res.body.inserted +
+        ' line(s) posted to the ledger' + (res.body.skipped ? ', ' + res.body.skipped + ' skipped' : '') +
+        (res.body.alreadyConfirmed ? ' (this batch was already confirmed — nothing posted twice)' : '') + '.';
+    }).catch(function(){ self.disabled = false; showMsg('Confirm failed — network error.'); });
+  });
+})();
+</script>

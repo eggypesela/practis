@@ -55,7 +55,7 @@ router.get('/ledger', (req, res) => {
   const lines = q.ledgerForProject(proj.id);
   page(res, 'Ledger', `${proj.name} · immutable entries · FY 2026`, `${proj.name} / Ledger`, 'ledger', {
     active: 'Ledger',
-    actions: '<a class="btn pri" href="/ledger/entry"><svg><use href="#i-plus"/></svg>New entry</a>',
+    actions: '<a class="btn" href="/import"><svg><use href="#i-in"/></svg>Import CSV</a><a class="btn pri" href="/ledger/entry"><svg><use href="#i-plus"/></svg>New entry</a>',
     locals: {
       lines, untaggedCount: untagged,
       saved: typeof req.query.saved !== 'undefined' ? Number(req.query.saved) : null,
@@ -154,6 +154,19 @@ router.get('/queue', (req, res) => {
         checkedCount, totalCount, untaggedCount: lines.length,
         fmt,
         flash: typeof req.query.tagged !== 'undefined' ? Number(req.query.tagged) : null,
+      },
+    });
+});
+
+router.get('/import', (req, res) => {
+  const proj = res.locals.project;
+  if (!proj) return res.redirect('/');
+  page(res, 'Import ledger', `${proj.name} · fixed-template CSV from the legacy workbook — staged first, never written straight to the ledger`,
+    `${proj.name} / Ledger / Import`, 'import', {
+      active: 'Import',
+      locals: {
+        batches: q.importBatches(),
+        fmt,
       },
     });
 });

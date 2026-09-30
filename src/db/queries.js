@@ -217,6 +217,19 @@ const _auditLogFor = db.prepare(`
   WHERE al.entity_type = ? AND al.entity_id = ?
   ORDER BY al.id DESC LIMIT 50`);
 
+// ---- imports (TS-04/TS-24): the batch register shown on /import ---------------
+
+const _importBatches = db.prepare(`
+  SELECT b.id, b.original_name, b.filename, b.status, b.row_count,
+         b.inserted_count, b.skipped_count, b.new_count, b.error_json,
+         b.imported_at, b.confirmed_at, b.expires_at,
+         p.code AS project_code, u.email AS uploaded_by_email,
+         (b.staging_json IS NOT NULL) AS has_staging
+  FROM import_batches b
+  LEFT JOIN projects p ON p.id = b.project_id
+  LEFT JOIN users u ON u.id = b.uploaded_by
+  ORDER BY b.id DESC LIMIT 25`);
+
 module.exports = {
   projects: () => _projects.all(),
   projectById: (id) => _projectById.get(id),
@@ -278,4 +291,6 @@ module.exports = {
   inviteForToken: (tokenHash) => _inviteForToken.get(tokenHash),
   pendingInvites: () => _pendingInvites.all(),
   auditLogFor: (entityType, entityId) => _auditLogFor.all(entityType, entityId),
+
+  importBatches: () => _importBatches.all(),
 };

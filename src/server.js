@@ -24,6 +24,7 @@ app.use(require('./middleware/auth').attachUser);
 
 app.use(require('./routes/auth'));
 app.use(require('./routes/admin'));
+app.use(require('./routes/api'));
 app.use(require('./routes/app'));
 
 // 404 + error handler
