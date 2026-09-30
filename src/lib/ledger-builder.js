@@ -52,6 +52,7 @@ function buildInsert({ projectId, type, date, documentNo, description,
     cost_checked: 0,
     cost_checked_by: null,
     cost_checked_at: null,
+    reverses_ledger_id: null,   // ordinary lines reverse nothing
   };
 }
 

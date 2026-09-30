@@ -92,6 +92,7 @@ function stageRow(cells, headers, lookup, opts) {
   row.cost_checked_by = null;
   row.cost_checked_at = null;
   row.cash_advance_id = null;
+  row.reverses_ledger_id = null;   // an import never creates a reversal
   return { ok: true, row };
 }
 
@@ -253,14 +254,16 @@ function confirm(batchId, actorId) {
        cost_category_id, chart_of_account_id, cashflow_category_id,
        transaction_account_id, wbs_node_id, amount, debit, credit,
        retainage_amount, paid_amount, currency, description, source,
-       import_batch_id, cash_advance_id, cost_checked, cost_checked_by, cost_checked_at)
-    VALUES
-      (@project_id, @transaction_id, @document_no, @reference_no, @account_code,
-       @partner_type, @partner_id, @date, @effective_date, @type, @line_role, @in_cost_basis,
-       @cost_category_id, @chart_of_account_id, @cashflow_category_id,
-       @transaction_account_id, @wbs_node_id, @amount, @debit, @credit,
-       @retainage_amount, @paid_amount, @currency, @description, @source,
-       @import_batch_id, @cash_advance_id, @cost_checked, @cost_checked_by, @cost_checked_at)`);
+ import_batch_id, cash_advance_id, cost_checked, cost_checked_by, cost_checked_at,
+ reverses_ledger_id)
+ VALUES
+ (@project_id, @transaction_id, @document_no, @reference_no, @account_code,
+ @partner_type, @partner_id, @date, @effective_date, @type, @line_role, @in_cost_basis,
+ @cost_category_id, @chart_of_account_id, @cashflow_category_id,
+ @transaction_account_id, @wbs_node_id, @amount, @debit, @credit,
+ @retainage_amount, @paid_amount, @currency, @description, @source,
+ @import_batch_id, @cash_advance_id, @cost_checked, @cost_checked_by, @cost_checked_at,
+ @reverses_ledger_id)`);
 
   const audit = db.prepare(`
     INSERT INTO audit_log (entity_type, entity_id, action, actor_id, before_json, after_json, outcome)

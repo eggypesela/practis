@@ -1,0 +1,53 @@
+<%# The correction path. A posted line is immutable — the fix is a reversing
+    entry (and, if needed, a fresh corrected line). The original is shown
+    read-only so the operator can see exactly what they are cancelling. %>
+<% if (typeof error !== 'undefined') { %>
+<div class="errb"><div class="errb-tx"><p><b>Not reversed.</b> <%= error %></p></div></div>
+<% } %>
+
+<div class="card" style="margin-bottom:12px">
+  <div class="card-hd"><h2>Line #<%= line.id %></h2>
+    <span class="r"><% if (line.cost_checked) { %><span class="chip ok">CHECKED</span><% } else { %><span class="chip wn">UNCHECKED</span><% } %></span></div>
+  <div class="tw"><table>
+    <tbody>
+      <tr><th>Date</th><td class="mono"><%= line.date %></td>
+          <th>Type</th><td><%= line.type || '— unclassified —' %></td></tr>
+      <tr><th>Document no.</th><td class="mono"><%= line.document_no || '—' %></td>
+          <th>Effective date</th><td class="mono"><%= line.effective_date || '—' %></td></tr>
+      <tr><th>Description</th><td colspan="3"><%= line.description || '' %></td></tr>
+      <tr><th>Debit</th><td class="num"><%= line.debit ? 'Rp ' + fmt(line.debit) : '—' %></td>
+          <th>Credit</th><td class="num"><%= line.credit ? 'Rp ' + fmt(line.credit) : '—' %></td></tr>
+      <tr><th>Amount</th><td class="num"><%= 'Rp ' + fmt(line.amount) %></td>
+          <th>Source</th><td><%= line.source %></td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<% if (reversal) { %>
+<div class="note ok" style="display:block">
+  <b>Already reversed.</b> Line #<%= line.id %> was cancelled by line
+  <b>#<%= reversal.id %></b> on <%= (reversal.date || '') %>. A line can be reversed once —
+  if the replacement figure is also wrong, reverse the reversal.
+</div>
+<% } else { %>
+
+<div class="card">
+  <div class="card-hd"><h2>Reverse this line</h2><span class="r">the original stays on the books</span></div>
+  <div class="fbody">
+    <div class="note" style="display:block;margin-bottom:12px">
+      <b>Reversing posts a new line that negates #<%= line.id %>:</b>
+      <%= line.debit ? 'credit' : 'debit' %> Rp <%= fmt(line.debit || line.credit) %>
+      on the same date, project and cost tags. Nothing is edited or deleted.
+    </div>
+    <form method="post" action="/ledger/<%= line.id %>/reverse">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <label class="fld">Reversal date
+        <input type="date" name="date" value="<%= defaultDate %>" required></label>
+      <label class="fld">Reason <span class="dim">why this line is being cancelled</span>
+        <input type="text" name="description" placeholder="e.g. duplicate posting — see PO-1043"></label>
+      <button class="btn pri wide" type="submit">Post reversing entry</button>
+    </form>
+  </div>
+</div>
+
+<% } %>

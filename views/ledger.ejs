@@ -1,6 +1,9 @@
 <% if (typeof saved !== 'undefined' && saved) { %>
 <div class="note ok"><svg><use href="#i-check"/></svg><b>Saved.</b> Line #<%= saved %> posted — it now waits in the tagging queue.</div>
 <% } %>
+<% if (typeof reversed !== 'undefined' && reversed) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b>Reversed.</b> Reversing entry #<%= reversed %> posted — the pair now nets to zero.</div>
+<% } %>
 <div class="grid k4">
   <div class="card kpi"><div class="lbl">Total debit</div><div class="v sm">Rp <%= fmt(debitTotal) %></div>
     <div class="f">cost side (money out)</div></div>
@@ -13,17 +16,29 @@
 </div>
 
 <div class="card" style="margin-top:12px">
-  <div class="card-hd"><h2>Ledger</h2><span class="r"><%= totalCount %> rows</span></div>
+  <div class="card-hd"><h2>Ledger</h2><span class="r"><%= totalCount %> rows · latest <%= lines.length %></span></div>
   <div class="tw"><table>
     <thead><tr><th>Date</th><th>Doc no.</th><th>Description</th><th>Type</th>
-      <th class="r">Debit</th><th class="r">Credit</th><th>Status</th></tr></thead>
+      <th class="r">Debit</th><th class="r">Credit</th><th>Status</th><th></th></tr></thead>
     <tbody>
       <% lines.forEach(function(l){ %>
-      <tr><td class="mono"><%= l.date %></td><td class="mono"><%= l.document_no || '—' %></td>
-        <td><%= l.description || '' %></td><td><%= l.type || '' %></td>
+      <tr>
+        <td class="mono"><%= l.date %></td>
+        <td class="mono"><%= l.document_no || '—' %></td>
+        <td><%= l.description || '' %>
+          <% if (l.reverses_ledger_id) { %><span class="chip" title="reversing entry">REVERSAL of #<%= l.reverses_ledger_id %></span><% } %></td>
+        <td><%= l.type || '' %></td>
         <td class="num"><%= l.debit ? 'Rp ' + fmt(l.debit) : '—' %></td>
         <td class="num"><%= l.credit ? 'Rp ' + fmt(l.credit) : '—' %></td>
-        <td><% if (l.cost_checked) { %><span class="chip ok">CHECKED</span><% } else { %><span class="chip wn">UNCHECKED</span><% } %></td></tr>
+        <td>
+          <% if (l.reversal_id) { %><span class="chip wn" title="cancelled by line #<%= l.reversal_id %>">REVERSED #<%= l.reversal_id %></span>
+          <% } else if (l.cost_checked) { %><span class="chip ok">CHECKED</span>
+          <% } else { %><span class="chip wn">UNCHECKED</span><% } %>
+        </td>
+        <td><% if (!l.reversal_id && !l.reverses_ledger_id) { %>
+          <a class="btn sm" href="/ledger/<%= l.id %>/correct">Correct</a>
+        <% } %></td>
+      </tr>
       <% }) %>
     </tbody>
   </table></div>

@@ -7,9 +7,11 @@ const _projects = db.prepare(`SELECT * FROM projects ORDER BY name`);
 const _projectById = db.prepare(`SELECT * FROM projects WHERE id = ?`);
 
 const _ledgerForProject = db.prepare(`
-  SELECT * FROM v_ledger_period
-  WHERE project_id = ?
-  ORDER BY date DESC, id DESC
+  SELECT v.*, r.id AS reversal_id, r.date AS reversal_date
+  FROM v_ledger_period v
+  LEFT JOIN accounting_ledger r ON r.reverses_ledger_id = v.id
+  WHERE v.project_id = ?
+  ORDER BY v.date DESC, v.id DESC
   LIMIT 20`);
 
 const _totalsForProject = db.prepare(`
@@ -96,14 +98,16 @@ const _insertLedger = db.prepare(`
      cost_category_id, chart_of_account_id, cashflow_category_id,
      transaction_account_id, wbs_node_id, amount, debit, credit,
      retainage_amount, paid_amount, currency, description, source,
-     import_batch_id, cash_advance_id, cost_checked, cost_checked_by, cost_checked_at)
+     import_batch_id, cash_advance_id, cost_checked, cost_checked_by, cost_checked_at,
+     reverses_ledger_id)
   VALUES
     (@project_id, @transaction_id, @document_no, @reference_no, @account_code,
      @partner_type, @partner_id, @date, @effective_date, @type, @line_role, @in_cost_basis,
      @cost_category_id, @chart_of_account_id, @cashflow_category_id,
      @transaction_account_id, @wbs_node_id, @amount, @debit, @credit,
      @retainage_amount, @paid_amount, @currency, @description, @source,
-     @import_batch_id, @cash_advance_id, @cost_checked, @cost_checked_by, @cost_checked_at)`);
+     @import_batch_id, @cash_advance_id, @cost_checked, @cost_checked_by, @cost_checked_at,
+     @reverses_ledger_id)`);
 
 const _insertLedgerAudit = db.prepare(`
   INSERT INTO audit_log (entity_type, entity_id, action, actor_id, before_json, after_json)
@@ -218,7 +222,6 @@ const _auditLogFor = db.prepare(`
   ORDER BY al.id DESC LIMIT 50`);
 
 // ---- imports (TS-04/TS-24): the batch register shown on /import ---------------
-
 const _importBatches = db.prepare(`
   SELECT b.id, b.original_name, b.filename, b.status, b.row_count,
          b.inserted_count, b.skipped_count, b.new_count, b.error_json,

@@ -59,6 +59,7 @@ router.get('/ledger', (req, res) => {
     locals: {
       lines, untaggedCount: untagged,
       saved: typeof req.query.saved !== 'undefined' ? Number(req.query.saved) : null,
+      reversed: typeof req.query.reversed !== 'undefined' ? Number(req.query.reversed) : null,
       debitTotal: totals.debit_total, creditTotal: totals.credit_total,
       checkedCount: totals.checked_count, totalCount: totals.total_count,
       fmt,
@@ -156,6 +157,88 @@ router.get('/queue', (req, res) => {
         flash: typeof req.query.tagged !== 'undefined' ? Number(req.query.tagged) : null,
       },
     });
+});
+
+// ---- correction path: a posted line is immutable; fix it by reversing it -----
+
+// The correction screen for one line: shows the original, and either offers to
+// reverse it or shows the reversal that already exists.
+router.get('/ledger/:id/correct', (req, res) => {
+  const proj = res.locals.project;
+  if (!proj) return res.redirect('/');
+  const id = Number(req.params.id);
+  const found = require('../lib/ledger-correction').lineForCorrection(id);
+  if (!found || found.line.project_id !== proj.id) return res.redirect('/ledger');
+
+  res.render('correct', {
+    layout: 'layout-app',
+    title: 'Correct ledger line',
+    subtitle: `${proj.name} · line #${id} stays on the books — a reversal cancels it`,
+    crumb: `${proj.name} / Ledger / Correct #${id}`, active: 'Ledger',
+    actions: '', projectName: proj.name,
+    line: found.line, reversal: found.reversal, reverses: found.reverses,
+    defaultDate: new Date().toISOString().slice(0, 10),
+    fmt,
+    untaggedCount: q.untaggedCount(proj.id).n,
+  });
+});
+
+// Post the reversal. The original row is never touched.
+router.post('/ledger/:id/reverse', (req, res) => {
+  const proj = res.locals.project;
+  if (!proj) return res.redirect('/');
+  const id = Number(req.params.id);
+  const corr = require('../lib/ledger-correction');
+
+  const found = corr.lineForCorrection(id);
+  if (!found || found.line.project_id !== proj.id) return res.redirect('/ledger');
+
+  const renderError = (status, message) => res.status(status).render('correct', {
+    layout: 'layout-app', title: 'Correct ledger line',
+    subtitle: `${proj.name} · the reversal was rejected`,
+    crumb: `${proj.name} / Ledger / Correct #${id}`, active: 'Ledger',
+    actions: '', projectName: proj.name,
+    line: found.line, reversal: found.reversal, reverses: found.reverses,
+    defaultDate: new Date().toISOString().slice(0, 10),
+    fmt, error: message,
+    untaggedCount: q.untaggedCount(proj.id).n,
+  });
+
+  // A line may be reversed only once — this is also enforced by
+  // idx_ledger_one_reversal, but checking here gives the operator a sentence
+  // instead of a raw constraint error.
+  if (found.reversal) {
+    return renderError(409, `Line #${id} was already reversed by line #${found.reversal.id}.`);
+  }
+
+  let row;
+  try {
+    row = corr.buildReversal(found.line, {
+      date: req.body.date || null,
+      description: req.body.description || null,
+      actorId: req.user.id,
+    });
+  } catch (err) {
+    return renderError(400, err.message);
+  }
+
+  const apply = db.transaction(() => {
+    const newId = q.insertLedger(row).lastInsertRowid;
+    q.insertLedgerAudit(newId, req.user.id, row);
+    q.audit('accounting_ledger', id, 'reverse', req.user.id,
+      { reversed_by: found.line.id, amount: found.line.amount },
+      { reversal_id: newId, amount: row.amount });
+    return newId;
+  });
+
+  let reversalId;
+  try {
+    reversalId = apply();
+  } catch (err) {
+    // the DB guards (negation, one-reversal, money integrity) are the floor
+    return renderError(409, err.message);
+  }
+  res.redirect(`/ledger?reversed=${reversalId}`);
 });
 
 router.get('/import', (req, res) => {
