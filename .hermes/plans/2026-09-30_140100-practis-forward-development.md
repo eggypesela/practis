@@ -154,9 +154,21 @@ the limiter keys every request to the proxy's own IP and throttles all users at 
 TECH-SPEC §5. **This is the same habit that produced B2** (the unguarded `/queue/tag` writes
 `lpb_statements` inline), so fix it now rather than inheriting it into Modules 6–9.
 
-### Task 0.7 — Repair the schema validator (it is green while lying)
+### Task 0.7 — Repair the schema validator (it was green while lying) — ✅ DONE 2026-10-01
 
-**Files:** Modify `db/schema.sql` + `db/validate.py`; modify `package.json`.
+**Files:** new `db/dump-schema.js`; regenerated `db/schema.sql`; `db/validate.py`; `package.json`.
+
+**What shipped:** `db/dump-schema.js` rebuilds `schema.sql` from a freshly-migrated throwaway DB,
+copying DDL **verbatim out of `sqlite_master`** and emitting it in dependency order
+(tables → indexes → triggers → views — SQLite validates a view against its tables at CREATE time).
+`--check` compares without writing, and `npm test` now runs
+`node db/dump-schema.js --check && python3 db/validate.py` before the node suite. `validate.py` gained
+a **drift gate** asserting 9 named guards exist (reversal trio, CBS/blocked triggers, dedupe index)
+plus the dedupe index's partial predicate, and **5 reversal-guard tests** that previously had nothing
+to bite on because the guards were missing from the file it read.
+
+**Verified by removing a guard and confirming exit 1** — a gate that has never been seen to fail is
+not a gate.
 
 `db/validate.py` runs `db/schema.sql` and passes — but the app runs `db/migrations/`, and the two have
 diverged. Measured:
@@ -166,7 +178,7 @@ diverged. Measured:
 | triggers | **21** | **14** |
 | tables | 43 | 44 |
 
-**7 triggers exist only in the migrations** — including `trg_ledger_reversal_must_negate`,
+**7 triggers existed only in the migrations** — including `trg_ledger_reversal_must_negate`,
 `trg_ledger_reversal_link_immutable`, `trg_lpb_checked_requires_cbs*`,
 `trg_lpb_blocked_needs_reason*`, `trg_lpb_no_check_from_blocked`. `v_lpb_reconciliation`,
 `v_cbs_actual`, `accounting_ledger`, `lpb_statements`, `cash_advance` and `import_batches` all differ.
@@ -179,13 +191,33 @@ into `npm test`** — it only runs if invoked by hand.
   validator's exit code fails the suite.
 - Add SCH1.1–SCH1.4 (drift check) to `TEST_PLAN.md` §14.
 
-### Task 0.8 — Wire in the declared-but-unused fixtures
+### Task 0.8 — Wire in the declared-but-unused fixtures — ✅ DONE 2026-10-01
 
-**Files:** `db/fixture-ledger-export.tsv` (exists, 28 lines, referenced by **zero** tests),
-`db/seed-smoke.sql` (exists, used by nothing), new `test/fixture.test.js` — **port `3909`**.
+**Files:** `db/fixture-ledger-export.tsv` (26 rows, was referenced by **zero** tests),
+`db/seed-smoke.sql` (used by `validate.py` only), new `test/fixture.test.js` — **port `3908`**
+(the plan said 3909, which the skill reserves for the fixture-probe port).
 
-TECH-SPEC §8.3: *"The real-ledger fixture is regression-checked on every run."* It is not. Add FX1.1
-(imports with 0 invalid rows) and FX1.2 (totals + dedupe stable).
+TECH-SPEC §8.3: *"The real-ledger fixture is regression-checked on every run."* It was not.
+FX1.1–FX4.2 (9 tests) now drive it end to end: parse → stage → preview → confirm → ledger rows →
+re-import dedupe.
+
+**Wiring it in found 3 real defects the existing CSV unit tests could not, because every CSV test in
+the suite is comma-separated with ISO dates while the real export is neither:**
+
+1. **No TAB delimiter support** — the real file is tab-separated and the parser split on `,`/`;` only,
+   so each row collapsed to ONE cell and all 26 quarantined as *"missing transaction_id"*.
+2. **No Excel serial dates** — the real file carries `45200`, which `toIsoDate` rejected, so every row
+   also failed on *"bad date"*.
+3. **`.tsv` rejected by the upload route** (`ALLOWED_EXT`) — the canonical real file could not be
+   uploaded at all, despite the parser being able to read it.
+
+Fixed in `src/lib/csv.js` + `src/routes/api.js`. The delimiter fix had to be real *detection*, not
+"also split on tab": real descriptions contain commas, so splitting on both would cut text fields.
+
+**Found but NOT fixed (out of §0 scope):** §8.4's *"every imported transaction group balances to zero
+or is quarantined"* is not implemented — `import-service.js` validates per row only. On the fixture,
+`SAL-24-10-0038` is a lone 14,200,000 debit with no credit leg and imports without comment. Ask
+the owner before implementing.
 
 ### Task 0.9 — Project scope (BOLA): the PRD requirement that was never built
 

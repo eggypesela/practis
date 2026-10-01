@@ -6,7 +6,8 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "test": "PRACTIS_RL_LOGIN_MAX=100000 PRACTIS_RL_WRITE_MAX=100000 PRACTIS_RL_GLOBAL_MAX=100000 node --test --test-concurrency=1 test/*.test.js"
+    "schema": "node db/dump-schema.js",
+    "test": "node db/dump-schema.js --check && python3 db/validate.py && PRACTIS_RL_LOGIN_MAX=100000 PRACTIS_RL_WRITE_MAX=100000 PRACTIS_RL_GLOBAL_MAX=100000 node --test --test-concurrency=1 test/*.test.js"
   },
   "license": "UNLICENSED",
   "dependencies": {

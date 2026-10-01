@@ -29,6 +29,7 @@ A duplicate ID makes traceability meaningless: "C1.1 failed" named three differe
 | `AD` | Administration / users | `admin.test.js` | 3993 |
 | `AZ` | **Authorization matrix** (new, §0 of the dev plan) | `authz.test.js` | 3901 |
 | `SCH` | **Security hardening**: FULL sync, CSP headers, rate limit | `security.test.js` | 3905–3907 |
+| `FX` | **Real-ledger fixture** regression (§8.3) | `fixture.test.js` | 3908 |
 
 **Known legacy collisions to re-map when touched:** `advances.test.js` reuses `A1`,`E1`,`C1`,`S1`,
 `R1`,`Z1`; `csrf.test.js` reuses `C1`,`S1`,`C2`,`C3`; `correct.test.js` reuses `C1`–`C4`;
@@ -354,57 +355,94 @@ The product workflow, step by step, and whether a test exists. **Empty rows are 
 
 ---
 
-## 14. Schema-validator drift (found 2026-09-30)
+## 14. Schema-validator drift — FIXED 2026-10-01
 
 `db/validate.py` executes **`db/schema.sql`** and asserts DB-level invariants — it passes ("ALL CHECKS
-PASS"). But the app runs **`db/migrations/`**, and the two have diverged:
+PASS"). But the app runs **`db/migrations/`**, and the two had diverged:
 
-| Object | migrations | schema.sql |
-|---|---|---|
-| tables | 43 | 44 (+`schema_migrations`) |
-| views | 9 | 9 (**`v_lpb_reconciliation`, `v_cbs_actual` differ**) |
-| triggers | **21** | **14** |
+| Object | migrations | schema.sql (before) | schema.sql (now) |
+|---|---|---|---|
+| tables | 43 | 44 (+`schema_migrations`) | 43 |
+| views | 9 | 9 (`v_lpb_reconciliation`, `v_cbs_actual` differ) | 9 |
+| triggers | **21** | **14** | **21** |
 
-**7 triggers exist only in the migrations** — including `trg_ledger_reversal_must_negate`,
-`trg_ledger_reversal_link_immutable` and `trg_lpb_checked_requires_cbs`. Also `accounting_ledger`,
-`lpb_statements`, `cash_advance` and `import_batches` have **different DDL**, and `validate.py` never
-sees `block_reason` / `superseded_by`.
+So the validator was green while the guards it claimed to verify were **absent from the schema it
+read**. Fixed on 2026-10-01:
 
-So the schema validator is green while the guards it claims to verify are absent from the schema it
-reads. It also is **not wired into `npm test`** — it runs only if invoked by hand.
+- **`db/dump-schema.js`** regenerates `schema.sql` from a freshly-migrated throwaway DB, copying DDL
+  **verbatim out of `sqlite_master`** (never retyped — retyping is how the dedupe index lost its
+  `WHERE source='import'` predicate in migration 003). Objects are emitted in dependency order:
+  tables → indexes → triggers → views, because SQLite validates a view against its tables at CREATE
+  time. `--check` mode compares without writing.
+- **`npm test` now runs `node db/dump-schema.js --check && python3 db/validate.py` before the node
+  suite**, so drift and validator failure both fail the build.
+- **`validate.py` gained a drift gate**: it asserts 9 named guards are present (the reversal trio, the
+  CBS/blocked triggers, the dedupe index) and that the dedupe index kept its partial predicate. It
+  also gained **§15-style reversal tests** — with the guards previously absent from `schema.sql` these
+  would have had nothing to bite on.
 
-| ID | Test | Expected |
-|----|------|----------|
-| SCH1.1 | `schema.sql` DDL is byte-identical to the migrated result | no drift |
-| SCH1.2 | `schema.sql` contains all 21 triggers | none missing |
-| SCH1.3 | `validate.py` runs inside `npm test` | non-zero exit fails the suite |
-| SCH1.4 | migration rehearsal: fresh DB reaches `user_version` 9 | matches dev |
+| ID | Test | Status |
+|----|------|--------|
+| SCH1.1 | `schema.sql` DDL matches the migrated result | ✅ `dump-schema.js --check` in `npm test` |
+| SCH1.2 | `schema.sql` contains all 21 triggers | ✅ asserted by the generator + drift gate |
+| SCH1.3 | `validate.py` runs inside `npm test` | ✅ first two commands of the `test` script |
+| SCH1.4 | migration rehearsal: fresh DB reaches `user_version` 9 | ✅ the generator does exactly this each run |
+| SCH1.5 | the drift gate actually FAILS when a guard is removed | ✅ verified by deleting `trg_ledger_reversal_must_negate` and confirming exit 1 |
+
+**Deliberately not asserted: that `schema.sql` byte-equals a dump of `data/practis.db`.** It is
+generated from the *migrations*, which is the schema a fresh install gets. The dev DB is a separate
+concern and may legitimately carry extra staging-state rows.
 
 ---
 
-## 15. Required fixtures — declared, unused
+## 15. Required fixtures — now wired in
 
 | Artifact | Spec | Reality |
 |---|---|---|
-| `db/fixture-ledger-export.tsv` (26 rows) | §8.3: "regression-checked **on every run**" | **exists (28 lines), referenced by ZERO tests** |
-| `db/seed-smoke.sql` | §8.3: every test DB seeded from it where domain data is needed | **exists, used by nothing** — tests use `seed-master.js` + `seed-demo.js` |
+| `db/fixture-ledger-export.tsv` (26 rows) | §8.3: "regression-checked **on every run**" | **was referenced by ZERO tests** → now driven end-to-end by `test/fixture.test.js` (FX series) |
+| `db/seed-smoke.sql` | §8.3: every test DB seeded from it where domain data is needed | used by `validate.py`; the timed test suite uses `seed-master.js` + `seed.js` instead |
 
-| ID | Test | Expected |
-|----|------|----------|
-| FX1.1 | real-ledger fixture imports with 0 invalid rows | all 26 rows parse |
-| FX1.2 | fixture regression: totals + dedupe match the frozen expectation | stable across runs |
+**Wiring the fixture in found three real defects that the CSV unit tests could not**, because every
+CSV test in the suite is comma-separated with ISO dates while the real export is neither:
+
+| # | Defect | Symptom |
+|---|--------|---------|
+| 1 | **No TAB delimiter support.** The real file is tab-separated; the parser split on `,`/`;` only. | Every row collapsed to ONE cell → all 26 quarantined as "missing transaction_id" — a misleading symptom for a delimiter problem. |
+| 2 | **No Excel serial dates.** The real file carries `45200`, not `2023-10-01`. | `toIsoDate` returned null → every row failed on "bad date". |
+| 3 | **`.tsv` rejected by the upload route.** `ALLOWED_EXT` allowed only `.csv`/`.txt`. | The canonical real file could not be uploaded at all — `400 BAD_EXTENSION`, despite the parser handling tabs fine. |
+
+All three fixed in `src/lib/csv.js` / `src/routes/api.js`. Note defect 1's fix had to be *delimiter
+detection*, not "also split on tab": the real descriptions contain commas
+(`"Perjalanan dinas: Petugas A, Site Utama 02 sd 05 Oktober 2023"`), so splitting on both characters would cut
+text fields in half.
+
+| ID | Test | Expected | Status |
+|----|------|----------|--------|
+| FX1.1 | fixture is TAB-separated, parses to its real 14 columns | 26 rows, correct column alignment | ✅ |
+| FX1.2 | comma-bearing descriptions do not split the row | comma stays inside its cell | ✅ |
+| FX1.3 | Excel serial dates decode to the right calendar day | `45200` → `2023-10-01` | ✅ |
+| FX2.1 | all 26 real rows stage clean (0 quarantined) and confirm | `inserted = 26` | ✅ |
+| FX3.1 | imported rows satisfy the ledger invariants | `amount = debit - credit`, one side, whole rupiah | ✅ |
+| FX3.2 | decoded dates land in the real Oct-2023 window | `2023-10-01` … `2023-10-25`, 13 with `effective_date` | ✅ |
+| FX3.3 | type column maps to the legacy vocabulary | Payable/Expense `in_cost_basis=1`; Dropping `=0` | ✅ |
+| FX4.1 | re-importing the same real file adds nothing | all 26 counted as duplicates, ledger unchanged | ✅ |
+| FX4.2 | `.tsv` allowed but unknown extensions still rejected | `.xlsx` → 400 `BAD_EXTENSION` | ✅ |
+
+**Known gap this exposed and did NOT fix (not in §0 scope):** §8.4 requires "every imported transaction
+group balances to zero or is quarantined", but `import-service.js` validates **per row only** — there
+is no group-level balance check. Measured on the fixture: 10 of its 11 `transaction_id` groups balance
+to zero; `SAL-24-10-0038` is a lone 14,200,000 debit with no credit leg, and the importer accepts it
+without comment. Raise with the owner before implementing — it may be a deliberate partial-batch decision.
 
 ---
 
 ## 16. Priority of the gaps
 
-1. **AZ1.x** + **`authz.test.js`** — five money-writing routes accept any session. Fix + test (§0 of
-   the dev plan). *Highest.*
-2. **BOLA1.x** — cross-project read **and write** leak; needs the scope layer built first.
-3. **§14 schema drift** — the validator cannot be trusted until `schema.sql` matches the migrations.
+1. ✅ **AZ1.x** + **`authz.test.js`** — DONE (`e5fbd1d`): five money-writing routes guarded, 17 tests.
+2. **BOLA1.x** — cross-project read **and write** leak; needs the scope layer built first (§0 task 0.9).
+3. ✅ **§14 schema drift** — DONE (`7b32b92` + this slice): `schema.sql` regenerated, drift gate added.
 4. **IM2.5–IM2.8** — upload edge cases (oversize, formula, traversal, signature).
-5. **§8.4 invariants 7 + 12** — frozen period (unimplemented) and closed-project hiding.
-6. **FX1.x** — wire the real-ledger fixture in.
-7. **Security layer remainder** — CSP, per-IP rate limit, XSS escaping test.
+5. **§8.4 invariants 7 + 12** — frozen period (unimplemented, §0 task 0.10) and closed-project hiding.
+6. ✅ **FX1.x** — DONE: the real-ledger fixture is now driven end-to-end every run.
+7. ✅ **Security layer** — DONE (`7b32b92`): CSP + nonce, per-IP rate limit, cookie `secure`.
 
-**None of items 2–7 should start before item 1.**

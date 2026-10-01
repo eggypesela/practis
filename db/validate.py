@@ -21,11 +21,57 @@ def main() -> int:
     con.executescript((HERE / "schema.sql").read_text())
     print("schema.sql executed OK")
 
+    counts = {}
     for row in con.execute(
         "SELECT type, COUNT(*) FROM sqlite_master "
         "WHERE name NOT LIKE 'sqlite_%' GROUP BY type ORDER BY type"
     ):
+        counts[row[0]] = row[1]
         print(f"  {row[0]}: {row[1]}")
+
+    # DRIFT GATE. schema.sql is a generated artefact of db/migrations/*.sql
+    # (`node db/dump-schema.js`). It once drifted silently — 14 triggers here vs 21 in
+    # the migrations — so the validator happily asserted invariants against a schema
+    # that lacked the reversal and CBS guards and still printed ALL CHECKS PASS.
+    # These minimums make that specific failure impossible: if a regenerated file ever
+    # loses the guards again, this fails loudly instead of passing quietly.
+    REQUIRED = [
+        # Reversal guards (migration 006) — the immutable correction path.
+        "trg_ledger_reversal_must_negate",
+        "trg_ledger_reversal_link_immutable",
+        "idx_ledger_one_reversal",
+        # CBS guard (migration 009) — a check without a CBS account freezes
+        # unattributable money into the cost report.
+        "trg_lpb_checked_requires_cbs",
+        "trg_lpb_checked_requires_cbs_insert",
+        "trg_lpb_blocked_needs_reason",
+        "trg_lpb_blocked_needs_reason_insert",
+        "trg_lpb_no_check_from_blocked",
+        # Dedupe index must keep its partial WHERE — losing the predicate makes a
+        # manual duplicate post illegal (the migration-003 regression).
+        "idx_ledger_import_dedupe",
+    ]
+    present = {
+        r[0] for r in con.execute(
+            "SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'"
+        )
+    }
+    missing = [n for n in REQUIRED if n not in present]
+    if missing:
+        print(f"  [FAIL] schema drift: required guards missing: {missing}")
+        print("         regenerate with: node db/dump-schema.js")
+        return 1
+    print(f"  [PASS] schema drift: all {len(REQUIRED)} required guards present")
+
+    # The dedupe index must be PARTIAL on source='import'. Check the DDL text, because
+    # an index without the predicate exists and behaves differently.
+    dedupe_sql = con.execute(
+        "SELECT sql FROM sqlite_master WHERE name='idx_ledger_import_dedupe'"
+    ).fetchone()
+    if not dedupe_sql or "source" not in (dedupe_sql[0] or ""):
+        print("  [FAIL] idx_ledger_import_dedupe lost its partial WHERE source='import'")
+        return 1
+    print("  [PASS] idx_ledger_import_dedupe keeps its partial predicate")
 
     if schema_only:
         return 0
@@ -450,6 +496,56 @@ def main() -> int:
     except sqlite3.IntegrityError:
         alert_dedupe_blocked = True
     check("notification: duplicate unread alert rejected", alert_dedupe_blocked, True)
+
+    # 15. Immutable correction path: the reversal guards (migration 006).
+    #
+    # These existed in the migrations but NOT in schema.sql, which is exactly the drift
+    # the drift gate above now catches. With the guards absent these assertions would have
+    # had nothing to bite on, so they are the reason the regenerated file matters.
+    #
+    # Line 4 is a +15,000,000 Expense debit in project 1; its reversal credits 15,000,000.
+    def accepts(label, sql):
+        try:
+            con.execute(sql)
+            check(label, True, True)
+        except sqlite3.IntegrityError as e:
+            check(f"{label} [{e}]", False, True)
+
+    accepts(
+        "reversal: a correct negating entry is accepted",
+        "INSERT INTO accounting_ledger"
+        "(id,project_id,date,type,line_role,in_cost_basis,amount,debit,credit,source,reverses_ledger_id)"
+        "VALUES (920,1,'2026-03-11','Expense','expense',1,-15000000,0,15000000,'manual',4)",
+    )
+    # idx_ledger_one_reversal — a line is reversed exactly ONCE. Two operators clicking
+    # Reverse concurrently must not double-count the correction.
+    rejects(
+        "reversal: a line cannot be reversed twice",
+        "INSERT INTO accounting_ledger"
+        "(id,project_id,date,type,line_role,in_cost_basis,amount,debit,credit,source,reverses_ledger_id)"
+        "VALUES (921,1,'2026-03-12','Expense','expense',1,-15000000,0,15000000,'manual',4)",
+    )
+    # trg_ledger_reversal_must_negate — a "reversal" that does not negate would corrupt
+    # the pair, so the pair would stop netting to zero in every view.
+    rejects(
+        "reversal: a non-negating entry is rejected",
+        "INSERT INTO accounting_ledger"
+        "(id,project_id,date,type,line_role,in_cost_basis,amount,debit,credit,source,reverses_ledger_id)"
+        "VALUES (922,1,'2026-03-11','Payable','expense',1,90000000,90000000,0,'manual',3)",
+    )
+    # Same guard, project dimension: a reversal must sit in the ORIGINAL's project.
+    # (Project 2 already exists — created earlier as the tamper target.)
+    rejects(
+        "reversal: a cross-project reversal is rejected",
+        "INSERT INTO accounting_ledger"
+        "(id,project_id,date,type,line_role,in_cost_basis,amount,debit,credit,source,reverses_ledger_id)"
+        "VALUES (923,2,'2026-03-11','Payable','expense',1,-90000000,0,90000000,'manual',3)",
+    )
+    # trg_ledger_reversal_link_immutable — the link is evidence, so it never moves.
+    rejects(
+        "reversal: the reversal link cannot be removed or moved",
+        "UPDATE accounting_ledger SET reverses_ledger_id=NULL WHERE id=920",
+    )
 
     print()
     if failures:

@@ -1,3 +1,20 @@
+-- PRACTIS schema (GENERATED — do not hand-edit)
+--
+-- This file is a build artefact of db/migrations/*.sql, produced by:
+--     node db/dump-schema.js
+--
+-- It exists so db/validate.py can assert invariants against the schema the app
+-- ACTUALLY runs. Before this was generated, the two had drifted (14 triggers here
+-- vs 21 in the migrations) and the validator passed against a schema missing the
+-- reversal and CBS guards.
+--
+-- Objects are emitted in dependency order: tables, indexes, triggers, then views.
+-- DDL is copied verbatim out of sqlite_master. To change it, write a migration and
+-- re-run the generator — never edit this file directly.
+--
+-- Composition: 43 tables, 43 indexes, 21 triggers, 9 views.
+
+-- TABLES (43)
 CREATE TABLE acceptance_register (
   id                  INTEGER PRIMARY KEY,
   project_id          INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -14,79 +31,44 @@ CREATE TABLE acceptance_register (
   created_at          TEXT NOT NULL DEFAULT (datetime('now')),
   created_by          INTEGER REFERENCES users(id)
 );
-CREATE TABLE accounting_ledger (
+CREATE TABLE "accounting_ledger" (
   id                INTEGER PRIMARY KEY,
-  transaction_id    TEXT,                      -- legacy human/reporting transaction id (kept for traceability)
+  transaction_id    TEXT,
   project_id        INTEGER REFERENCES projects(id),
-  document_no       TEXT,                      -- invoice / PO / payment reference. Links payment→invoice.
-  reference_no      TEXT,                      -- legacy reference_no
-  account_code      TEXT,                      -- legacy account_code, PRESERVED RAW (see note below)
+  document_no       TEXT,
+  reference_no      TEXT,
+  account_code      TEXT,
   partner_type      TEXT CHECK (partner_type IN ('client','supplier','employee','other')),
-  partner_id        INTEGER,                   -- clients.id | suppliers.id | employees.id (per partner_type)
-  -- dates
-  date              TEXT NOT NULL,             -- Finance's posted date — IMMUTABLE audit anchor
-  effective_date    TEXT,                      -- Cost Controller's correction (NULL unless adjusted)
-  -- classification
-  -- `type` = optional movement filter, kept in legacy vocabulary (Payable/Expense/Dropping/LPB/…).
-  --   Dropping = cash advance issued; it is not detailed cost.
-  --   LPB = Finance bulk Expense Report settlement; it is not detailed cost.
-  -- Checked Project Admin detail lives in lpb_statements and contributes actual cost.
-  -- `line_role` = what kind of line this is (drives which views include it). The two are NOT the
-  -- same: in the real data a "Payable" line is an expense-side line whose counterparty sits in
-  -- trade payable — its `line_role` is 'expense', but it is ALSO visible in the payable register.
-  -- TYPES + ROLES (user-confirmed enum, 2026-09-23: Income|Expense|Receivable|Payable|LPB|Dropping):
-  --   Income     → line_role='receivable', in_cost_basis=0   (client money in)
-  --   Expense    → line_role='expense',    in_cost_basis=1   (cost consumed)
-  --   Receivable → line_role='receivable', in_cost_basis=0   (billed to client, not yet paid)
-  --   Payable    → line_role='expense',    in_cost_basis=1   (supplier invoice; also feeds payable register)
-  --   LPB        → line_role='expense',    in_cost_basis=0   (finance's BULK settlement; real cost
-  --                                                            = checked lpb_statements DETAIL lines)
-  --   Dropping   → line_role='dropping',   in_cost_basis=0   (cash advance issued)
-  --   BLANK/NULL → ALLOWED & intentional (user: "we only take some line for each transaction to
-  --                classify as expense/income/receivable/payable"). The balancing offset lines are
-  --                deliberately untagged. Double-entry integrity lives in debit/credit + account,
-  --                NOT in this filter. Blank-type lines get line_role='other', in_cost_basis=0
-  --                (conservative: never inflate cost), and surface in the review queue.
+  partner_id        INTEGER,
+  date              TEXT NOT NULL,
+  effective_date    TEXT,
   type              TEXT CHECK (type IS NULL OR type IN
-                      ('Income','Expense','Receivable','Payable','LPB','Dropping')),
-                                                 -- user's filter vocabulary (enum above); OPTIONAL
-                                                 -- (NULL is intentional, see BLANK/NULL note above)
+                      ('Income','Expense','Receivable','Payable','LPB','Dropping','Revenue')),
   line_role         TEXT NOT NULL DEFAULT 'other'
                       CHECK (line_role IN ('expense','payable','receivable','dropping','funding','tax','payment','other')),
-  -- Cost-basis rule (VERIFIED on real data): only genuine cost consumption counts as project cost.
-  -- Cash movements (Dropping/cash advance, funding, receivables) do NOT — otherwise the advance
-  -- would be double-counted when its LPB detail lines are later expensed.
   in_cost_basis     INTEGER NOT NULL DEFAULT 1 CHECK (in_cost_basis IN (0,1)),
   cost_category_id  INTEGER REFERENCES cost_categories(id),
   chart_of_account_id INTEGER REFERENCES chart_of_accounts(id),
   cashflow_category_id INTEGER REFERENCES cashflow_categories(id),
-  -- the two tags the Cost Controller sets in one screen (R2-10)
-  transaction_account_id INTEGER REFERENCES transaction_accounts(id),   -- CBS: what kind of money
-  wbs_node_id       INTEGER REFERENCES wbs_nodes(id),                    -- WBS: which work line
-  -- money.  User fills debit OR credit (never both, never amount). amount is COMPUTED
-  -- automatically: amount = debit - credit (verified: 26/26 real rows, user's own workflow).
-  --   debit > 0  → money out (cost, expense, cash advance)
-  --   credit > 0 → money in (income, cash received)
-  -- Stored signs (R2-7): income/credit = NEGATIVE, cost/debit = POSITIVE.
-  -- UX guard (planned, app layer, see PRD §5.2): input shows ONE amount + a Debit/Credit toggle,
-  -- never two number fields. amount stays derived, never user-typed.
-  amount            INTEGER NOT NULL,           -- = debit - credit, computed by app/import
-  debit             INTEGER NOT NULL DEFAULT 0, -- legacy + new entry: fill ONE side
-  credit            INTEGER NOT NULL DEFAULT 0, -- the other side stays 0
+  transaction_account_id INTEGER REFERENCES transaction_accounts(id),
+  wbs_node_id       INTEGER REFERENCES wbs_nodes(id),
+  amount            INTEGER NOT NULL,
+  debit             INTEGER NOT NULL DEFAULT 0,
+  credit            INTEGER NOT NULL DEFAULT 0,
   retainage_amount  INTEGER NOT NULL DEFAULT 0,
   paid_amount       INTEGER NOT NULL DEFAULT 0,
-  currency          TEXT NOT NULL DEFAULT 'IDR',   -- reserved (R2-9)
+  currency          TEXT NOT NULL DEFAULT 'IDR',
   description       TEXT,
-  -- provenance / workflow
   source            TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual','import','lpb','system')),
   import_batch_id   INTEGER REFERENCES import_batches(id),
   cash_advance_id   INTEGER REFERENCES cash_advance(id),
-  cost_checked      INTEGER NOT NULL DEFAULT 0 CHECK (cost_checked IN (0,1)),  -- Cost Controller tagged?
+  cost_checked      INTEGER NOT NULL DEFAULT 0 CHECK (cost_checked IN (0,1)),
   cost_checked_by   INTEGER REFERENCES users(id),
   cost_checked_at   TEXT,
   created_at        TEXT NOT NULL DEFAULT (datetime('now')),
   created_by        INTEGER REFERENCES users(id)
-);
+, reverses_ledger_id INTEGER
+  REFERENCES accounting_ledger(id));
 CREATE TABLE app_settings (
   key           TEXT PRIMARY KEY,
   value         TEXT NOT NULL,
@@ -151,7 +133,7 @@ CREATE TABLE bcr_register (
   old_baseline_json  TEXT,                     -- archived prior values (audit)
   new_baseline_json  TEXT
 );
-CREATE TABLE cash_advance (
+CREATE TABLE "cash_advance" (
   id             INTEGER PRIMARY KEY,
   project_id     INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   advance_no     TEXT,                          -- legacy memo_no
@@ -286,7 +268,7 @@ CREATE TABLE import_batches (
   imported_at    TEXT NOT NULL DEFAULT (datetime('now')),
   imported_by    INTEGER REFERENCES users(id)
 , status TEXT NOT NULL DEFAULT 'confirmed'
-    CHECK (status IN ('staged','previewed','confirmed','failed','expired')), original_name TEXT, uploaded_by INTEGER REFERENCES users(id), new_count INTEGER NOT NULL DEFAULT 0, confirmed_at TEXT, expires_at TEXT NOT NULL DEFAULT (datetime('now', '+90 days')));
+    CHECK (status IN ('staged','previewed','confirmed','failed','expired')), original_name TEXT, uploaded_by INTEGER REFERENCES users(id), new_count INTEGER NOT NULL DEFAULT 0, confirmed_at TEXT, expires_at TEXT NOT NULL DEFAULT (datetime('now', '+90 days')), staging_json TEXT, file_path TEXT);
 CREATE TABLE import_profiles (
   id             INTEGER PRIMARY KEY,
   name           TEXT NOT NULL UNIQUE,
@@ -314,7 +296,7 @@ CREATE TABLE jobs (
   started_at     TEXT,
   finished_at    TEXT
 );
-CREATE TABLE lpb_statements (
+CREATE TABLE "lpb_statements" (
   id                    INTEGER PRIMARY KEY,
   cash_advance_id       INTEGER REFERENCES cash_advance(id) ON DELETE CASCADE,
   project_id            INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -332,10 +314,12 @@ CREATE TABLE lpb_statements (
   currency              TEXT NOT NULL DEFAULT 'IDR',
   transaction_account_id INTEGER REFERENCES transaction_accounts(id),   -- filled/confirmed by Cost Controller
   wbs_node_id           INTEGER REFERENCES wbs_nodes(id),
-  status                TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','checked','rejected')),
+  status                TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','checked','rejected','blocked')),
   checked_by            INTEGER REFERENCES users(id),
   checked_at            TEXT,
   reject_reason         TEXT,
+  block_reason          TEXT,                          -- why it cannot be booked yet (missing CBS/WBS)
+  superseded_by         INTEGER REFERENCES lpb_statements(id),  -- the corrected line that replaced this one
   ledger_id             INTEGER REFERENCES accounting_ledger(id),       -- set when rolled into actuals
   created_at            TEXT NOT NULL DEFAULT (datetime('now')),
   created_by            INTEGER REFERENCES users(id)
@@ -491,7 +475,6 @@ CREATE TABLE roles (
   name          TEXT NOT NULL,
   domain        TEXT                    -- system|project|schedule|cost|supply|people|money|entry|readonly
 );
-CREATE TABLE schema_migrations (  migration_id INTEGER PRIMARY KEY,  checksum     TEXT NOT NULL,  applied_at   TEXT NOT NULL DEFAULT (datetime('now')));
 CREATE TABLE sessions (
   id            TEXT PRIMARY KEY,             -- random session id (cookie value, hashed at rest)
   user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -604,6 +587,8 @@ CREATE TABLE wbs_progress (
   frozen        INTEGER NOT NULL DEFAULT 0 CHECK (frozen IN (0,1)),
   UNIQUE (wbs_node_id, period_month)
 );
+
+-- INDEXS (43)
 CREATE INDEX idx_acceptance_project ON acceptance_register(project_id);
 CREATE INDEX idx_approvals_entity ON approvals(entity_type, entity_id);
 CREATE INDEX idx_approvals_pending ON approvals(status) WHERE status = 'pending';
@@ -618,13 +603,19 @@ CREATE INDEX idx_imports_project_status ON import_batches(project_id, status);
 CREATE INDEX idx_invites_pending ON user_invitations(email) WHERE used_at IS NULL AND revoked_at IS NULL;
 CREATE INDEX idx_jobs_due ON jobs(state, run_at);
 CREATE INDEX idx_ledger_cbs          ON accounting_ledger(transaction_account_id);
+CREATE INDEX idx_ledger_cost_checked ON accounting_ledger(cost_checked);
 CREATE INDEX idx_ledger_doc          ON accounting_ledger(document_no);
 CREATE INDEX idx_ledger_effective    ON accounting_ledger(project_id, effective_date);
 CREATE UNIQUE INDEX idx_ledger_import_dedupe ON accounting_ledger(
-  COALESCE(transaction_id,''), COALESCE(document_no,''), COALESCE(date,''), amount, COALESCE(project_id,0)
-) WHERE source = 'import';
+  COALESCE(transaction_id,''), COALESCE(document_no,''), COALESCE(date,''),
+  amount, COALESCE(project_id,0))
+WHERE source = 'import';
+CREATE UNIQUE INDEX idx_ledger_one_reversal
+  ON accounting_ledger(reverses_ledger_id)
+  WHERE reverses_ledger_id IS NOT NULL;
 CREATE INDEX idx_ledger_period       ON accounting_ledger(project_id, date);
 CREATE INDEX idx_ledger_project      ON accounting_ledger(project_id);
+CREATE INDEX idx_ledger_reverses ON accounting_ledger(reverses_ledger_id);
 CREATE INDEX idx_ledger_unchecked    ON accounting_ledger(cost_checked) WHERE cost_checked = 0;
 CREATE INDEX idx_ledger_wbs          ON accounting_ledger(wbs_node_id);
 CREATE INDEX idx_lpb_project ON lpb_statements(project_id, period_month);
@@ -649,6 +640,8 @@ CREATE INDEX idx_wbs_nodes_project ON wbs_nodes(project_id);
 CREATE INDEX idx_wbs_progress_period ON wbs_progress(period_month);
 CREATE UNIQUE INDEX uq_cbs_plan_bucket ON cbs_plan(
   project_id, transaction_account_id, COALESCE(wbs_node_id, 0), plan_type, period_month, version);
+
+-- TRIGGERS (21)
 CREATE TRIGGER trg_audit_log_no_delete
 BEFORE DELETE ON audit_log
 BEGIN
@@ -702,7 +695,6 @@ BEFORE UPDATE OF debit, credit, project_id, in_cost_basis, cost_checked, cost_ch
                  reference_no, transaction_id
 ON accounting_ledger
 WHEN (
-     -- hard-blocked: any change to these columns is tampering, period
      OLD.debit                IS NOT NEW.debit                OR
      OLD.credit               IS NOT NEW.credit               OR
      OLD.project_id           IS NOT NEW.project_id           OR
@@ -720,8 +712,6 @@ WHEN (
      OLD.reference_no         IS NOT NEW.reference_no         OR
      OLD.transaction_id       IS NOT NEW.transaction_id
   OR (
-     -- Cost Controller tagging/approval fields: allowed ONLY as the exact one-way transitions
-     -- below (R2-10, R2-23). Any other change to them is tampering.
      (OLD.wbs_node_id IS NOT NEW.wbs_node_id
         AND NOT (OLD.wbs_node_id IS NULL AND NEW.wbs_node_id IS NOT NULL))
      OR (OLD.transaction_account_id IS NOT NEW.transaction_account_id
@@ -773,6 +763,40 @@ BEFORE DELETE ON accounting_ledger
 BEGIN
   SELECT RAISE(ABORT, 'accounting_ledger rows are never deleted; post a reversing entry instead');
 END;
+CREATE TRIGGER trg_ledger_reversal_link_immutable
+BEFORE UPDATE OF reverses_ledger_id ON accounting_ledger
+WHEN OLD.reverses_ledger_id IS NOT NEW.reverses_ledger_id
+BEGIN
+  SELECT RAISE(ABORT,
+    'accounting_ledger: a reversal link cannot be changed or removed; post a correcting line instead');
+END;
+CREATE TRIGGER trg_ledger_reversal_must_negate
+BEFORE INSERT ON accounting_ledger
+WHEN NEW.reverses_ledger_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM accounting_ledger o
+     WHERE o.id = NEW.reverses_ledger_id
+       AND o.project_id IS NEW.project_id
+       AND NEW.debit  = o.credit
+       AND NEW.credit = o.debit
+       AND NEW.amount = -o.amount
+  )
+BEGIN
+  SELECT RAISE(ABORT,
+    'accounting_ledger: a reversing entry must negate the original line (same project, swapped debit/credit, negated amount)');
+END;
+CREATE TRIGGER trg_lpb_blocked_needs_reason
+BEFORE UPDATE OF status, block_reason ON lpb_statements
+WHEN NEW.status = 'blocked' AND (NEW.block_reason IS NULL OR trim(NEW.block_reason) = '')
+BEGIN
+  SELECT RAISE(ABORT, 'lpb_statements: status=blocked requires block_reason (why it cannot be booked yet)');
+END;
+CREATE TRIGGER trg_lpb_blocked_needs_reason_insert
+BEFORE INSERT ON lpb_statements
+WHEN NEW.status = 'blocked' AND (NEW.block_reason IS NULL OR trim(NEW.block_reason) = '')
+BEGIN
+  SELECT RAISE(ABORT, 'lpb_statements: status=blocked requires block_reason (why it cannot be booked yet)');
+END;
 CREATE TRIGGER trg_lpb_checked_is_final
 BEFORE UPDATE OF amount, debit, credit, status, checked_by, checked_at, cash_advance_id,
                  project_id, lpb_no, entry_date, transaction_account_id, wbs_node_id
@@ -801,6 +825,20 @@ WHEN OLD.status = 'checked'
 BEGIN
   SELECT RAISE(ABORT,
     'lpb_statements: a checked line is never deleted; post a reversing line instead');
+END;
+CREATE TRIGGER trg_lpb_checked_requires_cbs
+BEFORE UPDATE OF status, transaction_account_id ON lpb_statements
+WHEN NEW.status = 'checked' AND NEW.transaction_account_id IS NULL
+BEGIN
+  SELECT RAISE(ABORT,
+    'lpb_statements: a checked line must carry a CBS account — without one its cost cannot be attributed to anything');
+END;
+CREATE TRIGGER trg_lpb_checked_requires_cbs_insert
+BEFORE INSERT ON lpb_statements
+WHEN NEW.status = 'checked' AND NEW.transaction_account_id IS NULL
+BEGIN
+  SELECT RAISE(ABORT,
+    'lpb_statements: a checked line must carry a CBS account — without one its cost cannot be attributed to anything');
 END;
 CREATE TRIGGER trg_lpb_checked_requires_checker
 BEFORE UPDATE OF status, checked_by, checked_at ON lpb_statements
@@ -831,6 +869,15 @@ BEGIN
   SELECT RAISE(ABORT,
     'lpb_statements: whole-rupiah integers only; amount must equal debit - credit; enter ONE side only and never a negative side');
 END;
+CREATE TRIGGER trg_lpb_no_check_from_blocked
+BEFORE UPDATE OF status ON lpb_statements
+WHEN NEW.status = 'checked' AND OLD.status IN ('blocked','rejected')
+BEGIN
+  SELECT RAISE(ABORT,
+    'lpb_statements: a blocked or rejected line cannot be checked — clear the block or enter a corrected line');
+END;
+
+-- VIEWS (9)
 CREATE VIEW v_aging AS
 SELECT r.project_id, r.document_no, r.partner_id, r.invoice_date, r.outstanding_amount,
        CASE WHEN r.retainage_amount > 0 THEN 1 ELSE 0 END AS has_retainage,
@@ -855,6 +902,7 @@ FROM (
   SELECT project_id, transaction_account_id, period_month, amount
   FROM lpb_statements
   WHERE status = 'checked'
+    AND transaction_account_id IS NOT NULL   -- unattributable cost is not cost
 )
 GROUP BY project_id, transaction_account_id, period_month;
 CREATE VIEW v_descoped_lines AS
@@ -909,15 +957,16 @@ CREATE VIEW v_lpb_reconciliation AS
 SELECT
   COALESCE(f.doc_no, d.lpb_no)                         AS lpb_no,
   COALESCE(f.project_id, d.project_id)                 AS project_id,
-  f.period_month,
+  COALESCE(f.period_month, d.period_month)             AS period_month,
   f.bulk_amount  AS finance_amount,       -- what Finance booked in the ledger (bulk)
   d.detail_amount AS admin_detail_amount, -- what Project Admin recorded line-by-line
-  f.bulk_amount - d.detail_amount        AS difference,
+  COALESCE(f.bulk_amount, 0) - COALESCE(d.detail_amount, 0) AS difference,
   CASE
-    WHEN d.lpb_no IS NULL          THEN 'missing_detail'
+    WHEN f.doc_no IS NULL          THEN 'awaiting_settlement'  -- detail, no settlement yet
+    WHEN d.lpb_no IS NULL          THEN 'missing_detail'       -- settlement, no detail
     WHEN f.bulk_amount = d.detail_amount THEN 'balanced'
-    WHEN f.bulk_amount <> d.detail_amount THEN 'difference'
-  END                                AS status
+    ELSE 'difference'
+  END                                                  AS status
 FROM (
   SELECT project_id, document_no AS doc_no,
          substr(COALESCE(effective_date, date),1,7) AS period_month,
@@ -931,6 +980,7 @@ FULL OUTER JOIN (
          period_month,
          SUM(CASE WHEN status = 'checked' THEN ABS(amount) ELSE 0 END) AS detail_amount
   FROM lpb_statements
+  WHERE lpb_no IS NOT NULL      -- an unnumbered line cannot be reconciled to a settlement
   GROUP BY project_id, lpb_no, period_month
 ) d ON d.project_id = f.project_id AND d.lpb_no = f.doc_no AND d.period_month = f.period_month;
 CREATE VIEW v_payable AS

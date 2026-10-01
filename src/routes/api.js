@@ -29,7 +29,11 @@ const router = express.Router();
 const canImport = requireApiCapability('canImportLedger', 'Importing the ledger is a Finance task.');
 
 const MAX_BYTES = 10 * 1024 * 1024;              // 10 MB (TECH-SPEC §3.7)
-const ALLOWED_EXT = /\.(csv|txt)$/i;
+// `.tsv` is not optional: Excel's "Save as text" on the real ledger export produces a
+// TAB-separated file with that extension, which is precisely what db/fixture-ledger-export.tsv
+// is. Rejecting it meant the canonical real-world file could not be imported at all, while
+// the parser happily handled tabs — the barrier was the extension check, not the parser.
+const ALLOWED_EXT = /\.(csv|tsv|txt)$/i;
 
 // Parse one multipart/form-data request into { fields, file }.
 // Rejects oversize files (413-ish → 400 with a clear code) and non-CSV names.

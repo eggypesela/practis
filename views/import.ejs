@@ -1,10 +1,10 @@
 <%# TS-04 import screen: upload a fixed-template CSV, read the staged preview with
     row-level errors, then confirm. The ledger changes only on confirm. %>
 <div class="card" style="margin-bottom:12px">
-  <div class="card-hd"><h2>Upload ledger CSV</h2><span class="r">max 10 MB · .csv</span></div>
+  <div class="card-hd"><h2>Upload ledger CSV</h2><span class="r">max 10 MB · .csv, .tsv</span></div>
   <div class="fbody">
     <label class="fld">CSV file
-      <input type="file" id="import-file" accept=".csv,text/csv"></label>
+      <input type="file" id="import-file" accept=".csv,.tsv,text/csv,text/tab-separated-values"></label>
     <div class="fnote"><svg><use href="#i-info"/></svg><span>Columns are matched by name
       (<b>transaction_id, date, account_code, debit, credit</b> required). A re-uploaded row is
       <b>skipped, never overwritten</b>.</span></div>
