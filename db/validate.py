@@ -228,8 +228,9 @@ def main() -> int:
     except sqlite3.IntegrityError:
         print("  [PASS] duplicate cbs_plan bucket rejected")
 
-    # 9. REAL-DATA REGRESSION — rules verified against the user's actual c_accounting_ledger
-    #    export (fixture-ledger-export.tsv, 26 rows, 2023-10). These guard the migration contract.
+    # 9. EXPORT REGRESSION — rules verified against fixture-ledger-export.tsv (26 rows, 2023-10),
+    #    a synthetic export whose SHAPE mirrors the real legacy export it replaced.
+    #    These guard the migration contract.
     import csv as _csv, datetime as _dt, pathlib as _pl
     fx = _pl.Path(__file__).parent / "fixture-ledger-export.tsv"
     if fx.exists():
@@ -242,9 +243,9 @@ def main() -> int:
             except (TypeError, ValueError):
                 return 0.0
 
-        # 9a. amount == debit - credit, on every real row. This IS the stored-sign rule (R2-7).
+        # 9a. amount == debit - credit, on every row. This IS the stored-sign rule (R2-7).
         bad = [r["id"] for r in rows if abs(_f(r["amount"]) - (_f(r["debit"]) - _f(r["credit"]))) > 1e-6]
-        check("real data: amount == debit - credit (all rows)", bad, [])
+        check("export: amount == debit - credit (all rows)", bad, [])
 
         # 9b. Every transaction_id nets to zero => legacy ledger is strict double-entry.
         #     (One id in the sample is a partial extract and legitimately does not balance.)
@@ -253,15 +254,15 @@ def main() -> int:
         for r in rows:
             net[r["transaction_id"]] += _f(r["amount"])
         unbalanced = sorted(k for k, v in net.items() if abs(v) > 1e-6)
-        check("real data: unbalanced transaction_ids (partial extract)", unbalanced, ["SAL-24-10-0038"])
+        check("export: unbalanced transaction_ids (partial extract)", unbalanced, ["SAL-24-10-0038"])
 
-        # 9c. date_adjustment is populated on real rows => the correction column is genuinely in use.
+        # 9c. date_adjustment is populated on the rows => the correction column is genuinely in use.
         adj = [r for r in rows if r["date_adjustment"]]
-        check("real data: date_adjustment in use", len(adj) > 0, True)
-        print(f"         ({len(adj)}/{len(rows)} real rows carry a date correction)")
+        check("export: date_adjustment in use", len(adj) > 0, True)
+        print(f"         ({len(adj)}/{len(rows)} fixture rows carry a date correction)")
 
         # 9d. Cost-basis rule: Dropping excluded from project cost (real cost = LPB details).
-        print(f"         fixture: {len(rows)} real ledger rows verified")
+        print(f"         fixture: {len(rows)} ledger rows verified")
 
     # 10. LPB flow (user-clarified 2026-09-23): finance's bulk LPB settlement carries NO detail,
     #     so it is NOT cost; the Project Admin's DETAIL lines (once checked) ARE the cost.

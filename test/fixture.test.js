@@ -1,13 +1,19 @@
-// FX-series: the REAL-LEDGER FIXTURE regression test.
+// FX-series: the LEDGER-EXPORT FIXTURE regression test.
 //
 // TECH-SPEC §8.3: "The real-ledger fixture (`fixture-ledger-export.tsv`, 26 rows) is
 // regression-checked on EVERY run." Until now that fixture existed and was referenced by
 // ZERO tests — the spec claimed a guarantee the suite did not provide.
 //
-// WHY THIS TEST IS WORTH ITS WEIGHT: it drives the canonical real-world export end to
+// The fixture was ORIGINALLY a genuine export from a genuine project, carrying real
+// vendor names and real payment amounts. It is now SYNTHETIC but shape-identical —
+// same 26 rows, same ragged widths, same Excel serial dates, same unbalanced group
+// (see db/make-fixture.js). The assertions below are about SHAPE, so they keep their
+// full force; only the values changed.
+//
+// WHY THIS TEST IS WORTH ITS WEIGHT: it drives an export shaped like the real-world one end to
 // end (parse → stage → preview → confirm → ledger rows), and it immediately caught two
 // defects the CSV unit tests could not, because every CSV test in the suite is
-// comma-separated with ISO dates while the real export is neither:
+// comma-separated with ISO dates while a real export is neither:
 //
 //   1. No TAB delimiter support. The fixture is tab-separated; the parser only split on
 //      `,`/`;`, so each row collapsed to ONE cell and all 26 rows quarantined as
@@ -17,10 +23,11 @@
 //
 // Both fixed in src/lib/csv.js. This file is the guarantee they stay fixed.
 //
-// Real data, so the fixture's own codes must be seeded: project `SYN-24-001` and its
+// Synthetic data shaped like the real export, so the fixture's own codes must be seeded:
+// project `SYN-24-001` and its
 // chart-of-accounts / cashflow / transaction-account codes do NOT exist in seed-master
 // (which is PRJ-2026-shaped). Lookup misses are row errors by design, so seeding them is
-// what makes the theft of "did the real file import cleanly" answerable at all.
+// what makes the question "did this export import cleanly" answerable at all.
 
 const { test, before, after } = require('node:test');
 const assert = require('node:assert');
@@ -74,7 +81,7 @@ const confirm = async (id) => {
 // require('../src/db/...'), which would bind the default DB file rather than this temp one.
 const FIXTURE_ACCOUNTS = ['510100001', '110100002', '210100003', '110100004_BPC',
   '111700005', '111300006', '110100007_BPC', '210500008'];
-const FIXTURE_CASHFLOW = ['B1', 'B2'];
+const FIXTURE_CASHFLOW = ['C1', 'C2'];
 // Column 12 (sub_rbs_code) — the fixture's transaction-account codes. TX03P lives HERE,
 // not in cashflow: reading the column order wrong is how a row quarantines as
 // "unknown transaction account 'TX03P'".
@@ -82,7 +89,7 @@ const FIXTURE_TX = ['TX01', 'TX01P', 'TX02', 'TX03P'];
 
 function seedFixtureMasters(handle) {
   handle.prepare(`INSERT INTO projects (id, code, name, currency, status)
-                  VALUES (9001, 'SYN-24-001', 'Site Utama real-ledger fixture project', 'IDR', 'active')`).run();
+                  VALUES (9001, 'SYN-24-001', 'synthetic ledger export fixture', 'IDR', 'active')`).run();
   const acct = handle.prepare(`INSERT INTO chart_of_accounts (id, code, name, account_type, normal_side)
                                VALUES (?, ?, ?, 'expense', 'debit')`);
   FIXTURE_ACCOUNTS.forEach((c, i) => acct.run(9000 + i, c, `fixture account ${c}`));
@@ -125,12 +132,12 @@ after(() => {
 const ledgerCount = () => db.prepare('SELECT COUNT(*) n FROM accounting_ledger').get().n;
 const importedCount = () => db.prepare("SELECT COUNT(*) n FROM accounting_ledger WHERE source='import'").get().n;
 
-// ---- FX1: the parser reads the real file's SHAPE ----------------------------
+// ---- FX1: the parser reads the export's SHAPE ------------------------------
 
-test('FX1.1 the fixture is tab-separated and parses to its real 14 columns', async () => {
+test('FX1.1 the fixture is tab-separated and parses to its 14 columns', async () => {
   const parsed = csv.parse(fs.readFileSync(FIXTURE, 'utf8'));
   assert.strictEqual(parsed.delimiter, '\t',
-    'the real export is TAB-separated; a comma/semicolon guess collapses every row to one cell');
+    'this export is TAB-separated; a comma/semicolon guess collapses every row to one cell');
   assert.strictEqual(parsed.headers.length, 14, 'header must split into 14 column names');
   assert.strictEqual(parsed.rows.length, EXPECTED_ROWS, `§8.3 states ${EXPECTED_ROWS} rows`);
   // Rows are RAGGED by design: a TSV export drops trailing empty cells, so a row whose
@@ -152,7 +159,7 @@ test('FX1.1 the fixture is tab-separated and parses to its real 14 columns', asy
 });
 
 test('FX1.2 descriptions containing commas do not split the row', async () => {
-  // The trap that makes naive "split on , or ;" wrong: real descriptions carry commas.
+  // The trap that makes naive "split on , or ;" wrong: descriptions carry commas.
   // The parser must split on TAB only, so a comma stays inside its own cell.
   const parsed = csv.parse(fs.readFileSync(FIXTURE, 'utf8'));
   const i = parsed.rows.findIndex((r) => r.some((c) => c.includes(',')));
@@ -173,22 +180,22 @@ test('FX1.3 Excel serial dates decode to the right calendar day', async () => {
   assert.strictEqual(csv.toIsoDate(''), null);
 });
 
-// ---- FX2/FX3: the whole import path over real data --------------------------
+// ---- FX2/FX3: the whole import path over the fixture ------------------------
 
-test('FX2.1 every one of the 26 real rows stages clean (0 quarantined)', async () => {
+test('FX2.1 every one of the 26 fixture rows stages clean (0 quarantined)', async () => {
   const text = fs.readFileSync(FIXTURE, 'utf8');
   const up = await upload(text);
-  assert.strictEqual(up.status, 201, `stage should accept the real file, got ${up.status}`);
+  assert.strictEqual(up.status, 201, `stage should accept the fixture, got ${up.status}`);
   assert.strictEqual(up.body.rowCount, EXPECTED_ROWS);
 
   const pv = await preview(up.body.batchId);
   assert.strictEqual(pv.status, 200);
   assert.strictEqual(pv.body.newCount, EXPECTED_ROWS,
-    'all real rows must be importable — any invalid row means master seed or parsing is wrong');
+    'all fixture rows must be importable — any invalid row means master seed or parsing is wrong');
   assert.strictEqual(pv.body.invalid.length, 0,
     `no row should quarantine: ${JSON.stringify(pv.body.invalid.slice(0, 3))}`);
 
-  // Confirm the real rows actually land, and only as import-sourced lines.
+  // Confirm the fixture rows actually land, and only as import-sourced lines.
   const before = ledgerCount();
   const cf = await confirm(up.body.batchId);
   assert.strictEqual(cf.status, 200);
@@ -214,14 +221,14 @@ test('FX3.1 the imported rows satisfy the ledger invariants', async () => {
   }
 });
 
-test('FX3.2 the decoded dates land in the real October 2023 window', async () => {
+test('FX3.2 the decoded dates land in the October 2023 window', async () => {
   const rows = db.prepare(`SELECT date, effective_date FROM accounting_ledger WHERE source='import'`).all();
   const dates = rows.map((r) => r.date).sort();
-  assert.strictEqual(dates[0], '2023-10-01', 'the earliest real posting date');
-  assert.strictEqual(dates[dates.length - 1], '2023-10-25', 'the latest real posting date');
-  // date_adjustment is populated on the real export; it must survive as effective_date.
+  assert.strictEqual(dates[0], '2023-10-01', 'the earliest posting date in the export');
+  assert.strictEqual(dates[dates.length - 1], '2023-10-25', 'the latest posting date in the export');
+  // date_adjustment is populated on this export; it must survive as effective_date.
   const withAdj = rows.filter((r) => r.effective_date).length;
-  assert.strictEqual(withAdj, 13, 'the real export carries date_adjustment on 13 rows');
+  assert.strictEqual(withAdj, 13, 'this export carries date_adjustment on 13 rows');
 });
 
 test('FX3.3 the type column maps to the legacy vocabulary decision', async () => {
@@ -248,14 +255,14 @@ test('FX4.2 the extension allowlist widened to .tsv but still rejects anything e
   assert.strictEqual(up.body.error.code, 'BAD_EXTENSION');
 });
 
-test('FX4.1 re-importing the same real file adds nothing (dedupe holds)', async () => {
+test('FX4.1 re-importing the same file adds nothing (dedupe holds)', async () => {
   // §8.4: "Import never overwrites existing tagged lines; duplicates skipped/counted."
   // The dedupe index is keyed on (transaction_id, document_no, date, amount, project).
   const before = ledgerCount();
   const up = await upload(fs.readFileSync(FIXTURE, 'utf8'));
   assert.strictEqual(up.status, 201);
   const pv = await preview(up.body.batchId);
-  assert.strictEqual(pv.body.newCount, 0, 'every real row is already present');
+  assert.strictEqual(pv.body.newCount, 0, 'every row is already present');
   assert.strictEqual(pv.body.skippedCount, EXPECTED_ROWS, 'all 26 counted as duplicates');
   const cf = await confirm(up.body.batchId);
   assert.strictEqual(cf.body.inserted, 0, 'nothing re-applied');

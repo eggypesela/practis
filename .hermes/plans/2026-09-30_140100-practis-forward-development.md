@@ -282,7 +282,7 @@ decision on record rather than an accident.
   reads; the global row is what the UI reads as the account's role.
 - `INSERT OR IGNORE` against `UNIQUE (user_id, role_code, project_id)` makes it idempotent.
 
-**Still needs the owner:** nothing to build — but enforcement stays OFF until she assigns the four real
+**Still needs the owner:** nothing to build — but enforcement stays OFF until **Ayu** assigns the four real
 accounts to PRJ-2026 (or confirms the backfill already did it, which it does for the current
 single-project install). Flipping `SCOPE_ENFORCE=1` is then a one-line change on the host.
 
@@ -293,7 +293,7 @@ a live leak.
 
 TECH-SPEC §8.4 requires *"Frozen period rejects ordinary backdated writes"*. The `frozen_periods` table
 exists (0 rows) but there is **no trigger, no route, and no reference to it anywhere in `src/`** — the
-invariant is entirely unenforced and untested. **the owner chose to build it now**, so it is real work here,
+invariant is entirely unenforced and untested. **The owner chose to build it now**, so it is real work here,
 not a deferral.
 
 **Design (follow the existing pattern, do not invent):**

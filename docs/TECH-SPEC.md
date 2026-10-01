@@ -562,7 +562,7 @@ Each module ships its own tests before the next begins (see §10 order). Minimum
 
 - Integration tests use a real SQLite DB created from migrations, never mocks.
 - Every test DB starts from `db/migrations/001_initial.sql` forward, then `seed-smoke.sql` where domain data is needed.
-- The real-ledger fixture (`fixture-ledger-export.tsv`, 26 rows) is regression-checked on every run.
+- The ledger-export fixture (`fixture-ledger-export.tsv`, 26 rows) is regression-checked on every run.
 - No test writes to `data/practis.db`. Test DBs live under a temp path and are deleted after the run.
 - Security tests are part of CI, not a manual pre-release step.
 
