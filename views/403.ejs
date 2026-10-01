@@ -1,1 +1,17 @@
-<div class="wrap"><div class="hd"><div><h1>Request blocked</h1><p>This form submission could not be verified. Go back, reload the page, and try again.</p></div></div></div>
+<%
+  // A 403 page with ONE job: say why THIS request was refused.
+  //
+  // This view used to hardcode the CSRF message, so every authorization denial —
+  // including per-project scope — told the user "the form submission could not be
+  // verified. Go back, reload the page, and try again." That advice is useless
+  // when the real reason is "you are not assigned to that project": reloading
+  // never fixes it. Four call sites (csrf.js, auth.js requireAdmin, auth.js
+  // requireCapability, scope.js) each pass an accurate `title`/`subtitle`;
+  // render those, and keep the CSRF wording only as the default for a caller
+  // that passes nothing.
+  const _title = (typeof title !== 'undefined' && title) ? title : 'Request blocked';
+  const _sub = (typeof subtitle !== 'undefined' && subtitle)
+    ? subtitle
+    : 'This form submission could not be verified. Go back, reload the page, and try again.';
+%>
+<div class="wrap"><div class="hd"><div><h1><%= _title %></h1><p><%= _sub %></p></div></div></div>

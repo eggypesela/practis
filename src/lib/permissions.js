@@ -14,10 +14,21 @@
 'use strict';
 
 const db = require('../db/db');
+const q = require('../db/queries');
 
 // Every role code held by a user, global or otherwise.
 function rolesOf(userId) {
   return db.prepare(`SELECT DISTINCT role_code FROM user_roles WHERE user_id = ?`)
+    .all(userId).map((r) => r.role_code);
+}
+
+// Only the GLOBAL grants (`project_id IS NULL`). A scoped grant is a per-project
+// assignment, not a portfolio-wide role — so it is deliberately excluded here.
+// This is the distinction that makes "project_manager, unassigned" resolve to
+// nothing rather than to every project.
+function globalRoleCodes(userId) {
+  return db.prepare(
+    `SELECT DISTINCT role_code FROM user_roles WHERE user_id = ? AND project_id IS NULL`)
     .all(userId).map((r) => r.role_code);
 }
 
@@ -92,4 +103,91 @@ function checkSoD({ line, actorId, caps }) {
   return null;
 }
 
-module.exports = { rolesOf, capabilities, checkSoD };
+// ---------------------------------------------------------------------------
+// Per-project scope (PRD §2.3, plan task 0.9 / BOLA)
+//
+// Before this existed, `projectContext` resolved the project from a raw
+// `?project=` query param with no authorization check, so ANY signed-in user
+// could read and write ANY project by changing one number — and
+// `user_roles.project_id`, the junction the PRD specifies for exactly this, was
+// NULL in every row and read by zero code.
+//
+// ENFORCEMENT IS OFF BY DEFAULT (`SCOPE_ENFORCE=1` opts in). Decision 4A
+// (the owner): backfill every account with its real project FIRST, then enforce —
+// because enforcing "assigned only" against a table of NULLs would lock every
+// existing account out of their own install. Until the gate is on, a
+// project-scoped grant is a preference (which project opens by default), not a
+// restriction. This is the deliberate v1 fallback recorded in the plan.
+//
+// Fail closed: if the scope tables cannot be read, a project-scoped user gets
+// NOTHING, never everything. "Cannot verify" must not mean "grant".
+// ---------------------------------------------------------------------------
+
+// Roles that are organisation-wide by nature: they see every project.
+// `viewer` is deliberately NOT here — "Viewer sees assigned dashboards"
+// (PRD §2.3) is explicitly assignment-scoped.
+const ORG_WIDE_ROLES = new Set(['administrator', 'finance', 'human_capital', 'procurement']);
+
+// Identity of a signing-in user, for the ordering below: an Administrator is
+// treated exactly as if they held the role `administrator`.
+const isOrgWideByRole = (roles) => roles.some((r) => ORG_WIDE_ROLES.has(r));
+const isOrgWide = (user, roles) => user?.is_system_admin === 1 || isOrgWideByRole(roles);
+
+const ALL_PROJECTS = () => db.prepare('SELECT * FROM projects ORDER BY name').all();
+
+// The projects a user may see. Ordering of the rules matters — it resolves the
+// plan's "a project-scoped row grants only that project; a user with no rows
+// falls back to their global role's default":
+//
+//   1. unknown user          → nothing (fail closed)
+//   2. org-wide (or Admin)   → every project
+//   3. has project-scoped grants → exactly those projects
+//   4. non-admin holds ONLY a scoped role → nothing. A `project_manager` with no
+//      project assignment is a half-finished configuration; granting the whole
+//      portfolio is the opposite of what the scoped role means.
+//   5. global role, no scoped grants → that role's default (today: every
+//      project, i.e. the pre-scoping behaviour — so only roles 3 and 4 change
+//      what an existing account sees once the gate is flipped).
+function projectsFor(user) {
+  if (!user || !user.id) return [];
+  let roles = [];
+  try {
+    roles = rolesOf(user.id);
+  } catch (err) {
+    // Fail closed, and say why rather than silently narrowing to nothing.
+    console.error('[scope] could not read roles — denying scope:', err.message);
+    return [];
+  }
+  if (isOrgWide(user, roles)) return ALL_PROJECTS();
+
+  const scopedIds = q.projectIdsForUser(user.id);
+  if (scopedIds.length) {
+    const want = new Set(scopedIds);
+    return ALL_PROJECTS().filter((p) => want.has(p.id));
+  }
+
+  const globalRoles = globalRoleCodes(user.id);
+  if (!globalRoles.length) return [];   // rule 4
+  return ALL_PROJECTS();                // rule 5
+}
+
+function canAccessProject(user, projectId) {
+  if (!user || !user.id || projectId == null) return false;
+  return projectsFor(user).some((p) => p.id === Number(projectId));
+}
+
+// Human-readable reason for a scope refusal, so a 403 explains itself.
+function scopeReason(user) {
+  if (!user) return 'Sign in to see project data.';
+  const scoped = q.projectIdsForUser(user.id);
+  if (!scoped.length) {
+    return 'Your account is not assigned to a project. Ask an Administrator to assign one.';
+  }
+  return 'Your account is not assigned to that project.';
+}
+
+module.exports = {
+  rolesOf, capabilities, checkSoD,
+  projectsFor, canAccessProject, scopeReason,
+  ORG_WIDE_ROLES, isOrgWide, globalRoleCodes,
+};

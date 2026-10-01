@@ -26,4 +26,61 @@
 <symbol id="i-check" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M4 2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm10.6 6.2-5 5-2.2-2.2-1.4 1.4 3.6 3.6 6.4-6.4Z"/></symbol>
 </defs></svg>
 <% if (typeof extraScript !== 'undefined') { %><script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>"><%- extraScript %></script><% } %>
+<script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>">
+// Project switcher menu. One delegated listener on the document rather than
+// per-item handlers, so it works for every page that renders the sidebar and
+// adds nothing to the ones that do not. Bound here (not via an inline onclick=)
+// because a CSP nonce authorises script ELEMENTS, never handler ATTRIBUTES —
+// an inline handler would be silently dead under the v1 policy. (Written without
+// the literal angle brackets so this comment cannot itself be read as a tag by an
+// HTML tokenizer or by the SCH-HDR.3 nonce scan.)
+(function(){
+  var btn = document.getElementById('pc-btn');
+  var menu = document.getElementById('pc-menu');
+  if (!btn || !menu) return;
+
+  function close() {
+    menu.hidden = true;
+    btn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', onDocClick, true);
+    document.removeEventListener('keydown', onKey, true);
+  }
+  function open() {
+    // Anchor the menu under the button: the sidebar is fixed-width, so an
+    // offset parent positioned menu would detach on scroll.
+    var r = btn.getBoundingClientRect();
+    menu.style.left = r.left + 'px';
+    menu.style.top = (r.bottom + 4) + 'px';
+    menu.style.width = r.width + 'px';
+    menu.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+    document.addEventListener('click', onDocClick, true);
+    document.addEventListener('keydown', onKey, true);
+  }
+  function onDocClick(e) {
+    if (menu.contains(e.target) || btn.contains(e.target)) return;
+    close();
+  }
+  function onKey(e) { if (e.key === 'Escape') { close(); btn.focus(); } }
+
+  btn.addEventListener('click', function(e){
+    e.stopPropagation();
+    if (menu.hidden) open(); else close();
+  });
+
+  // Follow the chosen project into the page the user is already on, so a switch
+  // keeps the current screen instead of dumping them on the dashboard. ?project
+  // is stripped from the path first so repeated switches do not stack it.
+  menu.addEventListener('click', function(e){
+    var a = e.target.closest('a[data-project]');
+    if (!a) return;
+    e.preventDefault();
+    var id = a.getAttribute('data-project');
+    var path = window.location.pathname.replace(/\/$/, '');
+    var params = new URLSearchParams(window.location.search);
+    params.set('project', id);
+    window.location.href = (path || '/') + '?' + params.toString();
+  });
+})();
+</script>
 </body></html>

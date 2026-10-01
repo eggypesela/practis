@@ -15,7 +15,23 @@
     <a href="#"><svg><use href="#i-chart"/></svg><span class="lbl">Reports</span></a>
     <div class="pctx">
       <span class="pc-lbl caps">Project</span>
-      <button class="pc-btn" type="button"><span class="pc-dot"></span><span class="pc-name"><%= _proj %></span><svg class="pc-chev"><use href="#i-chev"/></svg></button>
+      <% const _list = (typeof projects !== 'undefined' && projects) ? projects : []; %>
+      <% const _sel = (typeof project !== 'undefined' && project) ? project : null; %>
+      <% if (_list.length > 1) { %>
+      <%# Real switcher. This was a dead <button> until now: scope could only be
+          changed by hand-typing ?project=N, and the list offers ONLY projects the
+          server-side scope middleware says this user may open. %>
+      <div class="pc-wrap">
+        <button class="pc-btn" type="button" id="pc-btn" aria-haspopup="listbox" aria-expanded="false"><span class="pc-dot"></span><span class="pc-name"><%= _sel ? _sel.name : '—' %></span><svg class="pc-chev"><use href="#i-chev"/></svg></button>
+        <div class="pc-menu" id="pc-menu" role="listbox" hidden>
+          <% _list.forEach(function(p){ %>
+          <a role="option" aria-selected="<%= _sel && p.id === _sel.id ? 'true' : 'false' %>" class="<%= _sel && p.id === _sel.id ? 'on' : '' %>" data-project="<%= p.id %>" href="/?project=<%= p.id %>"><span class="pc-dot"></span><span class="pc-name"><%= p.name %></span></a>
+          <% }) %>
+        </div>
+      </div>
+      <% } else { %>
+      <button class="pc-btn" type="button" disabled><span class="pc-dot"></span><span class="pc-name"><%= _sel ? _sel.name : (_proj || '—') %></span><svg class="pc-chev"><use href="#i-chev"/></svg></button>
+      <% } %>
     </div>
     <div class="grp caps" style="display:none">Project</div>
     <a href="#"><svg><use href="#i-home"/></svg><span class="lbl">Overview</span></a>

@@ -41,6 +41,19 @@ a{color:inherit;text-decoration:none}
 .pc-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:0 0 7px}
 .pc-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pc-chev{width:13px;height:13px;flex:0 0 13px;color:var(--t3)}
+/* Project switcher menu (fixed-positioned from the button's rect, since the
+   sidebar scrolls independently of the page). */
+.pc-btn.disabled,.pc-btn[disabled]{cursor:default;opacity:.7}
+.pc-wrap{position:relative}
+.pc-menu{position:fixed;z-index:60;background:var(--surface);border:1px solid var(--border);
+  border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:4px;max-height:280px;overflow:auto}
+.pc-menu[hidden]{display:none}
+.pc-menu a{display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:4px;
+  color:var(--t2);font-size:12px;font-weight:500}
+.pc-menu a:hover{background:var(--surface-2);color:var(--t1)}
+.pc-menu a.on{color:var(--accent);font-weight:600}
+.pc-menu a.on .pc-dot{background:var(--accent)}
+.pc-menu a .pc-dot{width:7px;height:7px;border-radius:50%;background:var(--t4);flex:0 0 7px}
 .nav a{display:flex;align-items:center;gap:9px;height:31px;padding:0 8px;border-radius:6px;
   color:var(--t2);font-weight:500;position:relative}
 .nav a:hover{background:var(--surface-2);color:var(--t1)}

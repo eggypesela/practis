@@ -14,27 +14,35 @@
 //   POST /invite/:token          set password → account activated
 const express = require('express');
 const router = express.Router();
+const db = require('../db/db');
 const q = require('../db/queries');
 const policy = require('../lib/policy');
 const invites = require('../lib/invites');
 const { requirePage, requireAdmin } = require('../middleware/auth');
+const { projectContext } = require('../middleware/scope');
+const { ORG_WIDE_ROLES } = require('../lib/permissions');
 
 const ID_RE = /^\d+$/;
 const idOf = (raw) => (ID_RE.test(String(raw)) ? Number(raw) : null);
 const actorOf = (req) => req.user?.id ?? null;
 
-// Same project switcher contract as routes/app.js, so the sidebar renders
-// identically on the administration screen.
-function projectContext(req, res, next) {
-  const all = q.projects();
-  res.locals.project = all.find((p) => p.id === Number(req.query.project)) || all[0] || null;
-  next();
-}
+// Project context is the shared, scope-aware one from middleware/scope.js so the
+// sidebar renders identically here and in routes/app.js. It used to be a
+// copy of app.js's function that trusted ?project= (PRD §2.3 / audit BOLA).
 
 // Every render of the users screen shares these locals. One function keeps the
 // success and error paths from drifting apart.
 function userLocals(res, extra = {}) {
   const users = q.allUsers();
+  // Per-project assignments, in ONE query for the whole roster (not one per row).
+  // Every user row needs its project list to render "All projects" vs the
+  // specific projects they are assigned to (PRD §2.3).
+  const assigned = q.projectIdsByUser();
+  // Decide "all projects by role" HERE, not in the template: an EJS view should
+  // render a decision, not reach into a permission set, and the rule then lives
+  // in exactly one place (ORG_WIDE_ROLES in lib/permissions).
+  const orgWideByUser = new Map(
+    users.map((u) => [u.id, u.is_system_admin === 1 || ORG_WIDE_ROLES.has(u.role_code)]));
   return {
     layout: 'layout-app',
     title: 'Users & roles',
@@ -43,10 +51,21 @@ function userLocals(res, extra = {}) {
     projectName: res.locals.project?.name || 'No project',
     roles: q.roles(),
     users,
+    // The ordered project list for the per-row assignment selects.
+    allProjects: q.projects(),
+    // user_id -> [project_id, ...]; absent means "no scoped assignment".
+    assignedByUser: assigned,
+    // user_id -> true when the role already sees every project.
+    orgWideByUser,
+    // How many projects exist — "1 project" means the column is inert and the
+    // screen should say so rather than render a fake choice.
+    projectCount: q.projects().length,
     invitesPending: q.pendingInvites(),
     activeCount: users.filter((u) => u.is_active === 1).length,
     pendingCount: users.filter((u) => u.is_active === 0).length,
     adminCount: q.adminCount(),
+    // Surfaced so the screen can say whether narrowing is actually in force.
+    scopeEnforced: require('../middleware/scope').enforce(),
     ...extra,
   };
 }
@@ -150,6 +169,68 @@ router.post('/admin/users/:id/role', guard, (req, res) => {
     { role_code: target.role_code }, { role_code: role });
 
   return bounce(`${target.email} role → ${role} — sessions revoked, they sign in again`);
+});
+
+// Per-project assignment (PRD §2.3). This is what finally POPULATES
+// `user_roles.project_id`, which until now was NULL in every row and therefore
+// made any scope enforcement impossible — "assigned only" against an all-NULL
+// column refuses everyone.
+//
+// A separate POST from the global role change, deliberately: the global role is
+// the account's portfolio-wide role, a project assignment says WHICH projects a
+// scoped role applies to. Conflating them would make "assign this PM to PRJ-2026"
+// silently rewrite their organisation-wide role.
+//
+// `project_id=''` (the "All projects" option) CLEARS the scoped grants, which is
+// the pre-scoping behaviour: the user falls back to their global role's default.
+router.post('/admin/users/:id/projects', guard, (req, res) => {
+  const id = idOf(req.params.id);
+  const target = id ? q.userWithRole(id) : null;
+  if (!target) return res.status(404).render('404', { layout: 'layout-app', title: 'Not found', subtitle: '' });
+
+  const bounce = (m) => res.redirect(`/admin/users?saved=1&msg=${encodeURIComponent(m)}`);
+  const before = q.projectIdsForUser(id);
+
+  if (target.is_system_admin === 1) {
+    return bounce('Administrators already see every project — no assignment needed');
+  }
+
+  const raw = req.body.project_id;
+  const label = raw === '' || raw == null ? 'All projects' : String(raw);
+
+  // Replace the WHOLE assignment set in one transaction. Assigning project by
+  // project with a delete-then-insert per request would briefly leave the user
+  // scoped to nothing, and a concurrent request would see that gap.
+  const apply = db.transaction(() => {
+    q.clearScopedRolesForUser(id);
+    if (raw === '' || raw == null) return;
+    const pid = idOf(raw);
+    if (pid == null || !q.projects().some((p) => p.id === pid)) return;
+    // The scoped grant carries the user's current role, so a scoped user keeps
+    // the role the roster shows. Falls back to the least-privileged scoped role
+    // if the row somehow has no role at all.
+    const roleCode = target.role_code || 'viewer';
+    q.setScopedUserRole(id, pid, roleCode, actorOf(req));
+  });
+
+  try {
+    apply();
+  } catch (err) {
+    return bounce(`Could not save the assignment — ${err.message}`);
+  }
+
+  const after = q.projectIdsForUser(id);
+  if (String(before.sort()) === String(after.sort())) {
+    return bounce(`No change — ${target.email} is already assigned to ${label}`);
+  }
+
+  // A scope change is a privilege change: the user's next request must re-read
+  // their projects rather than keep serving a page built from the old set.
+  q.revokeUserSessions(id);
+  q.audit('user_roles', id, 'projects_changed', actorOf(req),
+    { project_ids: before }, { project_ids: after });
+
+  return bounce(`${target.email} project scope → ${label} — sessions revoked, they sign in again`);
 });
 
 router.post('/admin/users/:id/reset', guard, async (req, res) => {

@@ -166,6 +166,39 @@ const _setUserRole = db.prepare(`
 
 const _clearUserRoles = db.prepare(`DELETE FROM user_roles WHERE user_id = ? AND project_id IS NULL`);
 
+// ---- per-project scoping (audit BOLA, plan task 0.9) --------------------------
+// `user_roles.project_id` is the junction the PRD 2.3 describes ("users are
+// assigned a role PER PROJECT"). It existed from migration 001 and was NULL in
+// every row and read by zero code until now.
+//
+// Scoped grants are written per (user, project): replacing the grant for one
+// project must not disturb the user's other projects or their global grant.
+const _projectIdsForUser = db.prepare(`
+  SELECT DISTINCT project_id FROM user_roles
+  WHERE user_id = ? AND project_id IS NOT NULL`);
+const _dropScopedUserRole = db.prepare(`
+  DELETE FROM user_roles WHERE user_id = ? AND project_id = ?`);
+// Clears EVERY scoped grant for a user while leaving their global grant alone —
+// the distinction the whole scoping model rests on.
+const _clearScopedRolesForUser = db.prepare(`
+  DELETE FROM user_roles WHERE user_id = ? AND project_id IS NOT NULL`);
+const _insertScopedUserRole = db.prepare(`
+  INSERT INTO user_roles (user_id, role_code, project_id, granted_by)
+  VALUES (@user_id, @role_code, @project_id, @actor_id)`);
+const _scopedGrantsForUser = db.prepare(`
+  SELECT ur.role_code, ur.project_id, p.code AS project_code, p.name AS project_name,
+         r.name AS role_name
+  FROM user_roles ur
+  JOIN projects p ON p.id = ur.project_id
+  LEFT JOIN roles r ON r.code = ur.role_code
+  WHERE ur.user_id = ?
+  ORDER BY p.name`);
+// Whole-roster version of the above, for the admin screen's one-shot read.
+const _projectIdsGrouped = db.prepare(`
+  SELECT user_id, project_id FROM user_roles
+  WHERE project_id IS NOT NULL ORDER BY user_id, project_id`);
+
+
 const _setUserActive = db.prepare(`UPDATE users SET is_active = ? WHERE id = ? AND is_system_admin = 0`);
 
 const _promoteOwnerSystemAdmin = db.prepare(`UPDATE users SET is_system_admin = 1 WHERE id = ?`);
@@ -451,6 +484,26 @@ module.exports = {
   setUserRole: (userId, roleCode, actorId) =>
     _setUserRole.run({ user_id: userId, role_code: roleCode, actor_id: actorId }),
   clearUserRoles: (userId) => _clearUserRoles.run(userId),
+
+  // ---- per-project scoping (plan task 0.9 / BOLA) ----
+  // Every user's scoped project ids, in ONE query for the whole roster, so the
+  // admin screen does not issue a query per row.
+  projectIdsByUser: () => {
+    const m = new Map();
+    for (const r of _projectIdsGrouped.all()) {
+      if (!m.has(r.user_id)) m.set(r.user_id, []);
+      m.get(r.user_id).push(r.project_id);
+    }
+    return m;
+  },
+  projectIdsForUser: (userId) => _projectIdsForUser.all(userId).map((r) => r.project_id),
+  scopedGrantsForUser: (userId) => _scopedGrantsForUser.all(userId),
+  setScopedUserRole: (userId, projectId, roleCode, actorId) =>
+    _insertScopedUserRole.run({
+      user_id: userId, role_code: roleCode, project_id: projectId, actor_id: actorId,
+    }),
+  clearScopedUserRole: (userId, projectId) => _dropScopedUserRole.run(userId, projectId),
+  clearScopedRolesForUser: (userId) => _clearScopedRolesForUser.run(userId),
   setUserActive: (active, userId) => _setUserActive.run(active ? 1 : 0, userId),
   promoteSystemAdmin: (userId) => _promoteOwnerSystemAdmin.run(userId),
   demoteSystemAdmin: (userId) => _demoteOwnerSystemAdmin.run(userId),

@@ -3,17 +3,14 @@ const router = express.Router();
 const db = require('../db/db');
 const q = require('../db/queries');
 const { requirePage } = require('../middleware/auth');
+const { projectContext } = require('../middleware/scope');
 
 const IDR = new Intl.NumberFormat('id-ID');
 const fmt = (n) => IDR.format(n || 0);
 
-// Resolve the current project context: ?project=N else first project.
-function projectContext(req, res, next) {
-  const all = q.projects();
-  const sel = all.find(p => p.id === Number(req.query.project)) || all[0] || null;
-  res.locals.project = sel;
-  next();
-}
+// Project context now lives in middleware/scope.js — it resolves ?project=N
+// against the user's AUTHORISED projects instead of trusting the parameter
+// (PRD §2.3 / audit BOLA). It was duplicated here and in routes/admin.js.
 
 function page(res, title, subtitle, crumb, bodyView, opts = {}) {
   res.render(bodyView, {
@@ -29,7 +26,11 @@ function page(res, title, subtitle, crumb, bodyView, opts = {}) {
 router.use(requirePage, projectContext);
 
 router.get('/', (req, res) => {
-  const projects = q.projects();
+  // ONLY the projects this user may see. `q.projects()` is the whole portfolio
+  // and rendering it here leaked the names of every project to any signed-in
+  // user — a project-scoped PM would get a dashboard listing projects they are
+  // not on (audit BOLA). res.locals.projects is the authorised set.
+  const projects = res.locals.projects;
   let contractValue = 0, costToDate = 0, untaggedCount = 0;
   for (const p of projects) {
     contractValue += p.contract_amount || 0;

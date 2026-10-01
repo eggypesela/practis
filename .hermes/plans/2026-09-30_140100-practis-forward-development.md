@@ -219,54 +219,75 @@ or is quarantined"* is not implemented — `import-service.js` validates per row
 `SAL-24-10-0038` is a lone 14,200,000 debit with no credit leg and imports without comment. Ask
 the owner before implementing.
 
-### Task 0.9 — Project scope (BOLA): the PRD requirement that was never built
+### Task 0.9 — Project scope (BOLA): the PRD requirement that was never built — ✅ BUILT 2026-10-01
 
-**This is the largest single gap found, and it is a design gap, not a missing guard.**
+**This was the largest single gap found, and it was a design gap, not a missing guard.**
 
 PRD §2.3: *"**Per-project assignments** (junction table): users are assigned a role **per project**.
 PM sees own projects; Finance sees all cost data; Viewer sees assigned dashboards."*
 
-`user_roles.project_id` exists for exactly this — and it is **NULL in every row and read by zero
-code** (`permissions.js` and `app.js` never reference it). Measured with two projects:
+`user_roles.project_id` existed for exactly this — and was **NULL in every row and read by zero
+code**. Measured with two projects, before the fix:
 
 ```
 user reads  /ledger?project=2      -> 200  *** PROJECT B DATA VISIBLE ***
-user reads  /queue?project=2       -> 200  *** PROJECT B DATA VISIBLE ***
-user reads  /advances?project=2    -> 200  *** PROJECT B DATA VISIBLE ***
-user reads  /?project=2            -> 200  *** PROJECT B DATA VISIBLE ***
-user WRITES /ledger/entry?project=2-> 302  *** WROTE INTO ANOTHER PROJECT ***
+user writes /ledger/entry?project=2-> 302  *** WROTE INTO ANOTHER PROJECT ***
 ```
 
-`projectContext` (`app.js:11`) resolves scope from `req.query.project` with an `|| all[0]` fallback and
-**never consults the user's assignments** — so any authenticated user can read and write any project by
-changing one query parameter. This becomes a live data-leak the moment a second project exists, which
-is precisely what Module 6 makes routine.
+**What shipped:**
 
-**Files:**
-- Modify: `src/lib/permissions.js` — add `projectsFor(user)` and `canAccessProject(user, projectId)`:
-  Administrator and Finance see all; a project-scoped row grants only that project; a user with no rows
-  falls back to their global role's default (document which, explicitly).
-- Modify: `src/routes/app.js` `projectContext` — resolve the project from the user's **authorised set**,
-  never from a raw query param; an unauthorised `?project=` must fall back, not 403-loop.
-- Add `project_id` to the admin role-assignment screen so the junction table is actually populated
-  (`admin.js:123` currently writes `role_code` with no project).
-- Test: `test/bola.test.js` — **port `3902`** (BOLA1.1–BOLA1.5).
-- Migration: `db/migrations/010_project_scope_backfill.sql` — see the decision below.
+| Piece | Where |
+|---|---|
+| `projectsFor(user)` / `canAccessProject(user, id)` / `scopeReason(user)` | `src/lib/permissions.js` |
+| Scope-aware project context (replaces the duplicated `projectContext` in app.js AND admin.js) | **new** `src/middleware/scope.js` |
+| Per-project assignment UI + `POST /admin/users/:id/projects` | `src/routes/admin.js`, `views/admin-users.ejs` |
+| Real project switcher (was a dead `<button>`) | `views/partials/sidebar.ejs` + `views/layout-app.ejs` + `assets/app.css` |
+| Backfill of every existing account | `db/migrations/010_project_scope_backfill.sql` |
+| 16 tests, both gate modes | `test/bola.test.js` (ports 3902 gate-off, 3903 gate-on) |
 
-**Decision 4A (locked): backfill, then enforce.** Every existing account gets the project it actually
-works on assigned **first**, and only then does `canAccessProject` start refusing. Sequence matters:
+**Resolution order in `projectsFor` — the plan's "which default?" question, answered explicitly:**
 
-1. Build `projectsFor`/`canAccessProject` but keep enforcement **off** (`SCOPE_ENFORCE=1` env gate).
-2. Backfill migration assigns each current `user_roles` row its project (**needs the owner's mapping**).
-3. Turn enforcement on; add BOLA1.1–1.5.
-4. Any user left with a NULL `project_id` **after** backfill is a deliberate decision, not an accident —
-   decide now whether they see all or nothing (today: all).
+1. unknown user → **nothing** (fail closed)
+2. org-wide role (`administrator`, `finance`, `human_capital`, `procurement`) or `is_system_admin` → **every project**
+3. has project-scoped grants → **exactly those**
+4. non-admin holding ONLY a scoped role, unassigned → **nothing** (a `project_manager` with no project is a half-finished config; granting the portfolio inverts the scoped role)
+5. global role, no scoped grants → **every project** (the pre-scoping behaviour, i.e. the plan's documented v1 fallback)
 
-**Ordering:** this must land with or before Module 6, because Module 6 creates the second project that
-turns a latent flaw into a live leak.
+Only rules 3 and 4 change what an existing account sees when the gate flips — deliberate, so the
+backfill can be verified before enforcement. Rule 5 is asserted in BOLA1.11 so the fallback is a
+decision on record rather than an accident.
 
-**Blocked on:** the owner's **user → project mapping**. Until it arrives, tasks 0.9 steps 1 and 4 can be
-built, but step 2 (the backfill) and the enforcement flip cannot.
+**Two further leaks found while building this, both now fixed:**
+
+- **`GET /` leaked every project name to any signed-in user.** The dashboard route called
+  `q.projects()` (the whole portfolio) instead of the authorised set, so a project-scoped PM got a
+  dashboard listing projects they are not on. Now `res.locals.projects`.
+- **A write path that "not enforced" must still refuse.** `SCOPE_ENFORCE` off means *the ?project
+  parameter is not authoritative*, NOT *cross-project writes are allowed*. BOLA1.7 asserts the
+  row count is unchanged with the gate OFF — the audit's five original bugs all returned a cheerful
+  302 while writing.
+
+**Backfill design (migration 010 is DATA-ONLY — no DDL, safe before or after enforcement):**
+
+- Org-wide roles and system admins stay GLOBAL (`project_id IS NULL`). Scoping Finance to one
+  project would break "Finance sees all cost data". The role list must stay in step with
+  `ORG_WIDE_ROLES` in `lib/permissions.js`.
+- Every other role is scoped to **every project that existed at migration time**. With one project
+  (PRJ-2026) this is exactly decision 1A ("assign all four accounts to PRJ-2026"), generalised so it
+  stays correct on a multi-project install. **No account loses access**, which is the entire point
+  of backfill-then-enforce.
+- **The global role row is deliberately KEPT alongside the scoped one.** The roster
+  (`q.allUsers`, `q.userWithRole`) and the sidebar role name all join on `project_id IS NULL`, so
+  deleting it would blank out every user's displayed role. The scoped row is what the scope layer
+  reads; the global row is what the UI reads as the account's role.
+- `INSERT OR IGNORE` against `UNIQUE (user_id, role_code, project_id)` makes it idempotent.
+
+**Still needs the owner:** nothing to build — but enforcement stays OFF until she assigns the four real
+accounts to PRJ-2026 (or confirms the backfill already did it, which it does for the current
+single-project install). Flipping `SCOPE_ENFORCE=1` is then a one-line change on the host.
+
+**Ordering:** built before Module 6, which creates the second project that turns the latent flaw into
+a live leak.
 
 ### Task 0.10 — Frozen period (BUILD IT — decision 5A)
 

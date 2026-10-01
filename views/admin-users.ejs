@@ -58,10 +58,24 @@
   </form>
 </div>
 
+<%# Scope status: the screen must be honest about whether narrowing is in
+    force, because with enforcement off an "assigned" user still sees every
+    project. A UI that implies a restriction the server does not apply is worse
+    than no restriction at all. %>
+<% if (!scopeEnforced && projectCount > 1) { %>
+<div class="note wn"><svg><use href="#i-info"/></svg><span><b>Scope is recorded but not yet enforced.</b>
+  Assignments below are saved, and each user's sidebar offers only their assigned project — but the server
+  still answers a hand-typed <span class="mono">?project=N</span> until <span class="mono">SCOPE_ENFORCE=1</span>
+  is set. Assign every account, then switch it on.</span></div>
+<% } else if (!scopeEnforced) { %>
+<div class="note wn"><svg><use href="#i-info"/></svg><span><b>Only one project exists.</b>
+  Per-project scope becomes meaningful when Module 6 creates a second one.</span></div>
+<% } %>
+
 <div class="card" style="margin-top:12px">
   <div class="card-hd"><h2>Accounts</h2><span class="r"><%= users.length %> total</span></div>
   <div class="tw"><table>
-    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th class="r">Sessions</th><th>Last sign-in</th><th class="r">Actions</th></tr></thead>
+    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Scope</th><th>Status</th><th class="r">Sessions</th><th>Last sign-in</th><th class="r">Actions</th></tr></thead>
     <tbody>
       <% users.forEach(function(u){ %>
       <tr>
@@ -70,11 +84,30 @@
         <td>
           <form method="post" action="/admin/users/<%= u.id %>/role">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-            <select name="role" class="role-sel">
+            <select name="role" class="role-sel" data-submit-on-change>
               <% roles.forEach(function(r){ %><option value="<%= r.code %>" <%= r.code === u.role_code ? 'selected' : '' %>><%= r.name %></option><% }) %>
             </select>
             <noscript><button class="btn sm" type="submit">Set</button></noscript>
           </form>
+        </td>
+        <td>
+          <%# Per-project assignment (PRD §2.3). Populating this column is what makes
+              scope enforcement possible at all — "assigned only" over an all-NULL
+              user_roles.project_id would refuse every account. %>
+          <% if (orgWideByUser.get(u.id)) { %>
+            <span class="chip bl">ALL PROJECTS</span>
+          <% } else { %>
+            <% const mine = assignedByUser.get(u.id) || []; %>
+            <form method="post" action="/admin/users/<%= u.id %>/projects">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <select name="project_id" class="role-sel scope-sel" data-submit-on-change>
+                <option value="" <%= mine.length ? '' : 'selected' %>>All projects</option>
+                <% allProjects.forEach(function(p){ %><option value="<%= p.id %>" <%= mine.includes(p.id) ? 'selected' : '' %>><%= p.code %></option><% }) %>
+              </select>
+              <noscript><button class="btn sm" type="submit">Set</button></noscript>
+            </form>
+            <% if (!mine.length) { %><span class="chip nt" title="No project assigned — this account will see every project">unassigned</span><% } %>
+          <% } %>
         </td>
         <td>
           <% if (u.is_active === 1) { %><span class="chip ok">ACTIVE</span>
@@ -138,9 +171,12 @@
 </div>
 
 <script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>">
-// Role changes submit as soon as the dropdown changes. Bound here instead of via
-// an inline onchange="" attribute, which the CSP blocks (no unsafe-inline).
-document.querySelectorAll('.role-sel').forEach(function(sel){
+// Role and project-scope changes submit as soon as the dropdown changes. Bound
+// here instead of via an inline onchange="" attribute, because a CSP nonce
+// authorises script ELEMENTS only — an inline handler would be silently dead,
+// leaving the dropdown looking functional but doing nothing.
+// Each control carries data-submit-on-change so both selects share one rule.
+document.querySelectorAll('select[data-submit-on-change]').forEach(function(sel){
   sel.addEventListener('change', function(){ sel.form.submit(); });
 });
 </script>

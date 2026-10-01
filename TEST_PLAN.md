@@ -30,6 +30,7 @@ A duplicate ID makes traceability meaningless: "C1.1 failed" named three differe
 | `AZ` | **Authorization matrix** (new, §0 of the dev plan) | `authz.test.js` | 3901 |
 | `SCH` | **Security hardening**: FULL sync, CSP headers, rate limit | `security.test.js` | 3905–3907 |
 | `FX` | **Real-ledger fixture** regression (§8.3) | `fixture.test.js` | 3908 |
+| `BOLA` | **Cross-project isolation** (scope, §0 task 0.9) | `bola.test.js` | 3902 (gate off) + 3903 (gate on) |
 
 **Known legacy collisions to re-map when touched:** `advances.test.js` reuses `A1`,`E1`,`C1`,`S1`,
 `R1`,`Z1`; `csrf.test.js` reuses `C1`,`S1`,`C2`,`C3`; `correct.test.js` reuses `C1`–`C4`;
@@ -288,27 +289,51 @@ in a test helper: that binds the default DB path and the assertions silently rea
 across the suite share one per-IP bucket; without it unrelated tests 429. The SCH-RL tests therefore
 spawn their own servers rather than hammering the shared one.
 
-## 12. Cross-project isolation (BOLA) — NEW, currently UNIMPLEMENTABLE
+## 12. Cross-project isolation (BOLA) — ✅ IMPLEMENTED 2026-10-01
 
 PRD §2.3 requires **per-project role assignment**: *"users are assigned a role per project. PM sees
 own projects; Finance sees all cost data; Viewer sees assigned dashboards."*
-`user_roles.project_id` exists for exactly this — and is **NULL in every row and consulted by zero
-code** (`permissions.js` and `app.js` never read it).
+`user_roles.project_id` existed for exactly this and was **NULL in every row and consulted by zero
+code** — so with two projects, a user read and *wrote* every project by changing `?project=<id>`.
 
-**Measured:** with two projects, a user reads and *writes* every project by changing `?project=<id>`:
-`/ledger`, `/queue`, `/advances`, `/` and `/ledger/entry` all returned project B's data, and a POST
-wrote a ledger row into project B.
+Now enforced by `projectsFor(user)` in `src/lib/permissions.js` + `src/middleware/scope.js`
+(`projectContext`), with assignments recorded on the admin screen and backfilled by migration 010.
 
-| ID | Test | Expected |
-|----|------|----------|
-| BOLA1.1 | user scoped to A cannot read B's ledger | 403/404, no B data in body |
-| BOLA1.2 | user scoped to A cannot write into B | 403, B's row count unchanged |
-| BOLA1.3 | `?project=<unauthorised>` falls back to an authorised project | never silently serves B |
-| BOLA1.4 | Finance sees all projects; Viewer sees only assigned | per PRD §2.3 |
-| BOLA1.5 | global reference data (COA/WBS/RBS) remains company-wide | readable regardless of scope |
+**Enforcement is behind `SCOPE_ENFORCE=1` (default OFF)** — decision 4A: backfill first, enforce
+second, because "assigned only" over an all-NULL column refuses every existing account. The tests
+therefore run BOTH modes, on ports **3902 (gate off)** and **3903 (gate on)**.
 
-**Blocker:** needs a project-scope predicate in `permissions.js` + enforcement in `projectContext`.
-Cannot be written until that layer exists — **do not close this as "test missing"**.
+| ID | Test | Expected | Status |
+|----|------|----------|--------|
+| BOLA1.1 | the switcher lists every project for an org-wide role | both projects in the menu | ✅ |
+| BOLA1.2 | a scoped user is NOT offered an unassigned project | no link carrying the other id | ✅ |
+| BOLA1.2b | a multi-project user IS offered each authorised project | menu works, not just hidden | ✅ |
+| BOLA1.3 | gate OFF: `?project=other` falls back instead of leaking | 200, own project's data only | ✅ |
+| BOLA1.4 | gate ON: `?project=other` refused with a reason | 403, no data, "not assigned" | ✅ |
+| BOLA1.5 | gate ON: the user's own project still works | 200 — the guard is not a blanket deny | ✅ |
+| BOLA1.6 | gate ON: Finance reaches both projects | per PRD §2.3 | ✅ |
+| BOLA1.7 | **gate OFF: a cross-project WRITE still does not land** | row count unchanged | ✅ |
+| BOLA1.8 | gate ON: the same cross-project write is refused | 403, row count unchanged | ✅ |
+| BOLA1.9 | gate ON: the permitted role can still write its own project | 302 **and** +1 row | ✅ |
+| BOLA1.10 | a role-less account sees no project data | fail closed, not fail open | ✅ |
+| BOLA1.11 | unassigned global role keeps full visibility (v1 fallback) | documented behaviour, asserted | ✅ |
+| BOLA1.12 | the admin screen records a per-project assignment | scoped row written, global row survives | ✅ |
+| BOLA1.13 | clearing the assignment restores the default | no lock-out | ✅ |
+| BOLA1.14 | an Administrator cannot be scoped | stays portfolio-wide | ✅ |
+| BOLA1.15 | migration 010 leaves every account able to reach its project | no role left unassigned, all projects granted | ✅ |
+
+**BOLA1.7 is the one that matters most.** "Enforcement off" means *the `?project` parameter is not
+authoritative* — it must never mean *cross-project writes are allowed*. The audit's five original
+bugs all returned a cheerful 302 while writing, so every deny-case asserts a **row count**, not a
+status code.
+
+**Also fixed in this slice:** `GET /` called `q.projects()` (the whole portfolio) instead of the
+authorised set, so a project-scoped user's dashboard listed projects they are not on. Now
+`res.locals.projects`.
+
+**Not covered here, deliberately:** global reference data (COA / WBS / RBS) stays company-wide — it
+is shared master data, not project data, so BOLA1.5's original sketch is satisfied by construction:
+nothing in the scope layer filters a master-data query.
 
 ---
 
