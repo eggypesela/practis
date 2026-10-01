@@ -21,7 +21,7 @@
   <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 <div class="card" style="margin-top:12px">
   <div class="fbar">
-    <label class="fchk"><input type="checkbox" id="selall" onclick="toggleAll(this)"> Select all</label>
+    <label class="fchk"><input type="checkbox" id="selall"> Select all</label>
     <span class="fsep"></span>
     <label class="flbl">Tag with CBS
       <select name="cbs"><option value="">— choose account —</option>
@@ -39,7 +39,7 @@
     <tbody>
       <% lines.forEach(function(l){ %>
       <tr>
-        <td><input type="checkbox" name="line" value="<%= l.id %>" class="rl" onclick="syncCount()"></td>
+        <td><input type="checkbox" name="line" value="<%= l.id %>" class="rl"></td>
         <td class="mono"><%= l.date %></td>
         <td class="mono"><%= l.document_no || '—' %></td>
         <td><%= l.description || '' %></td>
@@ -61,12 +61,17 @@
 </div>
 </form>
 
-<script>
+<script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>">
 function toggleAll(el){document.querySelectorAll('.rl').forEach(function(c){c.checked=el.checked;});syncCount();}
 function syncCount(){
   var n=document.querySelectorAll('.rl:checked').length;
   document.getElementById('seln').textContent=n;
   document.querySelectorAll('.rl').forEach(function(c){c.closest('tr').classList.toggle('sel',c.checked);});
 }
+// Handlers are bound here rather than as inline onclick="" attributes: the CSP
+// has no unsafe-inline, so inline handlers are silently blocked by the browser
+// and "Select all" would simply stop working.
+document.getElementById('selall').addEventListener('change', function(){ toggleAll(this); });
+document.querySelectorAll('.rl').forEach(function(c){ c.addEventListener('change', syncCount); });
 syncCount();
 </script>

@@ -70,9 +70,10 @@
         <td>
           <form method="post" action="/admin/users/<%= u.id %>/role">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-            <select name="role" onchange="this.form.submit()">
+            <select name="role" class="role-sel">
               <% roles.forEach(function(r){ %><option value="<%= r.code %>" <%= r.code === u.role_code ? 'selected' : '' %>><%= r.name %></option><% }) %>
             </select>
+            <noscript><button class="btn sm" type="submit">Set</button></noscript>
           </form>
         </td>
         <td>
@@ -135,3 +136,11 @@
   </table></div>
   <% } %>
 </div>
+
+<script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>">
+// Role changes submit as soon as the dropdown changes. Bound here instead of via
+// an inline onchange="" attribute, which the CSP blocks (no unsafe-inline).
+document.querySelectorAll('.role-sel').forEach(function(sel){
+  sel.addEventListener('change', function(){ sel.form.submit(); });
+});
+</script>

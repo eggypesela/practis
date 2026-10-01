@@ -6,7 +6,7 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test --test-concurrency=1 test/*.test.js"
+    "test": "PRACTIS_RL_LOGIN_MAX=100000 PRACTIS_RL_WRITE_MAX=100000 PRACTIS_RL_GLOBAL_MAX=100000 node --test --test-concurrency=1 test/*.test.js"
   },
   "license": "UNLICENSED",
   "dependencies": {
@@ -16,6 +16,7 @@
     "cookie-parser": "^1.4.7",
     "ejs": "^6.0.1",
     "express": "^5.2.1",
-    "express-ejs-layouts": "^2.5.1"
+    "express-ejs-layouts": "^2.5.1",
+    "express-rate-limit": "^8.7.0"
   }
 }

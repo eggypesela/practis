@@ -291,7 +291,7 @@ router.post('/queue/tag',
       if (!cbsId && !wbsId && !check) continue;
 
       // cost category follows the CBS account (its own default), per the master data
-      const catId = cbsId ? (db.prepare('SELECT cost_category_id c FROM transaction_accounts WHERE id = ?').get(cbsId)?.c || null) : null;
+      const catId = cbsId ? (q.costCategoryOfAccount(cbsId)?.c ?? null) : null;
 
       q.tagLine(id, { cbsId, wbsId, costCategoryId: catId, check, actorId: req.user.id });
       q.insertAudit(id, req.user.id, before,
@@ -531,8 +531,7 @@ router.post('/expenses/:lineId/check', requireCapability('canCheckExpense', 'Onl
     try {
       const apply = db.transaction(() => {
         if (cbsId !== line.transaction_account_id || wbsId !== line.wbs_node_id) {
-          db.prepare(`UPDATE lpb_statements SET transaction_account_id = ?, wbs_node_id = ? WHERE id = ?`)
-            .run(cbsId, wbsId ?? null, line.id);
+          q.setLpbCodes(cbsId, wbsId ?? null, line.id);
         }
         const r = q.checkLpbLine(line.id, req.user.id);
         if (r.changes !== 1) throw new Error('the line was already checked by someone else');

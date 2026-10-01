@@ -60,10 +60,17 @@ router.post('/login', async (req, res) => {
   // Session fixation (TS-01): never adopt a session id that existed pre-login.
   destroySession(req.cookies?.[SESSION_COOKIE]);
   const token = createSession(user.id, req);
-  res.cookie(SESSION_COOKIE, token, { httpOnly: true, sameSite: 'lax', maxAge: 12 * 60 * 60 * 1000 });
-  try {
-    require('../db/db').prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?").run(user.id);
-  } catch { /* non-fatal */ }
+  res.cookie(SESSION_COOKIE, token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 12 * 60 * 60 * 1000,
+    // TECH-SPEC §3.6. `secure` must be OFF for plain-HTTP local dev or the browser
+    // silently drops the cookie and nobody can sign in. It is derived from the
+    // request, so a TLS-terminating proxy (X-Forwarded-Proto) gets it right without
+    // configuration; PRACTIS_COOKIE_SECURE=true forces it on in production.
+    secure: process.env.PRACTIS_COOKIE_SECURE === 'true' || req.secure === true,
+  });
+  try { q.touchLastLogin(user.id); } catch { /* non-fatal */ }
   res.redirect('/');
 });
 

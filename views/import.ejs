@@ -62,7 +62,7 @@
   </table></div>
 </div>
 
-<script>
+<script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>">
 (function(){
   var csrf = (document.querySelector('meta[name=csrf-token]') || {}).content || '';
   var batchId = null;

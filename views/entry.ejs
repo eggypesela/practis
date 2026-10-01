@@ -43,7 +43,7 @@
 <svg style="display:none" aria-hidden="true"><defs>
 <symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
 </defs></svg>
-<script>
+<script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>">
 (function(){
   document.querySelectorAll('.seg').forEach(function(seg){
     var radios=seg.querySelectorAll('input[type=radio]');

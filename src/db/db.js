@@ -8,7 +8,11 @@ const DB_PATH = process.env.PRACTIS_DB || path.join(__dirname, '..', '..', 'data
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('busy_timeout = 5000');
-db.pragma('synchronous = NORMAL');
+// TECH-SPEC §4.1 requires FULL. Under WAL, NORMAL only syncs at checkpoints, so a
+// power loss can drop the last committed transactions — unacceptable for a book of
+// record. FULL fsyncs every commit; the write cost is paid on import runs, not on
+// reads. Verify with a fresh connection: PRAGMA synchronous must return 2.
+db.pragma('synchronous = FULL');
 db.pragma('foreign_keys = ON');
 
 module.exports = db;

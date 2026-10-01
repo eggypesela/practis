@@ -6,7 +6,7 @@
 <title><%= typeof title !== 'undefined' ? title + ' · PRACTIS' : 'PRACTIS' %></title>
 <link rel="stylesheet" href="/fonts.css">
 <link rel="stylesheet" href="/app.css">
-<style>[x-cloak]{display:none!important}</style>
+<style nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>">[x-cloak]{display:none!important}</style>
 </head><body>
 <div class="shell">
   <%- include('partials/sidebar') %>
@@ -25,5 +25,5 @@
 <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 4v16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M4.5 12h15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
 <symbol id="i-check" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M4 2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm10.6 6.2-5 5-2.2-2.2-1.4 1.4 3.6 3.6 6.4-6.4Z"/></symbol>
 </defs></svg>
-<% if (typeof extraScript !== 'undefined') { %><script><%- extraScript %></script><% } %>
+<% if (typeof extraScript !== 'undefined') { %><script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>"><%- extraScript %></script><% } %>
 </body></html>

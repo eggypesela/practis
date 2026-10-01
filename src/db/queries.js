@@ -38,6 +38,10 @@ const _loginFail = db.prepare(`
   WHERE id = ?`);
 const _loginOk = db.prepare(`UPDATE users SET failed_login_count = 0, locked_until = NULL WHERE id = ?`);
 const _setPassword = db.prepare(`UPDATE users SET password_hash = ? WHERE id = ?`);
+// Record the sign-in time. Non-fatal bookkeeping, but it belongs with the other
+// user statements rather than inline in the route (task 0.6).
+const _touchLastLogin = db.prepare(
+  `UPDATE users SET last_login_at = datetime('now') WHERE id = ?`);
 const _roleForUser = db.prepare(`
   SELECT r.code, r.name FROM user_roles ur JOIN roles r ON r.code = ur.role_code
   WHERE ur.user_id = ? AND ur.project_id IS NULL ORDER BY r.code LIMIT 1`);
@@ -68,6 +72,11 @@ const _untaggedLineById = db.prepare(`
   SELECT l.id, l.project_id, l.wbs_node_id, l.transaction_account_id,
          l.cost_checked, l.line_role, l.in_cost_basis
   FROM accounting_ledger l WHERE l.id = ?`);
+
+// The cost category a CBS account defaults to. Used when tagging an untagged
+// ledger line (task 0.6 — was inline SQL in src/routes/app.js).
+const _costCategoryOfAccount = db.prepare(
+  'SELECT cost_category_id AS c FROM transaction_accounts WHERE id = ?');
 
 // The ONLY write the queue performs. The DB triggers allow exactly these one-way
 // transitions (001_initial.sql trg_ledger_immutable_financial_fields); the app
@@ -318,6 +327,15 @@ const _checkLpbLine = db.prepare(`
      SET status = 'checked', checked_by = ?, checked_at = datetime('now')
    WHERE id = ? AND status = 'draft'`);
 
+// The Cost Controller may correct the codes as part of the check. Same idea as
+// _tagLine: one statement, called inside the route's transaction, so the route
+// never builds SQL. (Audit 2026-09-30, task 0.6 — this statement used to live
+// inline in src/routes/app.js, which is the habit that produced blocker B2.)
+const _setLpbCodes = db.prepare(`
+  UPDATE lpb_statements
+     SET transaction_account_id = ?, wbs_node_id = ?
+   WHERE id = ?`);
+
 const _rejectLpbLine = db.prepare(`
   UPDATE lpb_statements
      SET status = 'rejected', reject_reason = ?, checked_by = ?, checked_at = datetime('now')
@@ -400,6 +418,9 @@ module.exports = {
   cbsOptions: () => _cbsOptions.all(),
   wbsOptions: (projectId) => _wbsOptions.all(projectId),
   untaggedLineById: (id) => _untaggedLineById.get(id),
+  // audit 2026-09-30 task 0.6: these two were inline SQL in src/routes/app.js
+  costCategoryOfAccount: (cbsId) => _costCategoryOfAccount.get(cbsId),
+  setLpbCodes: (cbsId, wbsId, lineId) => _setLpbCodes.run(cbsId, wbsId ?? null, lineId),
   tagLine: (lineId, { cbsId, wbsId, costCategoryId, check, actorId }) => {
     const doCheck = check ? 1 : 0;
     return _tagLine.run(
@@ -415,6 +436,7 @@ module.exports = {
   loginFail: (userId) => _loginFail.run(userId),
   loginOk: (userId) => _loginOk.run(userId),
   setPasswordHash: (userId, hash) => _setPassword.run(hash, userId),
+  touchLastLogin: (userId) => _touchLastLogin.run(userId),
   audit: (entityType, entityId, action, actorId, before, after) =>
     _insertGenericAudit.run(entityType, entityId, action, actorId,
       before == null ? null : JSON.stringify(before),
