@@ -1,0 +1,74 @@
+<% if (flash) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg>
+  <b><%= flash %></b> <%= flashKind === 'freeze' ? 'frozen. Ordinary backdated writes into it are now refused.' : 'unfrozen. Ordinary writes into it are allowed again.' %></div>
+<% } %>
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Not changed.</b> <%= error %></p></div></div>
+<% } %>
+
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-book"/></svg>Frozen months</div>
+    <div class="v"><%= frozen.length %></div><div class="f">of <%= months.length %> with activity</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-grid"/></svg>Open months</div>
+    <div class="v"><%= open.length %></div><div class="f">still accept backdated entries</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-chart"/></svg>Months with activity</div>
+    <div class="v"><%= months.length %></div><div class="f">across this project's ledger</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Frozen coverage</div>
+    <div class="v"><%= months.length ? Math.round(frozen.length / months.length * 1000) / 10 : 0 %>%</div>
+    <div class="f"><span class="<%= frozen.length === months.length && months.length ? 'up' : 'wn' %>">target 100% of reported months</span></div></div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Freeze a reported month</h2><span class="r">Administrator only</span></div>
+  <div class="fbody">
+    <div class="fnote"><svg><use href="#i-info"/></svg><span>Freezing a month stops ordinary backdated ledger
+      entries from changing figures that have already been reported. Corrections stay possible: reversing an
+      existing line is admitted into a frozen month, because a reversal cancels a line that is already inside
+      the books.</span></div>
+    <% if (open.length === 0) { %>
+      <div class="fnote"><svg><use href="#i-info"/></svg><span><b>Every month with ledger activity is currently
+        frozen.</b> Unfreeze one below to reopen it.</span></div>
+    <% } else { %>
+    <form method="post" action="/periods/freeze">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="fbar">
+        <label class="flbl">Month
+          <select name="period_month">
+            <% open.forEach(function(m){ %><option value="<%= m %>"><%= m %></option><% }) %>
+          </select></label>
+        <span class="fsep"></span>
+        <button class="btn pri" type="submit"><svg><use href="#i-check"/></svg>Freeze this month</button>
+      </div>
+    </form>
+    <% } %>
+  </div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Frozen months</h2><span class="r"><%= frozen.length %> total</span></div>
+  <% if (frozen.length === 0) { %>
+    <div class="fbody">
+      <div class="fnote"><svg><use href="#i-info"/></svg><span>No month is frozen yet. Until one is, a backdated
+        write can change any reported figure.</span></div>
+    </div>
+  <% } else { %>
+  <div class="tw"><table>
+    <thead><tr><th>Month</th><th>Status</th><th class="r">Action</th></tr></thead>
+    <tbody>
+      <% frozen.forEach(function(m){ %>
+      <tr>
+        <td class="mono"><%= m %></td>
+        <td><span class="chip wn">FROZEN</span></td>
+        <td class="r">
+          <form method="post" action="/periods/unfreeze">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <input type="hidden" name="period_month" value="<%= m %>">
+            <button class="btn sm" type="submit">Unfreeze</button>
+          </form>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table></div>
+  <% } %>
+</div>

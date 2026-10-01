@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db/db');
 const q = require('../db/queries');
-const { requirePage } = require('../middleware/auth');
+const { requirePage, requireAdmin } = require('../middleware/auth');
 const { projectContext } = require('../middleware/scope');
 
 const IDR = new Intl.NumberFormat('id-ID');
@@ -96,6 +96,7 @@ router.post('/ledger/entry',
   const proj = res.locals.project;
   if (!proj) return res.redirect('/');
   const { buildInsert } = require('../lib/ledger-builder');
+  const periods = require('../lib/periods');
 
   let row;
   try {
@@ -111,17 +112,16 @@ router.post('/ledger/entry',
       paidAmount: req.body.paid ? Number(req.body.paid) : 0,
     });
   } catch (err) {
-    return res.status(400).render('entry', {
-      layout: 'layout-app', title: 'New ledger entry',
-      subtitle: `${proj.name} · the entry was rejected`,
-      crumb: `${proj.name} / Ledger / New entry`, active: 'Ledger',
-      actions: '', projectName: proj.name,
-      types: Object.keys(TYPES_r()), fmt,
-      defaultDate: new Date().toISOString().slice(0, 10),
-      error: err.message, form: req.body,
-      untaggedCount: q.untaggedCount(proj.id).n,
-    });
+    return renderEntryRejected(req, res, proj, err.message);
   }
+
+  // Frozen period (TECH-SPEC §8.4). Checked HERE rather than left to the
+  // trigger, so the user gets a message naming the period and the way forward
+  // instead of a raw RAISE(ABORT) string. The trigger remains the floor: any
+  // write path that bypasses this route is still refused.
+  const refusal = periods.checkWrite(proj.id, row);
+  if (refusal) return renderEntryRejected(req, res, proj, refusal.message);
+
   // keep a copy for audit BEFORE the insert (audit needs the pre-insert snapshot)
   const auditBefore = JSON.parse(JSON.stringify(row));
   let id;
@@ -131,20 +131,26 @@ router.post('/ledger/entry',
     // schema-level integrity (money triggers, import dedupe) is the floor —
     // manual duplicates are legal (source='manual' bypasses the import dedupe
     // partial index by design); show the DB error rather than guess.
-    return res.status(400).render('entry', {
-      layout: 'layout-app', title: 'New ledger entry',
-      subtitle: `${proj.name} · the entry was rejected`,
-      crumb: `${proj.name} / Ledger / New entry`, active: 'Ledger',
-      actions: '', projectName: proj.name,
-      types: Object.keys(TYPES_r()), fmt,
-      defaultDate: new Date().toISOString().slice(0, 10),
-      error: err.message, form: req.body,
-      untaggedCount: q.untaggedCount(proj.id).n,
-    });
+    return renderEntryRejected(req, res, proj, err.message);
   }
   q.insertLedgerAudit(id, req.user.id, auditBefore);
   res.redirect(`/ledger?saved=${id}`);
 });
+
+// The entry form, re-rendered with a refusal. Shared by the validation failure,
+// the frozen-period refusal and the insert failure so all three read the same.
+function renderEntryRejected(req, res, proj, message) {
+  return res.status(400).render('entry', {
+    layout: 'layout-app', title: 'New ledger entry',
+    subtitle: `${proj.name} · the entry was rejected`,
+    crumb: `${proj.name} / Ledger / New entry`, active: 'Ledger',
+    actions: '', projectName: proj.name,
+    types: Object.keys(TYPES_r()), fmt,
+    defaultDate: new Date().toISOString().slice(0, 10),
+    error: message, form: req.body,
+    untaggedCount: q.untaggedCount(proj.id).n,
+  });
+}
 
 function TYPES_r() { return require('../lib/ledger-builder').TYPES; }
 
@@ -345,6 +351,94 @@ function requireCapability(flag, message) {
     next();
   };
 }
+
+// ---- frozen periods (plan task 0.10, TECH-SPEC §8.4) -------------------------
+// An Administrator freezes a reported month so ordinary backdated writes cannot
+// change figures that have already been reported. Corrections remain possible via
+// the reversal path (see lib/periods.js for why that is the door).
+//
+// Freezing is gated on `requireAdmin` (from middleware/auth) rather than a
+// capability: it is an administrative act that changes what everyone else may
+// write, and it is the same guard the user-administration routes use.
+
+function periodsLocals(req, res, extra = {}) {
+  const periods = require('../lib/periods');
+  const proj = res.locals.project;
+  const frozen = periods.frozenMonths(proj.id);
+  const months = periods.monthsWithActivity(proj.id);
+  // Months with activity that are not yet frozen — what the freeze control offers.
+  const open = months.filter((m) => !frozen.includes(m));
+  return {
+    layout: 'layout-app', title: 'Accounting periods',
+    subtitle: `${proj.name} · freeze a reported month so ordinary backdated writes are refused`,
+    crumb: `${proj.name} / Accounting periods`, active: 'Accounting periods',
+    actions: '', projectName: proj.name,
+    frozen, open, months,
+    fmt,
+    untaggedCount: q.untaggedCount(proj.id).n,
+    flash: typeof req.query.frozen !== 'undefined' ? String(req.query.frozen)
+      : (typeof req.query.unfrozen !== 'undefined' ? String(req.query.unfrozen) : null),
+    flashKind: typeof req.query.frozen !== 'undefined' ? 'freeze' : 'unfreeze',
+    ...extra,
+  };
+}
+
+router.get('/periods',
+  requireCapability('canViewLedger', 'The ledger is visible to Finance, the PM and the Cost Controller.'),
+  (req, res) => {
+    const proj = res.locals.project;
+    if (!proj) return res.redirect('/');
+    res.render('periods', periodsLocals(req, res));
+  });
+
+router.post('/periods/freeze',
+  requireAdmin,
+  (req, res) => {
+    const proj = res.locals.project;
+    if (!proj) return res.redirect('/');
+    const periods = require('../lib/periods');
+    const month = periods.monthOf(req.body.period_month);
+    // Validate against the project's real months: a typo would otherwise freeze a
+    // month that does not exist and look like it worked.
+    if (!month || !periods.monthsWithActivity(proj.id).includes(month)) {
+      return res.status(400).render('periods', periodsLocals(req, res, {
+        error: req.body.period_month
+          ? `"${req.body.period_month}" is not a month with ledger activity in this project.`
+          : 'Pick a month to freeze.',
+      }));
+    }
+    const r = q.freezePeriod(proj.id, month, req.user.id);
+    if (r.changes === 1) {
+      // entity_id is the frozen_periods row, so the audit trail points at the
+      // thing that changed rather than at null.
+      const fp = periods.frozenPeriod(proj.id, month);
+      q.audit('frozen_periods', fp?.id ?? null, 'freeze', req.user.id, null,
+        { project_id: proj.id, period_month: month });
+    }
+    res.redirect(`/periods?frozen=${month}`);
+  });
+
+router.post('/periods/unfreeze',
+  requireAdmin,
+  (req, res) => {
+    const proj = res.locals.project;
+    if (!proj) return res.redirect('/');
+    const periods = require('../lib/periods');
+    const month = periods.monthOf(req.body.period_month);
+    if (!month || !periods.isFrozen(proj.id, month)) {
+      return res.status(400).render('periods', periodsLocals(req, res, {
+        error: 'That month is not frozen.',
+      }));
+    }
+    const fp = periods.frozenPeriod(proj.id, month);
+    q.unfreezePeriod(proj.id, month);
+    // Unfreezing re-opens a closed period, which is exactly the kind of change
+    // that must be attributable later — so it is audited, against the row that
+    // was just removed.
+    q.audit('frozen_periods', fp.id, 'unfreeze', req.user.id,
+      { project_id: proj.id, period_month: month }, null);
+    res.redirect(`/periods?unfrozen=${month}`);
+  });
 
 router.get('/advances', requireCapability('canViewExpense', 'Cash advances are visible to the Project Admin, the Cost Controller and Finance.'),
   (req, res) => {

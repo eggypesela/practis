@@ -289,39 +289,65 @@ single-project install). Flipping `SCOPE_ENFORCE=1` is then a one-line change on
 **Ordering:** built before Module 6, which creates the second project that turns the latent flaw into
 a live leak.
 
-### Task 0.10 — Frozen period (BUILD IT — decision 5A)
+### Task 0.10 — Frozen period — ✅ DONE 2026-10-01
 
-TECH-SPEC §8.4 requires *"Frozen period rejects ordinary backdated writes"*. The `frozen_periods` table
-exists (0 rows) but there is **no trigger, no route, and no reference to it anywhere in `src/`** — the
-invariant is entirely unenforced and untested. **The owner chose to build it now**, so it is real work here,
-not a deferral.
+TECH-SPEC §8.4: *"Frozen period rejects ordinary backdated writes"* and *"the flagged revision path
+remains explicit"*. The `frozen_periods` table existed since migration 001 with **zero rows, no
+trigger, no route and no reference anywhere in `src/`** — the invariant was in the spec and nowhere
+in the system.
 
-**Design (follow the existing pattern, do not invent):**
-- Migration `db/migrations/011_frozen_period_enforcement.sql` — add
-  `trg_ledger_frozen_period_insert` / `_update` **and the equivalent on `lpb_statements`** (backdated
-  cost enters through both). Compare the effective date's `YYYY-MM` against `frozen_periods`; abort when
-  frozen **unless** a `revision_of` marker is present.
-- **The flagged revision path is mandatory, not optional** — §8.4 says *"flagged revision path remains
-  explicit"*. A frozen period must still admit a deliberate, attributed correction. Without it the
-  trigger blocks legitimate late adjustments and someone will disable it.
-- Modify: `src/lib/periods.js` (extend to `isFrozen(projectId, date)`), `src/db/queries.js`
-  (freeze/unfreeze + `frozen_periods` read), `src/routes/app.js` (an Admin-only freeze control).
-- Views: show frozen months as locked on the ledger and the entry form; refuse with a clear message
-  naming the period and the revision route, not a raw trigger error.
-- Tests (`test/periods.test.js` — **port `3910`**): FP1.1 backdated write to a frozen month aborted ·
-  FP1.2 the revision path admits a flagged correction · FP1.3 unfreezing restores normal writes ·
-  FP1.4 a non-frozen month is unaffected · FP1.5 freeze/unfreeze is audit-logged.
-- Model the triggers on `trg_lpb_checked_requires_cbs` — see the skill's trigger section for the
-  insert/update split and the `WHEN`-clause pitfalls.
+**Three assumptions in the original plan were wrong, and were corrected against the DB:**
 
-**Note:** `frozen_periods` is empty, so this is greenfield — no backfill needed, but the trigger must not
-break the existing 148 tests (several post backdated fixture dates).
+| Plan said | Reality |
+|---|---|
+| modify `src/lib/periods.js` | did not exist — created |
+| triggers on `ledger` | table is **`accounting_ledger`** |
+| "unless a `revision_of` marker is present" | no such column; reversals use `reverses_ledger_id` |
 
-**Definition of done:** `npm test` green at **148 + ~8 authz + 4 schema + 2 fixture + 5 BOLA + 5 frozen
-≈ 172**; the four regression tests pass; a Viewer attempting all five writes gets 403 with **provably
-zero rows written**; a user scoped to project A cannot read or write project B; `synchronous` reads back
-`2`; CSP headers present and `/import` still functional; `validate.py` runs inside `npm test` and its
-schema matches the migrations; a write into a frozen month is refused with the revision path offered.
+**Built:**
+- `db/migrations/011_frozen_period_enforcement.sql` — `trg_ledger_frozen_period_insert` (on
+  `accounting_ledger`) and `trg_lpb_frozen_period_check` / `_check_insert` (on `lpb_statements`).
+- `src/lib/periods.js` — `monthOf` / `periodKeyOf` / `isFrozen` / `frozenPeriod` / `frozenMonths` /
+  `monthsWithActivity` / `checkWrite`.
+- `src/db/queries.js` — `freezePeriod` / `unfreezePeriod`.
+- `src/routes/app.js` — `/periods` (view), `/periods/freeze`, `/periods/unfreeze`, gated on the
+  **existing** `requireAdmin`; entry POST refuses before inserting so the message is a sentence, not
+  a raw `RAISE(ABORT)`.
+- `views/periods.ejs` + sidebar nav entry.
+- `test/periods.test.js` — FP1.1–FP1.7, port **3910**.
+
+**Key design decisions, and why:**
+
+1. **The date is `COALESCE(effective_date, date)`.** `effective_date` is the accounting date and is
+   what `v_ledger_period` / `v_cbs_actual` group by. Freezing on `date` alone would let a row into a
+   frozen month by backdating one column. FP1.6 asserts the backdate path is closed.
+2. **The door is the EXISTING reversal mechanism, not a new `revision_of` flag.** The plan assumed a
+   flag. Reusing `reverses_ledger_id` keeps exactly ONE way to correct a posted line — the reversal
+   is already the only legal correction, already enforced by
+   `trg_ledger_reversal_link_immutable` / `_must_negate`, and already the only thing
+   `lib/ledger-correction.js` writes. A parallel flag would be a second mechanism doing the same job,
+   and the one nobody exercises is the one that rots.
+3. **`lpb_statements` is guarded at the CHECK transition, not the draft insert.** An lpb line is not
+   cost until checked (`v_cbs_actual` counts `status='checked'` only), so a draft in a frozen month is
+   harmless and must stay legal — guarding it would block ordinary data entry for no accounting
+   effect. The check is what books the cost, so the check is what freezes. The door there is
+   `superseded_by`, already set at check time by the correction flow from migration 009.
+4. **No `accounting_ledger` UPDATE trigger.** The columns that could move a row into another month
+   are already immutable once posted (`trg_ledger_no_amount_update`,
+   `trg_ledger_immutable_financial_fields`), so such a trigger would be dead code.
+
+**Two real bugs the tests caught during the build:**
+- A second `requireAdmin` was being written when `middleware/auth.js` already exports one — the
+  duplicate caused 403s and was removed.
+- The csrf test helper takes a URL-encoded **body string**, not an object. Passing an object
+  stringified to `[object Object]` and failed CSRF, which surfaced as a misleading 403 before the
+  route ran.
+
+**Definition of done:** `npm test` green at **210** (202 + 8 FP); the route refuses with the period
+named; the trigger refuses a direct insert with no route involved (FP1.6 — the guarantee, not the
+courtesy); a reversal into a frozen month is admitted and moves the total by exactly the correction;
+freeze/unfreeze is audit-logged with the actor; a non-Administrator cannot freeze; and a row cannot be
+**walked** into a frozen month by editing `effective_date` (FP1.8 — the hole `validate.py` found).
 
 ---
 

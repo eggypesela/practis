@@ -166,6 +166,15 @@ const _setUserRole = db.prepare(`
 
 const _clearUserRoles = db.prepare(`DELETE FROM user_roles WHERE user_id = ? AND project_id IS NULL`);
 
+// ---- frozen periods (plan task 0.10, TECH-SPEC §8.4) -------------------------
+const _freezePeriod = db.prepare(`
+  INSERT INTO frozen_periods (project_id, period_month, frozen_at, frozen_by)
+  VALUES (@project_id, @period_month, datetime('now'), @actor_id)
+  ON CONFLICT(project_id, period_month) DO NOTHING`);
+
+const _unfreezePeriod = db.prepare(
+  `DELETE FROM frozen_periods WHERE project_id = ? AND period_month = ?`);
+
 // ---- per-project scoping (audit BOLA, plan task 0.9) --------------------------
 // `user_roles.project_id` is the junction the PRD 2.3 describes ("users are
 // assigned a role PER PROJECT"). It existed from migration 001 and was NULL in
@@ -484,6 +493,11 @@ module.exports = {
   setUserRole: (userId, roleCode, actorId) =>
     _setUserRole.run({ user_id: userId, role_code: roleCode, actor_id: actorId }),
   clearUserRoles: (userId) => _clearUserRoles.run(userId),
+
+  // ---- frozen periods (plan task 0.10) ----
+  freezePeriod: (projectId, periodMonth, actorId) =>
+    _freezePeriod.run({ project_id: projectId, period_month: periodMonth, actor_id: actorId }),
+  unfreezePeriod: (projectId, periodMonth) => _unfreezePeriod.run(projectId, periodMonth),
 
   // ---- per-project scoping (plan task 0.9 / BOLA) ----
   // Every user's scoped project ids, in ONE query for the whole roster, so the

@@ -31,6 +31,7 @@ A duplicate ID makes traceability meaningless: "C1.1 failed" named three differe
 | `SCH` | **Security hardening**: FULL sync, CSP headers, rate limit | `security.test.js` | 3905–3907 |
 | `FX` | **Real-ledger fixture** regression (§8.3) | `fixture.test.js` | 3908 |
 | `BOLA` | **Cross-project isolation** (scope, §0 task 0.9) | `bola.test.js` | 3902 (gate off) + 3903 (gate on) |
+| `FP` | **Frozen periods** (§0 task 0.10, TECH-SPEC §8.4) | `periods.test.js` | 3910 |
 
 **Known legacy collisions to re-map when touched:** `advances.test.js` reuses `A1`,`E1`,`C1`,`S1`,
 `R1`,`Z1`; `csrf.test.js` reuses `C1`,`S1`,`C2`,`C3`; `correct.test.js` reuses `C1`–`C4`;
@@ -334,6 +335,63 @@ authorised set, so a project-scoped user's dashboard listed projects they are no
 **Not covered here, deliberately:** global reference data (COA / WBS / RBS) stays company-wide — it
 is shared master data, not project data, so BOLA1.5's original sketch is satisfied by construction:
 nothing in the scope layer filters a master-data query.
+
+---
+
+## 12b. FP — Frozen periods — ✅ IMPLEMENTED 2026-10-01
+
+TECH-SPEC §8.4 requires *"Frozen period rejects ordinary backdated writes"* and *"the flagged
+revision path remains explicit"*. The `frozen_periods` table has existed since migration 001 with
+**zero rows, no trigger, no route and no reference anywhere in `src/`** — the invariant lived in the
+spec and nowhere in the system, so a reported month could be backdated silently.
+
+Enforced by `db/migrations/011_frozen_period_enforcement.sql`; resolution helpers in
+`src/lib/periods.js`; freeze/unfreeze at `POST /periods/{freeze,unfreeze}` (`requireAdmin`), with the
+screen at `GET /periods`. Port **3910**.
+
+**The period follows `COALESCE(effective_date, date)`.** `effective_date` is the accounting date and
+is what `v_ledger_period` groups by. Freezing on `date` alone would let a row into a frozen month by
+backdating one column — FP1.6 asserts that path is closed.
+
+**The door is the existing reversal mechanism, not a new flag** (decision 2026-10-01). A reversal
+carries `reverses_ledger_id`; it is already the only legal way to correct a posted line, already
+enforced by `trg_ledger_reversal_link_immutable` / `_must_negate`, and `lib/ledger-correction.js` is
+its only writer. A parallel `revision_of` flag would be a second mechanism for the same job.
+
+| ID | Test | Expected | Status |
+|----|------|----------|--------|
+| FP1.1 | a backdated write into a frozen month is refused | 400, message names the month, **period total unchanged and zero rows written** | ✅ |
+| FP1.2 | the revision door: a reversal into a frozen month is admitted | 302, reversal negates, total moves by exactly the correction | ✅ |
+| FP1.3 | unfreezing restores ordinary writes | refused while frozen, accepted after | ✅ |
+| FP1.4 | a month that is not frozen is unaffected | 302, lands in its own period | ✅ |
+| FP1.5 | freeze/unfreeze is audit-logged with the actor | 2 rows in `audit_log` | ✅ |
+| FP1.6 | **the TRIGGER is the floor** — a direct insert is refused with no route involved | aborted, including a row dated elsewhere but **effective** in the frozen month | ✅ |
+| FP1.7 | freezing is refused for a non-Administrator | 403, and provably no period frozen | ✅ |
+| FP1.8 | a row accounted in an open month cannot be **walked** into the frozen month by editing `effective_date` | UPDATE aborted; NULLing it likewise; and the same UPDATE succeeds once unfrozen | ✅ |
+
+**FP1.6 and FP1.8 are the two that matter.** FP1.6 asserts the database is the guarantee and the
+route only a courtesy — the app can be bypassed. FP1.8 came out of `db/validate.py` failing, not out
+of reasoning: `effective_date` is *deliberately* editable (it is the sanctioned accounting-date
+correction, and `validate.py` asserts it stays that way) and it is the column the reports group by,
+so a row posted in a frozen month but accounted elsewhere could be walked into it by one UPDATE —
+the same hole as the insert, reached one statement later. `trg_ledger_frozen_period_effective_date`
+closes it.
+
+**Where the rule is deliberately NOT enforced:** `lpb_statements` is guarded at the **check**
+transition, not the draft insert. An lpb line is not cost until checked (`v_cbs_actual` and
+`v_ledger_period` count `status='checked'` only), so a draft dated in a frozen month is harmless and
+must stay legal — guarding it would block ordinary data entry for a month with no accounting effect.
+
+**Known limit, recorded rather than pretended away:** the lpb door admits a line that a
+previously-checked line points at via `superseded_by`. In the current correction flow that column is
+only written at check time, so an lpb correction inside a frozen month is refused and an
+Administrator must unfreeze. The ledger reversal door — the one the operator has a button for — is
+unaffected. Widening it needs an lpb correction flow that marks the replacement before it is checked.
+
+**Also fixed in this slice:** `db/seed-smoke.sql` has always frozen project 1 / **2026-01** as a
+smoke fixture, and `validate.py` was writing throwaway probe rows **into** that month. Those probes
+now live in open months, so a rejection there is once again the rule under test rather than the
+frozen guard firing first.
 
 ---
 

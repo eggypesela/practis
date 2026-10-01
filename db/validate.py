@@ -171,7 +171,7 @@ def main() -> int:
     #    must be frozen: if one is forgotten here, the same hole returns (review findings A-1/D-1).
     immutable_ledger_statements = (
         "UPDATE accounting_ledger SET amount=-1 WHERE id=1",
-        "UPDATE accounting_ledger SET date='2026-01-01' WHERE id=1",
+        "UPDATE accounting_ledger SET date='2026-02-01' WHERE id=1",
         "UPDATE accounting_ledger SET type='LPB' WHERE id=1",
         "UPDATE accounting_ledger SET document_no='X' WHERE id=1",
         "UPDATE accounting_ledger SET debit=debit+1 WHERE id=1",
@@ -193,12 +193,32 @@ def main() -> int:
         except sqlite3.IntegrityError:
             print(f"  [PASS] blocked: {stmt}")
 
-    # 5. The sanctioned correction path still works.
-    con.execute("UPDATE accounting_ledger SET effective_date='2026-01-31' WHERE id=1")
+    # 5. The sanctioned correction path still works. Row 1 is dated 2026-02-28, so the
+    #    corrected effective_date stays inside 2026-02 — an open month. (seed-smoke.sql
+    #    deliberately freezes project 1 / 2026-01, and writing there is the subject of
+    #    the next assertion.)
+    con.execute("UPDATE accounting_ledger SET effective_date='2026-02-27' WHERE id=1")
     check(
         "effective_date is editable",
         con.execute("SELECT period_month FROM v_ledger_period WHERE id=1").fetchone()[0],
-        "2026-01",
+        "2026-02",
+    )
+
+    # 5b. The period is DERIVED from effective_date, and effective_date is editable by
+    #     design — so without a guard an UPDATE can walk a posted row INTO a frozen
+    #     month, which is the insert hole reached one statement later. Migration 011
+    #     guards UPDATE OF effective_date, date for exactly this.
+    try:
+        con.execute("UPDATE accounting_ledger SET effective_date='2026-01-31' WHERE id=1")
+        failures.append("effective_date walk into a frozen month allowed")
+        print("  [FAIL] effective_date walk into a frozen month allowed")
+    except sqlite3.IntegrityError:
+        print("  [PASS] blocked: effective_date walk into a frozen month")
+    # ...and the row is provably still in its own month, not the frozen one.
+    check(
+        "and the row did not move",
+        con.execute("SELECT period_month FROM v_ledger_period WHERE id=1").fetchone()[0],
+        "2026-02",
     )
 
     # 6. De-scope keeps the line visible with status + remaining budget, never deletes it.
@@ -299,11 +319,11 @@ def main() -> int:
     # 12. Import dedupe (R2-27): same (transaction_id, document_no, date, amount, project) → skipped.
     con.execute("""INSERT INTO accounting_ledger
         (id,project_id,transaction_id,document_no,date,type,line_role,in_cost_basis,amount,debit,credit,currency,description,source)
-        VALUES (101,1,'X-1','DOC-1','2026-01-15','Expense','expense',1,500000,500000,0,'IDR','dup test','import')""")
+        VALUES (101,1,'X-1','DOC-1','2026-02-15','Expense','expense',1,500000,500000,0,'IDR','dup test','import')""")
     try:
         con.execute("""INSERT INTO accounting_ledger
             (id,project_id,transaction_id,document_no,date,type,line_role,in_cost_basis,amount,debit,credit,currency,description,source)
-            VALUES (102,1,'X-1','DOC-1','2026-01-15','Expense','expense',1,500000,500000,0,'IDR','dup test','import')""")
+            VALUES (102,1,'X-1','DOC-1','2026-02-15','Expense','expense',1,500000,500000,0,'IDR','dup test','import')""")
         dup_blocked = False
     except sqlite3.IntegrityError:
         dup_blocked = True
@@ -348,64 +368,64 @@ def main() -> int:
         "ledger: zero-amount line rejected",
         "INSERT INTO accounting_ledger"
         "(id,project_id,date,type,line_role,in_cost_basis,amount,debit,credit,source)"
-        "VALUES (901,1,'2026-01-01','Expense','expense',1,0,0,0,'manual')",
+        "VALUES (901,1,'2026-02-01','Expense','expense',1,0,0,0,'manual')",
     )
     rejects(
         "ledger: fractional rupiah rejected",
         "INSERT INTO accounting_ledger"
         "(id,project_id,date,type,line_role,in_cost_basis,amount,debit,credit,source)"
-        "VALUES (902,1,'2026-01-01','Expense','expense',1,1.5,1.5,0,'manual')",
+        "VALUES (902,1,'2026-02-01','Expense','expense',1,1.5,1.5,0,'manual')",
     )
     rejects(
         "ledger: both debit and credit rejected",
         "INSERT INTO accounting_ledger"
         "(id,project_id,date,type,line_role,in_cost_basis,amount,debit,credit,source)"
-        "VALUES (903,1,'2026-01-01','Expense','expense',1,100,60,40,'manual')",
+        "VALUES (903,1,'2026-02-01','Expense','expense',1,100,60,40,'manual')",
     )
     rejects(
         "ledger: amount not equal to debit - credit rejected",
         "INSERT INTO accounting_ledger"
         "(id,project_id,date,type,line_role,in_cost_basis,amount,debit,credit,source)"
-        "VALUES (904,1,'2026-01-01','Expense','expense',1,999,100,0,'manual')",
+        "VALUES (904,1,'2026-02-01','Expense','expense',1,999,100,0,'manual')",
     )
     rejects(
         "ledger: negative debit rejected",
         "INSERT INTO accounting_ledger"
         "(id,project_id,date,type,line_role,in_cost_basis,amount,debit,credit,source)"
-        "VALUES (905,1,'2026-01-01','Expense','expense',1,-100,-100,0,'manual')",
+        "VALUES (905,1,'2026-02-01','Expense','expense',1,-100,-100,0,'manual')",
     )
     rejects(
         "ledger: NULL debit side rejected",
         "INSERT INTO accounting_ledger"
         "(id,project_id,date,type,line_role,in_cost_basis,amount,debit,credit,source)"
-        "VALUES (906,1,'2026-01-01','Expense','expense',1,100,NULL,0,'manual')",
+        "VALUES (906,1,'2026-02-01','Expense','expense',1,100,NULL,0,'manual')",
     )
 
     # LPB detail: same money rules, plus no self-declared checks and no edits after checking.
     rejects(
         "lpb: zero-amount line rejected",
         "INSERT INTO lpb_statements(project_id,entry_date,amount,debit,credit,status)"
-        "VALUES (1,'2026-01-01',0,0,0,'draft')",
+        "VALUES (1,'2026-03-01',0,0,0,'draft')",
     )
     rejects(
         "lpb: fractional rupiah rejected",
         "INSERT INTO lpb_statements(project_id,entry_date,amount,debit,credit,status)"
-        "VALUES (1,'2026-01-01',1.5,1.5,0,'draft')",
+        "VALUES (1,'2026-03-01',1.5,1.5,0,'draft')",
     )
     rejects(
         "lpb: both debit and credit rejected",
         "INSERT INTO lpb_statements(project_id,entry_date,amount,debit,credit,status)"
-        "VALUES (1,'2026-01-01',100,60,40,'draft')",
+        "VALUES (1,'2026-03-01',100,60,40,'draft')",
     )
     rejects(
         "lpb: amount not equal to debit - credit rejected",
         "INSERT INTO lpb_statements(project_id,entry_date,amount,debit,credit,status)"
-        "VALUES (1,'2026-01-01',999,100,0,'draft')",
+        "VALUES (1,'2026-03-01',999,100,0,'draft')",
     )
     rejects(
         "lpb: NULL debit side rejected",
         "INSERT INTO lpb_statements(project_id,entry_date,amount,debit,credit,status)"
-        "VALUES (1,'2026-01-01',100,NULL,0,'draft')",
+        "VALUES (1,'2026-03-01',100,NULL,0,'draft')",
     )
     rejects(
         "lpb: project reassignment rejected once checked",
@@ -414,7 +434,7 @@ def main() -> int:
     rejects(
         "lpb: status checked without checker identity rejected",
         "INSERT INTO lpb_statements(project_id,entry_date,amount,debit,credit,status,checked_by,checked_at)"
-        "VALUES (1,'2026-01-01',100,100,0,'checked',NULL,NULL)",
+        "VALUES (1,'2026-03-01',100,100,0,'checked',NULL,NULL)",
     )
     # A draft line must stay editable: the finality control applies only after checking.
     con.execute("UPDATE lpb_statements SET amount=5000000 WHERE id=3")

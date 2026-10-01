@@ -12,7 +12,7 @@
 -- DDL is copied verbatim out of sqlite_master. To change it, write a migration and
 -- re-run the generator — never edit this file directly.
 --
--- Composition: 43 tables, 43 indexes, 21 triggers, 9 views.
+-- Composition: 43 tables, 43 indexes, 25 triggers, 9 views.
 
 -- TABLES (43)
 CREATE TABLE acceptance_register (
@@ -641,7 +641,7 @@ CREATE INDEX idx_wbs_progress_period ON wbs_progress(period_month);
 CREATE UNIQUE INDEX uq_cbs_plan_bucket ON cbs_plan(
   project_id, transaction_account_id, COALESCE(wbs_node_id, 0), plan_type, period_month, version);
 
--- TRIGGERS (21)
+-- TRIGGERS (25)
 CREATE TRIGGER trg_audit_log_no_delete
 BEFORE DELETE ON audit_log
 BEGIN
@@ -685,6 +685,31 @@ WHEN OLD.status <> 'open'
 BEGIN
   SELECT RAISE(ABORT,
     'cash_advance: cannot delete a pot that is not open or that carries Expense Report detail');
+END;
+CREATE TRIGGER trg_ledger_frozen_period_effective_date
+BEFORE UPDATE OF effective_date, date ON accounting_ledger
+WHEN NEW.reverses_ledger_id IS NULL
+ AND (OLD.date IS NOT NEW.date OR OLD.effective_date IS NOT NEW.effective_date)
+ AND EXISTS (
+   SELECT 1 FROM frozen_periods fp
+   WHERE fp.project_id = NEW.project_id
+     AND fp.period_month = substr(COALESCE(NEW.effective_date, NEW.date), 1, 7)
+ )
+BEGIN
+  SELECT RAISE(ABORT,
+    'frozen period: this accounting period is frozen and rejects ordinary backdated writes. Correct an existing line instead (a reversal is admitted), or ask an Administrator to unfreeze the period.');
+END;
+CREATE TRIGGER trg_ledger_frozen_period_insert
+BEFORE INSERT ON accounting_ledger
+WHEN NEW.reverses_ledger_id IS NULL
+ AND EXISTS (
+   SELECT 1 FROM frozen_periods fp
+   WHERE fp.project_id = NEW.project_id
+     AND fp.period_month = substr(COALESCE(NEW.effective_date, NEW.date), 1, 7)
+ )
+BEGIN
+  SELECT RAISE(ABORT,
+    'frozen period: this accounting period is frozen and rejects ordinary backdated writes. Correct an existing line instead (a reversal is admitted), or ask an Administrator to unfreeze the period.');
 END;
 CREATE TRIGGER trg_ledger_immutable_financial_fields
 BEFORE UPDATE OF debit, credit, project_id, in_cost_basis, cost_checked, cost_checked_by,
@@ -855,6 +880,33 @@ WHEN NEW.status = 'checked'
 BEGIN
   SELECT RAISE(ABORT,
     'lpb_statements: status=checked requires checked_by and checked_at (the Cost Controller who checked it)');
+END;
+CREATE TRIGGER trg_lpb_frozen_period_check
+BEFORE UPDATE OF status ON lpb_statements
+WHEN NEW.status = 'checked'
+ -- the door: a line that supersedes another is a correction, not a new entry
+ AND NOT EXISTS (SELECT 1 FROM lpb_statements old WHERE old.superseded_by = NEW.id)
+ AND EXISTS (
+   SELECT 1 FROM frozen_periods fp
+   WHERE fp.project_id = NEW.project_id
+     AND fp.period_month = COALESCE(NEW.period_month, substr(NEW.entry_date, 1, 7))
+ )
+BEGIN
+  SELECT RAISE(ABORT,
+    'frozen period: this accounting period is frozen and rejects ordinary backdated writes. Post a line that supersedes the existing one instead, or ask an Administrator to unfreeze the period.');
+END;
+CREATE TRIGGER trg_lpb_frozen_period_check_insert
+BEFORE INSERT ON lpb_statements
+WHEN NEW.status = 'checked'
+ AND NOT EXISTS (SELECT 1 FROM lpb_statements old WHERE old.superseded_by = NEW.id)
+ AND EXISTS (
+   SELECT 1 FROM frozen_periods fp
+   WHERE fp.project_id = NEW.project_id
+     AND fp.period_month = COALESCE(NEW.period_month, substr(NEW.entry_date, 1, 7))
+ )
+BEGIN
+  SELECT RAISE(ABORT,
+    'frozen period: this accounting period is frozen and rejects ordinary backdated writes. Post a line that supersedes the existing one instead, or ask an Administrator to unfreeze the period.');
 END;
 CREATE TRIGGER trg_lpb_money_integrity_insert
 BEFORE INSERT ON lpb_statements

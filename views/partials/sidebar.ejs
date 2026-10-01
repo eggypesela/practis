@@ -47,6 +47,7 @@
     <% if (typeof isAdmin !== 'undefined' && isAdmin) { %>
     <div class="grp caps">Administration</div>
     <a href="/admin/users" class="<%= _active === 'Users' ? 'on' : '' %>"><svg><use href="#i-users"/></svg><span class="lbl">Users &amp; roles</span></a>
+    <a href="/periods" class="<%= _active === 'Accounting periods' ? 'on' : '' %>"><svg><use href="#i-book"/></svg><span class="lbl">Accounting periods</span></a>
     <% } %>
   </nav>
   <div class="sb-foot">
