@@ -28,6 +28,7 @@ A duplicate ID makes traceability meaningless: "C1.1 failed" named three differe
 | `XO` | Checker options: Return / Block | `advances-options.test.js` | 3993 |
 | `AD` | Administration / users | `admin.test.js` | 3993 |
 | `AZ` | **Authorization matrix** (new, §0 of the dev plan) | `authz.test.js` | 3901 |
+| `SCH` | **Security hardening**: FULL sync, CSP headers, rate limit | `security.test.js` | 3905–3907 |
 
 **Known legacy collisions to re-map when touched:** `advances.test.js` reuses `A1`,`E1`,`C1`,`S1`,
 `R1`,`Z1`; `csrf.test.js` reuses `C1`,`S1`,`C2`,`C3`; `correct.test.js` reuses `C1`–`C4`;
@@ -246,6 +247,45 @@ logged-in client per role.
 | AZ2.3 | Project Admin → enter expense line | allowed; → check | 403 |
 | AZ2.4 | anonymous → each of the five writes | 302/401 |
 | AZ3.1 | no-CSRF → each of the five writes | 403 |
+
+**Implemented 2026-09-30 (commit `e5fbd1d`): 17 tests, all green.** Actual shape differs slightly from
+the sketch above — the suite that landed is:
+
+| ID | Test | Assertion |
+|----|------|-----------|
+| AZ1.1–AZ1.3 | Viewer / PM denied `POST /ledger/entry`; **Finance allowed** | 403 + `accounting_ledger` count unchanged; allow-case asserts 302 + count +1 |
+| AZ2.1–AZ2.3 | Viewer / PM denied `POST /ledger/:id/reverse`; **Cost Controller allowed** | 403 + zero reversal rows (one-shot slot intact) |
+| AZ3.1–AZ3.3 | Viewer / PM denied `POST /queue/tag`; **Cost Controller allowed** | 403 + `cost_checked` still 0 |
+| AZ4.1–AZ4.4 | Viewer/CC denied import stage; Viewer denied confirm; **Finance allowed** | 403 JSON + no batch staged; confirm asserts ledger unchanged |
+| AZ5.1–AZ5.4 | Page visibility | Viewer 403 on `/ledger/entry` + `/import`; Viewer 200 on `/ledger`; Finance 200 on both forms |
+
+Two rules the implementation enforces, worth keeping:
+- **Every deny-test asserts the DATABASE, not the status.** Row counts are the evidence; a 302/200 is
+  not.
+- **Every capability gets an allow-test too.** A guard that blocks everyone is also a bug, so the
+  permitted role must still get through.
+
+`test/helpers/authz.js` signature is `asRole(Database, dbPath, origin, roleCode, opts)` — it takes
+`Database` as an argument and uses its **own** better-sqlite3 handle. Never `require('../src/db/db')`
+in a test helper: that binds the default DB path and the assertions silently read the wrong file.
+
+## 11b. SCH — Security hardening (NEW — tasks 0.3–0.5)
+
+`test/security.test.js`, ports **3905–3907**. Covers the three hardening tasks; 12 tests.
+
+| ID | Test | Notes |
+|----|------|-------|
+| SCH-SYNC.1 | app connection runs `synchronous = FULL` | in WAL this pragma is **per-connection and not persisted**, so it must be asserted on the app's own connection |
+| SCH-HDR.1–.6 | headers on every response; per-response nonce; nonce echoed on the page's own tags; no HSTS on plain HTTP; headers survive a CSRF 403 | HSTS only when HTTPS |
+| SCH-HDR.7 | **no inline `on*=` handler survives on any page** | nonces do not authorise handler attributes — they need `unsafe-inline`; strip comments/scripts before matching or the rule's own comment false-positives |
+| SCH-RL.1 | repeated logins from one IP → 429 | spawns its own server with tight `PRACTIS_RL_*` limits |
+| SCH-RL.2 | **a token-less spray still hits the limiter** | guards the middleware ordering: if CSRF moved ahead of the limiter, a 403 spray would never be counted and the limiter would be bypassable |
+| SCH-RL.3 | import API limited, answers **JSON** | mounts on a sub-path, so the handler must read `req.originalUrl` — `req.path` is stripped to `/` |
+| SCH-RL.4 | ordinary browsing is not throttled | the global backstop must stay generous |
+
+**Runner note:** `npm test` exports generous `PRACTIS_RL_*` limits because ~16 logins from 127.0.0.1
+across the suite share one per-IP bucket; without it unrelated tests 429. The SCH-RL tests therefore
+spawn their own servers rather than hammering the shared one.
 
 ## 12. Cross-project isolation (BOLA) — NEW, currently UNIMPLEMENTABLE
 
