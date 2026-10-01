@@ -1,0 +1,810 @@
+# PRACTIS — Forward Development Plan
+
+> **For Hermes:** Use the `practis-development` skill plus TDD (`test-driven-development`) per task.
+> This is a PLAN — no implementation is included in this turn.
+
+**Goal:** Sequence the remaining PRACTIS work from the current state (modules 1–5 built, all local,
+148/148 tests) to a shippable v1 prototype, following the binding module order.
+
+**Authoritative order:** `docs/TECH-SPEC.md` §10 — *"Order gives each vertical slice a working test
+before adding next domain."* Current position: **after §10 step 5**, plus one **finish-the-foundation**
+item (§10 step 3) that got skipped.
+
+**Architecture:** Express 5 + better-sqlite3 + EJS, one process, one vertical slice at a time
+(route + service + test + template), DB triggers as the floor for every invariant.
+
+**Tech stack:** as built. No new dependencies (only `busboy` has ever been approved).
+
+---
+
+## 0. MANDATORY FIRST — close the authorization hole (audit blockers B1–B5)
+
+> Full evidence: `docs/AUDIT-2026-09-30.md`. Every claim was proven against a temp DB by asserting
+> row counts before/after, never by trusting an HTTP status.
+
+**Why this precedes everything:** five mutating routes that write money accept **any authenticated
+user**, including a read-only Viewer. Proven, not theoretical:
+
+```
+POST /ledger/entry      as Viewer -> 302   ledger rows 6 -> 7   *** WRITE SUCCEEDED ***
+POST /ledger/1/reverse  as Viewer -> 302   reversal written      *** WRITE SUCCEEDED ***
+POST /queue/tag check=1 as Viewer -> 302   cost_checked 0 -> 1   *** WRITE SUCCEEDED ***
+POST /api/imports/:id/confirm as Viewer -> 200, ledger row written
+```
+
+Every new route added on the current pattern inherits the omission, and Modules 6–9 add **a dozen
+more mutating routes**. Fixing this after writing those means auditing all of them twice.
+
+### Task 0.1 — Add the missing capability flags and guard the five routes
+
+**Files:**
+- Modify: `src/lib/permissions.js` — add flags, **keep every existing one** (the `canOpenAdvance`
+  near-miss is documented; dropping a flag 403s a whole workflow):
+  - `canWriteLedger` — `finance` (+ Administrator).
+  - `canCorrectLedger` — **`finance`, `cost_controller`** *(decision 2A — the set is deliberately
+    small because a reversal is irreversible: NOT project_admin, NOT viewer)*.
+  - `canTagCost` — `cost_controller`, `project_controller` (the checker's job).
+  - `canImportLedger` — `finance` (+ Administrator).
+- Modify: `src/routes/app.js`
+  - `POST /ledger/entry` → `requireCapability('canWriteLedger', …)` (line 88)
+  - `POST /ledger/:id/reverse` → `requireCapability('canCorrectLedger', …)` (line 187)
+  - `POST /queue/tag` → `requireCapability('canTagCost', …)` (line 259)
+  - `GET /ledger/entry`, `GET /queue`, `GET /import`, `GET /ledger/:id/correct` → page visibility
+    flags (a Viewer should not be shown a form it cannot submit). **Pages and actions get separate
+    flags** — the Project Admin lesson from module 5.
+- Modify: `src/routes/api.js` — both `requireAuth` on the import endpoints →
+  `requireAuth` **plus** `requireCapability('canImportLedger', …)`; the JSON guard must return
+  `401/403` JSON, never an HTML page.
+- Test: `test/authz.test.js` — **new port `3901`**. This is the missing-test file; see Task 0.2.
+
+**The guard must be the floor, not the ceiling.** Adding a route guard is necessary and not
+sufficient — the audit's point is that the *test* was missing, so a future route can regress. Task
+0.2 is what makes it stick.
+
+### Task 0.2 — Authorization test harness (the actual root-cause fix)
+
+**Objective:** make "wrong role is denied" a mechanical assertion for every mutating route, so this
+class of bug cannot come back.
+
+**Files:** Create `test/helpers/authz.js`; create `test/authz.test.js`.
+
+`test/helpers/authz.js` exports `asRole(origin, roleCode)`:
+1. seed a fresh user, then demote: `is_system_admin=0` and `user_roles.role_code = <role>` via the
+   test's **own** better-sqlite3 handle (never `require('../src/...')` — that binds the default DB).
+2. return a logged-in `client` for it.
+
+Then one table-driven test that walks every mutating route × every role and asserts:
+
+| # | Case | Expected |
+|---|---|---|
+| 1 | anonymous | redirect to `/login` (page) or 401 (JSON) |
+| 2 | no CSRF token | 403 |
+| 3 | **authenticated wrong role (Viewer)** | **403 AND no DB row written** |
+| 4 | correct role | succeeds (302/200) |
+
+**Step 3's row-count assertion is the whole point** — a status-code-only test would have passed on
+all of B1–B3.
+
+**Regression tests to add verbatim (these currently FAIL, which is the proof they are real):**
+
+```js
+test('a Viewer cannot post a ledger entry', async () => {
+  const before = count('accounting_ledger');
+  const res = await viewer.post('/ledger/entry', 'type=Expense&date=2026-09-30&side=debit&amount=777000');
+  assert.strictEqual(res.status, 403);
+  assert.strictEqual(count('accounting_ledger'), before, 'and nothing was written');
+});
+
+test('a Viewer cannot reverse a ledger line', async () => {
+  const before = count('accounting_ledger');
+  const res = await viewer.post(`/ledger/${lineId}/reverse`, 'date=2026-09-30');
+  assert.strictEqual(res.status, 403);
+  assert.strictEqual(count('accounting_ledger'), before);
+  assert.strictEqual(reversalsOf(lineId), 0, 'the one-shot correction slot is untouched');
+});
+
+test('a Viewer cannot mark a cost line as checked', async () => {
+  const res = await viewer.post('/queue/tag', `line=${id}&check=1`);
+  assert.strictEqual(res.status, 403);
+  assert.strictEqual(checkedOf(id), 0, 'the checker role is the only way into the cost report');
+});
+
+test('a Viewer cannot confirm an import', async () => {
+  const before = count('accounting_ledger');
+  const res = await viewer.postJson(`/api/imports/${batchId}/confirm`);
+  assert.strictEqual(res.status, 403);
+  assert.strictEqual(count('accounting_ledger'), before);
+});
+```
+
+### Task 0.3 — `synchronous = FULL`
+
+**Files:** Modify `src/db/db.js:11` → `db.pragma('synchronous = FULL')`. TECH-SPEC §4.1 requires it;
+NORMAL can lose committed transactions on power loss. Verify with a fresh connection:
+`PRAGMA synchronous` must return `2`.
+
+### Task 0.4 — Security headers + CSP (TECH-SPEC §3.6, §3.10)
+
+**Files:** Create `src/lib/security-headers.js`; modify `src/server.js`. Add
+`Content-Security-Policy` (with **nonces** for the inline `<script>` blocks in `views/import.ejs`
+and friends — the app has real inline JS, so a bare policy would break the import screen),
+`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and HSTS when served over HTTPS.
+Keep the middleware order from §3.10: headers must sit before routes and after cookies.
+
+**Verify:** assert the headers on a real response in a test; then load `/import` and confirm the
+Alpine/vanilla script still runs with CSP enforced (no console violations).
+
+### Task 0.5 — Rate limiting + cookie `secure`
+
+**Files:** Modify `src/server.js` (per-IP limit on `/login` and the JSON import endpoints),
+`src/routes/auth.js:63` (add `secure:` gated on an env flag so local HTTP dev still works).
+
+*Decision 3A — **approved**: install `express-rate-limit`* (the second dependency ever approved, after
+`busboy`). Re-implementing a correct sliding window by hand is worse than one well-known package.
+
+**Key on `req.ip`, not the account.** Account lockout (AU1.1 `locked_until`) only fires after 5 failures
+*for one account* — an attacker spraying 1,000 emails never trips it. Requires
+`app.set('trust proxy', …)` with the **real** proxy hop count (nginx/tailscale sits in front here), or
+the limiter keys every request to the proxy's own IP and throttles all users at once. Return `429` +
+`Retry-After`; keep the login window generous so a fat-fingered legitimate user is not locked out.
+
+### Task 0.6 — Remove the two raw-SQL leaks in routes
+
+**Files:** Modify `src/routes/app.js:278` and `:518` → move into `src/db/queries.js`.
+TECH-SPEC §5. **This is the same habit that produced B2** (the unguarded `/queue/tag` writes
+`lpb_statements` inline), so fix it now rather than inheriting it into Modules 6–9.
+
+### Task 0.7 — Repair the schema validator (it is green while lying)
+
+**Files:** Modify `db/schema.sql` + `db/validate.py`; modify `package.json`.
+
+`db/validate.py` runs `db/schema.sql` and passes — but the app runs `db/migrations/`, and the two have
+diverged. Measured:
+
+| Object | migrations | schema.sql |
+|---|---|---|
+| triggers | **21** | **14** |
+| tables | 43 | 44 |
+
+**7 triggers exist only in the migrations** — including `trg_ledger_reversal_must_negate`,
+`trg_ledger_reversal_link_immutable`, `trg_lpb_checked_requires_cbs*`,
+`trg_lpb_blocked_needs_reason*`, `trg_lpb_no_check_from_blocked`. `v_lpb_reconciliation`,
+`v_cbs_actual`, `accounting_ledger`, `lpb_statements`, `cash_advance` and `import_batches` all differ.
+So the validator asserts invariants against a schema that lacks the guards. It is also **not wired
+into `npm test`** — it only runs if invoked by hand.
+
+- Regenerate `schema.sql` as the migrated result (copy DDL **verbatim** out of `sqlite_master` — never
+  retype; see the skill's rebuild section).
+- Add `"test": "node --test --test-concurrency=1 test/*.test.js && python3 db/validate.py"` so the
+  validator's exit code fails the suite.
+- Add SCH1.1–SCH1.4 (drift check) to `TEST_PLAN.md` §14.
+
+### Task 0.8 — Wire in the declared-but-unused fixtures
+
+**Files:** `db/fixture-ledger-export.tsv` (exists, 28 lines, referenced by **zero** tests),
+`db/seed-smoke.sql` (exists, used by nothing), new `test/fixture.test.js` — **port `3909`**.
+
+TECH-SPEC §8.3: *"The real-ledger fixture is regression-checked on every run."* It is not. Add FX1.1
+(imports with 0 invalid rows) and FX1.2 (totals + dedupe stable).
+
+### Task 0.9 — Project scope (BOLA): the PRD requirement that was never built
+
+**This is the largest single gap found, and it is a design gap, not a missing guard.**
+
+PRD §2.3: *"**Per-project assignments** (junction table): users are assigned a role **per project**.
+PM sees own projects; Finance sees all cost data; Viewer sees assigned dashboards."*
+
+`user_roles.project_id` exists for exactly this — and it is **NULL in every row and read by zero
+code** (`permissions.js` and `app.js` never reference it). Measured with two projects:
+
+```
+user reads  /ledger?project=2      -> 200  *** PROJECT B DATA VISIBLE ***
+user reads  /queue?project=2       -> 200  *** PROJECT B DATA VISIBLE ***
+user reads  /advances?project=2    -> 200  *** PROJECT B DATA VISIBLE ***
+user reads  /?project=2            -> 200  *** PROJECT B DATA VISIBLE ***
+user WRITES /ledger/entry?project=2-> 302  *** WROTE INTO ANOTHER PROJECT ***
+```
+
+`projectContext` (`app.js:11`) resolves scope from `req.query.project` with an `|| all[0]` fallback and
+**never consults the user's assignments** — so any authenticated user can read and write any project by
+changing one query parameter. This becomes a live data-leak the moment a second project exists, which
+is precisely what Module 6 makes routine.
+
+**Files:**
+- Modify: `src/lib/permissions.js` — add `projectsFor(user)` and `canAccessProject(user, projectId)`:
+  Administrator and Finance see all; a project-scoped row grants only that project; a user with no rows
+  falls back to their global role's default (document which, explicitly).
+- Modify: `src/routes/app.js` `projectContext` — resolve the project from the user's **authorised set**,
+  never from a raw query param; an unauthorised `?project=` must fall back, not 403-loop.
+- Add `project_id` to the admin role-assignment screen so the junction table is actually populated
+  (`admin.js:123` currently writes `role_code` with no project).
+- Test: `test/bola.test.js` — **port `3902`** (BOLA1.1–BOLA1.5).
+- Migration: `db/migrations/010_project_scope_backfill.sql` — see the decision below.
+
+**Decision 4A (locked): backfill, then enforce.** Every existing account gets the project it actually
+works on assigned **first**, and only then does `canAccessProject` start refusing. Sequence matters:
+
+1. Build `projectsFor`/`canAccessProject` but keep enforcement **off** (`SCOPE_ENFORCE=1` env gate).
+2. Backfill migration assigns each current `user_roles` row its project (**needs the owner's mapping**).
+3. Turn enforcement on; add BOLA1.1–1.5.
+4. Any user left with a NULL `project_id` **after** backfill is a deliberate decision, not an accident —
+   decide now whether they see all or nothing (today: all).
+
+**Ordering:** this must land with or before Module 6, because Module 6 creates the second project that
+turns a latent flaw into a live leak.
+
+**Blocked on:** the owner's **user → project mapping**. Until it arrives, tasks 0.9 steps 1 and 4 can be
+built, but step 2 (the backfill) and the enforcement flip cannot.
+
+### Task 0.10 — Frozen period (BUILD IT — decision 5A)
+
+TECH-SPEC §8.4 requires *"Frozen period rejects ordinary backdated writes"*. The `frozen_periods` table
+exists (0 rows) but there is **no trigger, no route, and no reference to it anywhere in `src/`** — the
+invariant is entirely unenforced and untested. **the owner chose to build it now**, so it is real work here,
+not a deferral.
+
+**Design (follow the existing pattern, do not invent):**
+- Migration `db/migrations/011_frozen_period_enforcement.sql` — add
+  `trg_ledger_frozen_period_insert` / `_update` **and the equivalent on `lpb_statements`** (backdated
+  cost enters through both). Compare the effective date's `YYYY-MM` against `frozen_periods`; abort when
+  frozen **unless** a `revision_of` marker is present.
+- **The flagged revision path is mandatory, not optional** — §8.4 says *"flagged revision path remains
+  explicit"*. A frozen period must still admit a deliberate, attributed correction. Without it the
+  trigger blocks legitimate late adjustments and someone will disable it.
+- Modify: `src/lib/periods.js` (extend to `isFrozen(projectId, date)`), `src/db/queries.js`
+  (freeze/unfreeze + `frozen_periods` read), `src/routes/app.js` (an Admin-only freeze control).
+- Views: show frozen months as locked on the ledger and the entry form; refuse with a clear message
+  naming the period and the revision route, not a raw trigger error.
+- Tests (`test/periods.test.js` — **port `3910`**): FP1.1 backdated write to a frozen month aborted ·
+  FP1.2 the revision path admits a flagged correction · FP1.3 unfreezing restores normal writes ·
+  FP1.4 a non-frozen month is unaffected · FP1.5 freeze/unfreeze is audit-logged.
+- Model the triggers on `trg_lpb_checked_requires_cbs` — see the skill's trigger section for the
+  insert/update split and the `WHEN`-clause pitfalls.
+
+**Note:** `frozen_periods` is empty, so this is greenfield — no backfill needed, but the trigger must not
+break the existing 148 tests (several post backdated fixture dates).
+
+**Definition of done:** `npm test` green at **148 + ~8 authz + 4 schema + 2 fixture + 5 BOLA + 5 frozen
+≈ 172**; the four regression tests pass; a Viewer attempting all five writes gets 403 with **provably
+zero rows written**; a user scoped to project A cannot read or write project B; `synchronous` reads back
+`2`; CSP headers present and `/import` still functional; `validate.py` runs inside `npm test` and its
+schema matches the migrations; a write into a frozen month is refused with the revision path offered.
+
+---
+
+## 1. Verified current state (2026-09-30)
+
+Measured on disk, not from memory:
+
+| Fact | Value |
+|---|---|
+| Git | `9d069e9` HEAD, working tree **clean**, all commits **local** (no remote) |
+| DB | `data/practis.db` **user_version 9**, `integrity ok` |
+| Tests | **148/148 pass** — *but see §0: the suite tests authentication, not authorization* |
+| Migrations | `001`–`009` |
+| Route files | `auth.js`, `admin.js`, `api.js`, `app.js` |
+| Views | 20 files incl. 403/404, login, dashboard, ledger, queue, import, advances, expenses, reconciliation, admin-users |
+| Projects in DB | 1 — `PRJ-2026` "Citarum Bridge" |
+| Ledger lines | 9 |
+| LPB lines | 0 |
+| Audit | `docs/AUDIT-2026-09-30.md` — 5 blockers, 10 should-fix, 7 verified-good |
+
+### What §10 orders 1–5 delivered
+
+1. Foundation ✅ 2. Auth ✅ 3. Project setup ⚠️ **partial** 4. Ledger ✅ 5. Cash Advance + Expense Report ✅
+
+### The gap that shapes this plan
+
+§10 step 3 (**Project setup**) was **skipped**. Consequences, measured:
+
+- **`/projects` returns 404.** `views/partials/sidebar.ejs:14` links to `/projects`; **no route exists**.
+  A dead nav link visible to every user.
+- **There is no create-project UI.** The single project `PRJ-2026` came from `src/db/seed.js`.
+  PRACTIS cannot register a second project through the app.
+- **There is no client / supplier / team register UI** — `clients`, `suppliers`, `teams`,
+  `employees` tables exist and are empty of management screens.
+- **No master-data UI** for the company-standard menus (`wbs_code`, `rbs_code`,
+  `chart_of_accounts`, `cashflow_categories`, `cost_categories`, `transaction_accounts`).
+  Today `seed-master.js` is the only way they change — which the PRD §8 explicitly puts under
+  **"Ask first"** for WBS/RBS menu changes.
+- **The project switcher in the sidebar is a dead `<button>`** — it renders `PRJ-2026` but cannot
+  switch. `projectContext` (in `app.js`) resolves the project from `?project=<id>` via
+  `all.find(p => p.id === Number(req.query.project)) || all[0]`, so switching works only if you
+  hand-type the query param.
+- **`rbs_code` is empty (0 rows)** and `progress_milestones` is empty (0 rows).
+
+### Downstream blockers (why step 3 cannot be deferred further)
+
+- **`cbs_plan` has 0 rows → the EVM engine has no PV.** `v_evm_period` derives `pv` from
+  `cbs_plan WHERE plan_type='baseline'`. No baseline ⇒ **SPI is permanently NULL** and the
+  portfolio dashboard cannot show EVM. Baseline creation is §10 step 6, and **RBS containment
+  verification needs a WBSTree**.
+- **`-WBS node counts.** `wbs_nodes` = 15 rows, `progress_milestones` = 0 — the milestone ticks
+  that drive EV (PRD §5.1) are unpopulated, so `v_evm_period`'s `ev` is 0 even with a baseline.
+- **Two NAV dead links still point at `#`**: *WBS*, *CBS plan*, *Overview*, *Revenue*, *Reports*.
+
+### Honest status of the five built modules
+
+Modules 4–5 are built, tested and auditable (212 assertions in the correction path, three checker
+outcomes, CBS guard). But **they are not yet reachable end-to-end**, because the screens that create
+the objects they operate on (`/projects`, WBS, CBS plan) do not exist. This is why §10 step 3 comes
+first: everything downstream is currently exercised only by seed data and tests, never by a human.
+
+---
+
+## 2. Proposed approach
+
+**One more foundation slice (Module 6), then proceed strictly in §10 order.**
+
+The temptation is to jump at the visible feature (WBS tree + CBS baseline + BCR), which is §10 step 6
+and the thing that unblocks EVM. But doing it before the project register means the WBS screens can
+only ever operate on `PRJ-2026`, and every subsequent module inherits the same dead switcher. Step 3
+is a prerequisite, not a detour — and it is the smallest of the remaining slices.
+
+Rules taken from the PRD/spec, binding on every task below:
+
+- **Never break modules 4–5.** They are the only complete, tested workflows. Any change to
+  `permissions.js`, `queries.js` or `app.js` must keep **148/148** green.
+- **Keep every capability flag when editing the role map** (the `canOpenAdvance` near-miss is
+  documented in the skill). A dropped flag 403s a whole workflow.
+- **Business rules live in services; routes only validate HTTP and pick a response.**
+- **Money only in `cbs_plan` + ledger.** WBS/RBS hold no money.
+- **WBS/RBS menu edits need Admin approval** (PRD §8 "Ask first") — the UI must gate them.
+- **Baselines are never edited post-approval without a BCR**; de-scope is prospective only.
+- **No new dependencies.**
+- **No push.** Commits stay local (no remote, PAT invalid).
+
+---
+
+## 3. Step-by-step plan
+
+**Sequence: §0 authorization + hardening → Module 6 (project setup) → Modules 7–11 in §10 order.**
+§0 is not optional and not parallelisable — it is the floor every later module stands on.
+
+### MODULE 6 — Project setup & register (finishes §10 step 3)
+
+Everything in this module is one vertical slice: **route + service + test + template + nav fix**.
+
+---
+
+#### Task 6.1 — `/projects` portfolio register page (fixes the 404)
+
+**Objective:** Make the dead nav link work — list every project with its register state, and make
+the sidebar switcher actually switch.
+
+**Files:**
+- Create: `src/routes/projects.js` (mount in `src/server.js` after `middleware/auth.attachUser`)
+- Create: `views/projects.ejs`
+- Modify: `views/partials/sidebar.ejs:14` (keep `/projects`), and turn the dead `.pc-btn`
+  `<button>` into a real form that submits `?project=<id>` (or a small Alpine CSP dropdown with
+  plain `<a href="/?project=N">` links — **no `unsafe-eval`**, per PRD non-functional §6)
+- Test: `test/projects.test.js` — **new port `3903`** (3901 = authz, 3902 = bola, 3903 = projects;
+  3993–3999 legacy. Verify with `grep -h "PORT = " test/*.test.js` before committing)
+
+**Step 1 — failing test**
+
+```js
+// test/projects.test.js — harness copied verbatim from test/entry.test.js
+// (mkdtemp DB → migrate → seed → seed-master → spawn server → csrf client)
+test('GET /projects lists the seeded project with its register state', async () => {
+  const res = await client(origin).get('/projects');
+  assert.equal(res.status, 200);
+  assert.match(res.text, /PRJ-2026/);
+  assert.match(res.text, /Citarum Bridge/);
+});
+
+test('the sidebar switcher offers every project', async () => {
+  const res = await client(origin).get('/');
+  assert.match(res.text, /href="\/\?project=1"/);
+});
+```
+
+**Step 2 — run, expect failure:** `node --test test/projects.test.js` → 404 / no route.
+
+**Step 3 — implement**
+
+- `src/routes/projects.js`: `GET /projects` → `q.projects()` (already exists), render
+  `views/projects.ejs`. Show per project: code, name, client, contract amount, `baseline_locked`,
+  status, and a "not baselined" chip when `baseline_locked = 0` (PRD §4.1 step 6 language).
+- Page contract, per the user's standing UI rule: **title + muted sub-title + full-width PC**,
+  dense Inter/tabular-nums, style tokens copied from an existing view (`views/advances.ejs`) —
+  do **not** invent a new look.
+- `active: 'Projects'` so the sidebar highlights.
+
+**Step 4 — verify:** `node --test test/projects.test.js` → PASS; then full `npm test` → **150/150**.
+
+**Step 5 — commit:** `feat(projects): portfolio register page and a working project switcher`
+
+---
+
+#### Task 6.2 — Project register: create/edit with the approval workflow
+
+**Objective:** Let a PM/Controller/Project Admin register a project in-app (PRD §4.1 steps 1–6).
+
+**Files:**
+- Create: `src/lib/projects-service.js` (business rules + transaction)
+- Modify: `src/routes/projects.js`
+- Create: `views/project-new.ejs`, `views/project-edit.ejs`
+- Modify: `src/lib/permissions.js` — add **`canManageProjects`** (`project_manager`,
+  `project_controller`, `project_admin`) and **`canApproveProjects`** (`project_manager`; Admin
+  holds all roles by design). **Keep every existing flag** — add, do not restructure.
+- Test: extend `test/projects.test.js`
+
+**Step 1 — failing tests**
+
+```js
+test('a Project Admin can register a project; it starts not-baselined', async () => { ... });
+test('revenue method is required at registration (PRD 4.1 step 5)', async () => { ... });
+test('a Viewer cannot register a project (403 with a reason, not a hidden link)', async () => { ... });
+test('the project code must be unique', async () => { ... });  // UNIQUE(code) → 409, not 500
+```
+
+**Step 2 — run, expect failure.**
+
+**Step 3 — implement**
+- `projects-service.js` owns the transaction: insert `projects` row (`code`, `name`, `client_id`,
+  `industry_type`, `contract_amount`, `revenue_method`, `payment_terms_days`, `start_date`,
+  `end_date`, `created_by`), then `insertAudit('project', id, 'create', …)`.
+- `revenue_method` ∈ `milestone|poc|time_based|on_billing` (CHECK constraint already enforces it) —
+  validate before insert so the user gets a sentence, not a SQL error.
+- Approval state lives in the existing **`approvals`** table; record PM approval + Admin approval
+  as rows, never a boolean column.
+- Route: `POST /projects` gated on `canManageProjects`, `POST /projects/:id/approve` gated on
+  `canApproveProjects`. **Pages and actions get separate flags** (the Project Admin lesson).
+- **Publication switch creates in-app notifications** — insert `notification_inbox` rows for the
+  Finance verify / PM verify / Admin approve steps (PRD non-functional: in-app only).
+
+**Step 4 — verify:** new tests pass; full suite green; `PRAGMA foreign_key_check` clean.
+
+**Step 5 — commit.**
+
+---
+
+#### Task 6.3 — Clients register (Finance verifies, Admin approves)
+
+**Objective:** PRD §4.1 "Client register" — create a client with payment terms and industry type.
+
+**Files:** Create `src/lib/clients-service.js`, `views/clients.ejs`, `views/client-new.ejs`;
+modify `src/routes/projects.js`; extend `test/projects.test.js`.
+
+**Key detail:** `clients.payment_terms_days` is the default that `v_aging` due dates depend on
+(PRD §5.2: "Due date = ledger date + payment terms (from project register)"). Validate it as a
+positive integer; a NULL here silently breaks the aging report.
+
+**Approval shape:** `draft → verified (Finance) → approved (Admin)`, recorded in `approvals`, exactly
+as the project register. **Finance/Admin are two different actors — reuse the SoD predicate style.**
+
+**Verify:** new tests + full suite; then prove the aging path: create a client with 30-day terms,
+bill an invoice, confirm `v_aging.days_aged` moves off `current` only after the terms window.
+
+**Commit.**
+
+---
+
+#### Task 6.4 — Supplier and team registers
+
+**Objective:** PRD §4.1 "Supplier register" (Procurement → Finance → Admin) and "Team register"
+(Admin creates team + roles, invites members).
+
+**Files:** Create `src/lib/suppliers-service.js`, `views/suppliers.ejs`, `views/teams.ejs`;
+modify `src/routes/projects.js`, `src/routes/admin.js` (teams live under Admin); extend tests.
+
+**Note:** team invitations already exist (`src/lib/invites.js`, `POST /admin/invitations/:id/resend`).
+**Reuse that machinery — do not write a second invite path.** Team = a `teams` row + `user_roles`
+grants; the invitation flow already covers account creation.
+
+**Verify:** new tests + `npm test` green.
+
+**Commit.**
+
+---
+
+#### Task 6.5b — Approval depth (decision 8A: LIGHT)
+
+> **Locked by the owner 2026-09-30.** PRD §4.1 describes a 3-step verify/approve chain. This is a
+> **solo-operator install**, so v1 enforces the **light** variant. Tasks 6.2–6.4 change accordingly:
+
+| Register | PRD §4.1 chain | **v1 enforced (decision 8A)** |
+|---|---|---|
+| Project | verify → approve → finance | **PM approves.** Finance/Admin rows recorded but **optional** |
+| Client | Finance verifies → Admin approves | **PM approves**; Finance/Admin recorded if present |
+| Supplier | Procurement → Finance → Admin | **PM approves**; others recorded if present |
+
+Implementation note: the `approvals` table already models this generically, so the difference is
+**which steps are required for a record to count as approved** — express that as data (a
+`required_steps` list per register type), **not** as branching inside each service. When the
+organisation grows and decision 8 is revisited, only the required-steps data changes. Keep the SoD
+predicate (**requester ≠ approver**) enforced in **all** cases — that is the part that actually
+matters, and it is what the audit found missing on the checker path.
+
+---
+
+#### Task 6.5 — Master data screens (with the "Ask first" gate)
+
+**Objective:** PRD §5.5 — manage `chart_of_accounts`, `cashflow_categories`, `cost_categories`,
+`resource_categories`, `wbs_code`, `rbs_code`, `transaction_accounts` (CBS).
+
+**Files:** Create `src/routes/master.js`, `src/lib/master-service.js`,
+`views/master/{index,coa,cashflow,cost-categories,resource-categories,wbs,rbs,cbs}.ejs`;
+mount in `src/server.js`; extend tests.
+
+**Two rules that make this task different from the CRUD it looks like:**
+1. **WBS/RBS menu changes are Admin-approved** (PRD §8 "Ask first"). Gate *edits* on
+   `canApproveProjects`-style admin rights and write `audit_log` rows; a plain user gets 403 with
+   the reason.
+2. **`transaction_accounts` (CBS) is the column `v_cbs_actual` groups by.** Renaming or deactivating
+   one silently re-buckets the cost report. Prefer `active = 0` (soft) over delete/rename, and
+   refuse a delete that has ledger rows pointing at it — assert that in a test.
+
+**Verify:** new tests + full suite. Then a **report-integrity check**: `SELECT` the cost report
+before and after deactivating an unused CBS and confirm no existing total moved.
+
+**Commit.**
+
+---
+
+#### Task 6.6 — Populate RBS + milestone defaults, close the `#` nav links
+
+**Objective:** Remove the last dead links and fix the empty-default problem.
+
+**Files:** Modify `src/db/seed-master.js` (add `rbs_code` rows + default milestone set
+mobilize → install → test → handover per PRD §5.1, **equal 25% weights — decision 7A**),
+modify `views/partials/sidebar.ejs` (repoint *WBS* and *CBS plan* only once their routes exist —
+until then **remove** them rather than leave `#`), extend tests.
+
+**RBS list — decision 6B: I propose, the owner edits.** No company standard exists in the PRD, so seed a
+conventional construction resource list (labour by trade, plant/equipment by type, materials,
+subcontract, overhead) with stable short codes, then hand it to the owner for edit. **Do not invent codes
+that look authoritative** — mark the set clearly as a starting proposal in the seed comment. A resource
+list that is silently wrong is worse than an empty one because it gets used.
+
+**Verify:** `select count(*) from rbs_code` > 0; a newly created project gets its four default
+milestone rows at 25% each; every sidebar `href` resolves to a real route (assert with a test that
+walks the sidebar and hits each link).
+
+**Commit.**
+
+---
+
+### MODULE 7 — WBS / progress / RBS / CBS baseline / BCR (§10 step 6)
+
+The largest remaining slice and the one that **unblocks EVM**. Do not start before Module 6 lands.
+
+**Order within the module (each its own commit + test):**
+
+1. **WBS tree UI** — `src/routes/wbs.js`, `src/lib/wbs-service.js`, `views/wbs.ejs`.
+   Tree from `wbs_nodes` (`parent_id`, `sort_order`); status `active|completed|de_scoped`;
+   **lines are never deleted** (PRD §4.4). Edits version the line (`version`, `superseded_by`).
+   Internal replanning (add/split/rename, **contract_value_delta = 0**) writes a `change_log` row
+   with no BCR; anything else needs a BCR. **Assert the delta rule in a test** — it is the PRD's
+   explicit test ("the test is the contract, not a size threshold").
+2. **Milestone ticks → % complete** — `progress_milestones` (`pct_weight`, `ticked`, `ticked_by`)
+   → `wbs_progress` (`period_month`, `pct_complete`, `source='milestones'`). This is what feeds
+   `ev` in `v_evm_period`, so nothing EVM works before it.
+3. **RBS load** — `rbs_load` (rate × units = `total_amount`, materialised for the invariant).
+4. **CBS baseline** — `cbs_plan` with `plan_type='baseline'`, monthly buckets per
+   `transaction_account_id`. **This is the money book and the source of `pv`.** Enforce the PRD
+   invariant **Σ monthly buckets = account total = RBS total** in a test — it is the one invariant
+   the PRD names explicitly (§6 "Data integrity invariants").
+5. **Baseline freeze** — `projects.baseline_locked = 1` + `baseline_locked_at/by`, PM approves
+   (Admin excluded — PRD §4.2 step 4). After this, edits are refused at the service **and** by a
+   trigger.
+6. **BCR workflow** — `bcr_register` (`draft → verified → approved|rejected|withdrawn`),
+   `old_baseline_json` / `new_baseline_json` archival, `effective_period` prospective. Approved BCR
+   re-baselines: old numbers archived, new become `pv`.
+7. **De-scope** — `status='de_scoped'` + `de_scope_period`; **progress freezes**, budget leaves the
+   PV curve **from that period forward only** (past months untouched — PRD §4.4, EIA-748 G-30);
+   spent cost **stays tagged** (already visible via `v_descoped_lines`). Assert "past months
+   unchanged" directly by comparing `v_evm_period` rows before/after a de-scope.
+
+**Verification for Module 7 (the acceptance that matters):** with a baseline, some ticks and some
+tagged actuals, `v_evm_period` returns **non-NULL SPI and CPI** for the project — proving the engine
+that has been dark since day one finally has its inputs.
+
+---
+
+### MODULE 8 — EVM / revenue / aging / dashboards (§10 step 7)
+
+1. **Project dashboard** — S-curves (PV from baseline, EV from ticks × CBS, AC from ledger), EVM
+   trend, WBS drill-down. `v_evm_period` is already written; this is the view layer.
+   **Render natural signs** (income +, cost +, net = income − cost) — the sign convention lives in
+   the view, per PRD §5.2 "Signs".
+2. **Portfolio dashboard** — replace the current minimal `dashboard.ejs` with CPI/SPI traffic-light
+   cards, current-month cashflow, portfolio forecast.
+3. **Revenue recognition** — `revenue_recognized` per project method. **POC reads BAST %** from
+   `acceptance_register`, **not** the internal tick % (PRD §5.3) — keep the two never conflated.
+   Billed vs recognized vs received are three separate timelines (IFRS15/PSAK72): use
+   `v_receivable` for billed/received and `revenue_recognized` for recognized.
+4. **Aging report** — the `v_aging` view already buckets 30/60/90/120+; this is the screen.
+5. **Retainage** — surfaced separately, never buried in regular AR (`v_receivable.retainage_amount`).
+
+### MODULE 9 — Reporting, jobs, alerts (§10 step 8)
+
+- **Project Update Report** — monthly, per project: SPI, CPI, receivable vs revenue, payable
+  status, exceptions, prior-baseline vs current. **Freezing the period** inserts `frozen_periods`
+  and rejects entries tagged to a frozen period (PRD §4.4 month-end calendar).
+- **The six alerts** (PRD §4.4 table) + `notification_inbox`, polled in-app every 30s.
+  Thresholds tunable per project.
+- **Exports** — PDF + XLSX report pack, **light print theme** (dark app / light print).
+- **Jobs runner** — TECH-SPEC §4.5 (`jobs` table already exists).
+
+### MODULE 10 — Admin hardening, recovery tooling, deployment (§10 step 9)
+
+- Backup/restore + quarterly drill (TECH-SPEC §12.4/12.5, TS-19), RPO/RTO — **still open, §9.1/9.2**.
+- Docker + one container/one process (TS-25), Tailscale Serve (TS-22).
+- Health/readiness endpoints (`/health`, `/ready`).
+
+### MODULE 11 — Legacy migration rehearsal + cutover (§10 step 10)
+
+- `docs/MIGRATION-MAP.md` is written; remaining work is a **dry run and reconciliation**.
+- Migration is **TS-04's staged import** against real data, with the dedupe index doing the work.
+
+---
+
+## 4. Files likely to change
+
+| Module | Create | Modify |
+|---|---|---|
+| 6.1 | `src/routes/projects.js`, `views/projects.ejs`, `test/projects.test.js` | `src/server.js`, `views/partials/sidebar.ejs` |
+| 6.2 | `src/lib/projects-service.js`, `views/project-new.ejs`, `views/project-edit.ejs` | `src/lib/permissions.js`, `src/routes/projects.js` |
+| 6.3 | `src/lib/clients-service.js`, `views/clients.ejs`, `views/client-new.ejs` | `src/routes/projects.js` |
+| 6.4 | `src/lib/suppliers-service.js`, `views/suppliers.ejs`, `views/teams.ejs` | `src/routes/projects.js`, `src/routes/admin.js` |
+| 6.5 | `src/routes/master.js`, `src/lib/master-service.js`, `views/master/*.ejs` | `src/server.js` |
+| 6.6 | — | `src/db/seed-master.js`, `views/partials/sidebar.ejs` |
+| 7 | `src/routes/wbs.js`, `src/lib/wbs-service.js`, `src/lib/cbs-plan-service.js`, `src/lib/bcr-service.js`, `views/wbs.ejs`, `views/cbs-plan.ejs`, `views/bcr.ejs` | `src/lib/permissions.js`, `views/partials/sidebar.ejs` |
+| 8 | `src/routes/reporting.js`, `views/project-dashboard.ejs`, `views/portfolio.ejs`, `views/revenue.ejs`, `views/aging.ejs` | `views/dashboard.ejs` |
+| 9 | `src/lib/alerts.js`, `src/lib/report-export.js`, `views/notifications.ejs` | `src/routes/*` |
+| 10–11 | Dockerfile, compose, `docs/RUNBOOK.md` | `docs/TECH-SPEC.md` (RPO/RTO) |
+
+**Migration files:** Module 7 will likely need `010_wbs_versioning.sql` and
+`011_cbs_plan_freeze.sql`. **Use the modern rebuild order** (create-new → copy → drop → rename) and
+copy index/trigger/view SQL **verbatim from `sqlite_master`** — the 003 rebuild is the cautionary
+example in the skill. Re-audit with `PRAGMA foreign_key_check` +
+`instr(COALESCE(sql,''),'_old') = 0` immediately after.
+
+---
+
+## 5. Tests / validation
+
+**Per task:** failing test first → minimal implementation → green → commit. Test files must **not**
+`require('../src/...')` app modules (binds the default DB, not the temp DB) — use the test's own
+better-sqlite3 handle for fixtures.
+
+**Ports:** one fresh port per NEW test file. In use: `3993`, `3994`, `3995`, `3996`, `3997`, `3998`,
+`3999`. **§0 uses `3901`** (`authz.test.js`); Module 6 uses `3902`–`3908`. Grep before committing.
+
+**Regression floor:** `npm test` must stay green, starting from **148/148**. §0 → ~156.
+**Modules 4–5 must never go red** — they are the only complete workflows.
+
+**Every mutating route added from here on needs all four authorization cases** (see §0 Task 0.2):
+anonymous blocked · no-CSRF blocked · **wrong role → 403 with the DB row count unchanged** ·
+correct role succeeds. The third case is the one that was missing and is what would have caught
+B1–B3; a status-code-only assertion is not a security test.
+
+**Invariant tests that prove real correctness (not just coverage):**
+- Σ monthly CBS buckets = account total = RBS total (PRD-named invariant).
+- De-scope: `v_evm_period` rows for **past months are byte-identical** before/after a de-scope.
+- Baseline freeze: a direct `db` write attempting a post-lock baseline edit **throws** (trigger is
+  the floor, not the route).
+- Internal replanning with `contract_value_delta <> 0` is refused without a BCR.
+- Aging: due date moves only after the client's `payment_terms_days` window.
+- Deactivating a CBS does not move any existing cost-report total.
+- **Authorization: a *** attempting each of the five money-writing routes writes zero rows.**
+
+**Definition of done for v1 prototype:**
+1. A project can be created, baselined, and de-scoped **entirely through the UI**.
+2. `v_evm_period` returns non-NULL SPI/CPI for a real project.
+3. A rejected Expense Report line can be corrected and re-checked without leaving a ghost.
+4. Every sidebar link resolves to a real route (no `#`).
+5. **No route that writes money is reachable by a role that should not write it** (proven by test).
+6. `npm test` green, `integrity_check ok`, `foreign_key_check` clean, `synchronous = 2`.
+
+---
+
+## 6. Risks
+
+| Risk | Why it bites | Mitigation |
+|---|---|---|
+| **Unauthorized money writes (realised, not hypothetical)** | 5 routes accept any session; a Viewer wrote ledger rows, reversed a line and marked cost checked | §0: guard + the four-case authz test. Do this before adding routes |
+| **Status-code-only security tests** | `correct.test.js` "needs a session" passes while a Viewer succeeds — anon ≠ wrong role | Always assert **row count unchanged** on the wrong-role case |
+| **Capability-map regression** | Dropping a flag while restructuring 403s a whole workflow (happened once with `canOpenAdvance`) | Add flags only; a route-level test per workflow asserts each role's access |
+| **`/projects` was never routed yet sidebar advertised it for weeks** | Dead links normalise; users stop trusting nav | Task 6.6 asserts every sidebar href resolves |
+| **Migration rebuild corrupts FK text** | `no such table: x_old` surfaces sessions later, elsewhere | Modern rebuild order; verbatim `sqlite_master` SQL; `foreign_key_check` after every migration |
+| **Baseline freeze is the point of no return** | Post-freeze edits silently destroy EVM history | Freeze enforced by trigger, not just route; archival via `old_baseline_json` |
+| **De-scope retroactivity** | Retroactive adjustment invalidates already-issued reports (EIA-748 G-30) | Past `v_evm_period` rows asserted unchanged in a test |
+| **better-sqlite3 drops unmapped params silently** | A new column no-ops every INSERT while the route returns 302 | Add the column to **every** writer and read it back in the test |
+| **`synchronous = FULL` slows bulk import** | fsync per commit on a no-swap host | Measure once during Module 11 dry run; document if a deviation is ever justified |
+
+## 7. Edge-case coverage — the direct answer
+
+**Both of the workflow documents are stale or absent, and the edge-case coverage has a specific shape:
+what is built is tested deeply; what is not built has no test at all.**
+
+| Workflow document | State |
+|---|---|
+| `TEST_PLAN.md` | **was a 32-line stub** — documented only scaffold + auth, with `L1 Ledger` marked *"next feature"* **while the ledger, queue, import, correction, advances, expenses and reconciliation were all built and shipping 148 tests**. Rewritten 2026-09-30 (this file). |
+| `docs/AUDIT-2026-09-30.md` | new — codebase audit with proof-of-write evidence. |
+
+**Are the edge cases already in the test plan? Partly — and the split is exactly along "is it built":**
+
+| Area | Edge-case coverage |
+|---|---|
+| Money invariants (one side, integer rupiah, `amount = debit − credit`, negatives) | ✅ **strong** — asserted at both route and trigger level |
+| Reversal / correction (double reversal, non-negating, link immutability, cross-project refusal) | ✅ **strong** — 13 tests incl. two that bypass the route and hit the trigger |
+| Checker three outcomes (Return / Block / clear / cannot re-check) | ✅ **strong** — 12 tests, each fixture breaking ONE rule |
+| Import (dedupe, re-upload, in-file duplicate, idempotent confirm, missing column, no file) | ✅ **good** |
+| Reconciliation (all four statuses incl. the NULL-vs-0 trap) | ✅ **good** |
+| **Authorization (wrong ROLE, not wrong session)** | ❌ **effectively zero** — only `admin.test.js` + `advances*.test.js`. A Viewer wrote ledger rows, reversed a line, checked cost, and posted an import while 148/148 stayed green |
+| **Cross-project isolation (BOLA)** | ❌ **none, and unenforceable** — `user_roles.project_id` is NULL everywhere and read by no code; any user reads *and writes* any project via `?project=` |
+| **Frozen period rejects backdated writes** (§8.4) | ❌ **untested and unenforced** — table exists, 0 rows, no trigger, no route, no `src/` reference |
+| **Upload safety** (oversize 413, formula cell, traversal, MIME/signature) | ❌ **untested**; only the formula-cell guard exists in code (`csv.js:113`) — traversal and signature checks are **not implemented at all** |
+| **XSS escaping / CSP** | ❌ **no test**; no headers, no CSP |
+| **Per-IP rate limiting** | ❌ **no test**; only per-account lockout (AU1.1/AU1.2) |
+| **E2E critical path** (login → project → baseline → progress → expense → check → report → freeze) | ❌ **absent** — impossible before Modules 6–8 |
+| **Recovery** (backup restore, FK check, migration rehearsal) | ❌ **absent** (Module 10) |
+| **Required fixtures** (`fixture-ledger-export.tsv` "regression-checked on every run") | ❌ **file exists, referenced by zero tests** |
+| **Schema validator** (`validate.py`) | ⚠️ **exists and passes against a STALE `schema.sql`** — missing 7 triggers incl. both reversal guards; not wired into `npm test` |
+
+**Workflow steps in PRD §4 with no test at all** — because they are not built: project init + per-project
+role assignment (§4.1), planning/WBS/RBS/CBS/baseline/freeze (§4.2), progress ticks + revenue recognition
++ billed≠recognized≠received (§4.3), EVM/BCR/aging/dashboards (§4.4), closing (§4.5).
+
+**The pattern to hold onto:** this project's tests are genuinely rigorous *within* a built module and
+completely silent *between* modules — no authorization across roles, no isolation across projects, no
+end-to-end path across steps. §0 of the plan plus the AZ/BOLA/SCH/FX sections of `TEST_PLAN.md` close
+that seam.
+
+---
+
+## 8. Tradeoffs
+
+- **Doing Module 6 before the more interesting Module 7 (WBS/BCR).** Slower to a visible feature,
+  but Module 7 built on an unroutable project register would have to be redone. Foundation first.
+- **Master-data screens are more surface than v1 strictly needs**, but the PRD puts WBS/RBS menu
+  changes behind Admin approval, and today only a seed script can change them — an approval gate
+  with no UI is not a gate.
+- **`rbs_code` has no rows today.** Populating it is in 6.6, but the PRD has no concrete company
+  standard list; this needs **your** input, not a guess.
+
+### Decisions locked (the owner, 2026-09-30) — all 12 answered
+
+| # | Question | **Decision** |
+|---|---|---|
+| 1 | Work order | **A — §0 security fix FIRST**, then Module 6. (Trap 1 in §0 removes the earlier "6 before 7" ambiguity: the two run themselves out of test files. No conflict.) |
+| 2 | Who may reverse a ledger line | **A — Finance + Cost Controller.** New capability `canCorrectLedger`; **NOT** Project Admin, **NOT** Viewer. |
+| 3 | Rate limiting | **A — install `express-rate-limit`.** Second approved dep (after `busboy`). |
+| 4 | Project scope (BOLA) | **A — backfill each account to the project they actually work on, THEN enforce "assigned only".** Needs the user→project mapping from the owner before 0.9 can be turned on. |
+| 5 | Frozen period | **A — build it now** (handler + `trg_ledger_frozen_period` + flagged revision path). Task 0.10 becomes real work, not a deferral. |
+| 6 | RBS code list | **B — I propose a standard construction resource list, the owner edits it.** |
+| 7 | WBS milestone defaults | **A — equal weights** (mobilize / install / test / handover = 25% each). |
+| 8 | Approval depth | **A — light:** PM approves; Finance/Admin recorded but optional. Changes 6.2–6.4. |
+| 9 | SQLite durability | **A — `synchronous = FULL`** as §4.1 requires. |
+| 10 | RPO / RTO | **A — RPO ≤ 1 day, RTO ≤ 4 hours** (TECH-SPEC §9.1/§9.2). Module 10 target. |
+| 11 | Untagged imported cost | **A — leave the 2 untagged rows** (Rp 85.000.000 Mar, Rp 26.750.000 Sep); the Tagging queue exists to resolve them. |
+| 12 | Scratch files | **A — delete all.** |
+
+**Still outstanding from the owner:** the **user → project mapping** (blocking task 0.9) and a review of the
+**proposed RBS list** (task 6.6). Everything else is unblocked.
+
+**Revised test floor:** 148 → **~172** (8 authz, 5 BOLA, 4 schema-drift, 2 fixture, 5 frozen-period).
+
+---
+
+## 9. Immediate next action
+
+**Task 0.1 + 0.2** — add the four capability flags, guard the five money-writing routes, fix
+`synchronous`, and land `test/authz.test.js` with the four regression tests that currently fail.
+
+**Then, in order:** 0.3–0.6 (durability, headers/CSP, rate limit — `express-rate-limit` approved,
+raw-SQL removal) → 0.7 (schema-drift repair) → 0.8 (fixtures) → **0.9 BOLA** *(steps 1 and 4 now;
+the backfill waits on the owner's user→project mapping)* → **0.10 frozen period** → **Module 6**.
+
+**Recording this** at the owner's request (2026-09-30), so a future session has the decisions in
+context without re-reading the whole audit.
+
+Smallest slice with the largest consequence, and it removes the class of bug rather than the three
+instances.
+
+Then **Task 6.1** — `/projects` register page + a working switcher.
+
+Awaiting: answers to open questions 1–3 (sequencing, who may reverse, the rate-limit dependency).

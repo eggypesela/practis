@@ -69,7 +69,11 @@ router.get('/ledger', (req, res) => {
 
 const TYPES = require('../lib/ledger-builder').TYPES;
 
-router.get('/ledger/entry', (req, res) => {
+router.get('/ledger/entry',
+  // Page visibility, not action permission: a Viewer may read the ledger but must
+  // not be shown a form it cannot submit. (The POST is separately guarded.)
+  requireCapability('canWriteLedger', 'Entering a ledger line is a Finance task.'),
+  (req, res) => {
   const proj = res.locals.project;
   if (!proj) return res.redirect('/');
   res.render('entry', {
@@ -85,7 +89,9 @@ router.get('/ledger/entry', (req, res) => {
   });
 });
 
-router.post('/ledger/entry', (req, res) => {
+router.post('/ledger/entry',
+  requireCapability('canWriteLedger', 'Entering a ledger line is a Finance task.'),
+  (req, res) => {
   const proj = res.locals.project;
   if (!proj) return res.redirect('/');
   const { buildInsert } = require('../lib/ledger-builder');
@@ -184,7 +190,9 @@ router.get('/ledger/:id/correct', (req, res) => {
 });
 
 // Post the reversal. The original row is never touched.
-router.post('/ledger/:id/reverse', (req, res) => {
+router.post('/ledger/:id/reverse',
+  requireCapability('canCorrectLedger', 'Reversing a ledger line is a Finance or Cost Controller task.'),
+  (req, res) => {
   const proj = res.locals.project;
   if (!proj) return res.redirect('/');
   const id = Number(req.params.id);
@@ -241,7 +249,11 @@ router.post('/ledger/:id/reverse', (req, res) => {
   res.redirect(`/ledger?reversed=${reversalId}`);
 });
 
-router.get('/import', (req, res) => {
+router.get('/import',
+  // Page visibility: the upload form is Finance's job. A Viewer may read the
+  // ledger but must not be shown an upload widget it cannot use.
+  requireCapability('canImportLedger', 'Importing the ledger is a Finance task.'),
+  (req, res) => {
   const proj = res.locals.project;
   if (!proj) return res.redirect('/');
   page(res, 'Import ledger', `${proj.name} · fixed-template CSV from the legacy workbook — staged first, never written straight to the ledger`,
@@ -256,7 +268,11 @@ router.get('/import', (req, res) => {
 
 // Tag/check a batch of ledger lines. Only the fields the controller set are
 // written; the DB triggers enforce the one-way transitions and abort tampering.
-router.post('/queue/tag', (req, res) => {
+router.post('/queue/tag',
+  // Marking cost as checked is what promotes a line into v_cbs_actual, i.e. into
+  // the cost report. That is the Cost Controller's job and nobody else's.
+  requireCapability('canTagCost', 'Checking cost lines is a Cost Controller task.'),
+  (req, res) => {
   const proj = res.locals.project;
   if (!proj) return res.redirect('/');
 

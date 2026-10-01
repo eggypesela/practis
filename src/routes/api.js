@@ -18,9 +18,15 @@ const express = require('express');
 const Busboy = require('busboy');
 
 const svc = require('../lib/import-service');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireApiCapability } = require('../middleware/auth');
 
 const router = express.Router();
+
+// Every import endpoint writes (or stages a write to) the ledger, so all of them
+// are gated on canImportLedger — audit blocker B4. `preview` only reads, but it
+// exposes staged batch contents, so it stays behind the same capability rather
+// than letting any signed-in user enumerate other people's uploads.
+const canImport = requireApiCapability('canImportLedger', 'Importing the ledger is a Finance task.');
 
 const MAX_BYTES = 10 * 1024 * 1024;              // 10 MB (TECH-SPEC §3.7)
 const ALLOWED_EXT = /\.(csv|txt)$/i;
@@ -69,7 +75,7 @@ const fail = (res, status, code, message, extra = {}) =>
 
 // ---- stage --------------------------------------------------------------------
 
-router.post('/api/imports', requireAuth, async (req, res) => {
+router.post('/api/imports', requireAuth, canImport, async (req, res) => {
   let parsed;
   try {
     parsed = await readMultipart(req);
@@ -117,7 +123,7 @@ router.post('/api/imports', requireAuth, async (req, res) => {
 
 // ---- preview ------------------------------------------------------------------
 
-router.get('/api/imports/:batchId/preview', requireAuth, (req, res) => {
+router.get('/api/imports/:batchId/preview', requireAuth, canImport, (req, res) => {
   const batchId = Number(req.params.batchId);
   if (!Number.isInteger(batchId) || batchId < 1) {
     return fail(res, 400, 'BAD_BATCH_ID', 'batchId must be a positive integer.');
@@ -129,7 +135,7 @@ router.get('/api/imports/:batchId/preview', requireAuth, (req, res) => {
 
 // ---- confirm ------------------------------------------------------------------
 
-router.post('/api/imports/:batchId/confirm', requireAuth, (req, res) => {
+router.post('/api/imports/:batchId/confirm', requireAuth, canImport, (req, res) => {
   const batchId = Number(req.params.batchId);
   if (!Number.isInteger(batchId) || batchId < 1) {
     return fail(res, 400, 'BAD_BATCH_ID', 'batchId must be a positive integer.');

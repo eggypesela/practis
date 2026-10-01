@@ -130,8 +130,27 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// Capability guard for JSON endpoints. The page guard in app.js renders a 403
+// HTML page, which is correct for a browser navigation and wrong for fetch():
+// the import UI parses JSON and would report "unexpected token <". Same rule,
+// different representation. Audit blocker B4 — the import endpoints were
+// `requireAuth` only, so any signed-in user could write ledger rows via CSV.
+function requireApiCapability(flag, message) {
+  const { capabilities } = require('../lib/permissions');
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: { code: 'UNAUTHORIZED', message: 'Sign in first.' } });
+    const caps = capabilities(req.user);
+    if (!caps[flag]) {
+      return res.status(403).json({ error: { code: 'FORBIDDEN', message } });
+    }
+    req.caps = caps;
+    next();
+  };
+}
+
 module.exports = {
   SESSION_COOKIE, IDLE_MS, ABS_MS,
   createSession, destroySession, rotateSession, revokeUserSessions,
   loadUser, attachUser, initialsOf, requirePage, requireAuth, requireAdmin,
+  requireApiCapability,
 };

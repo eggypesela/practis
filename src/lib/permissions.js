@@ -33,6 +33,22 @@ function capabilities(user) {
   const canCheckExpense = has('cost_controller', 'project_controller');
   const canReconcile = has('finance', 'cost_controller', 'project_controller');
   const canOpenAdvance = has('project_admin', 'project_manager', 'finance');
+  // --- Ledger side (audit 2026-09-30, blockers B1–B4) -----------------------
+  // Before these existed, POST /ledger/entry, POST /ledger/:id/reverse,
+  // POST /queue/tag and the two import endpoints were authenticate-only, so a
+  // read-only Viewer could write money (proven in docs/AUDIT-2026-09-30.md).
+  // The ledger is the book of record: entering and correcting are deliberately
+  // different grants, and correcting is deliberately the narrower one.
+  const canWriteLedger = has('finance');
+  // Who may post a reversal. Decision 2A (the owner, 2026-09-30): Finance + Cost
+  // Controller ONLY. A reversal is one-shot and irreversible
+  // (`idx_ledger_one_reversal`), so the set stays as small as the organisation
+  // tolerates — deliberately NOT project_manager, NOT project_admin, NOT viewer.
+  const canCorrectLedger = has('finance', 'cost_controller');
+  // The checker's job: marking imported cost as checked is what promotes a line
+  // into v_cbs_actual, i.e. into the cost report.
+  const canTagCost = has('cost_controller', 'project_controller');
+  const canImportLedger = has('finance');
   return {
     roles,
     isAdmin,
@@ -51,6 +67,15 @@ function capabilities(user) {
     // screen that carries the ENTER form, so the workflow could not be started by
     // the person whose job it is to start it.
     canViewExpense: canEnterExpense || canCheckExpense || canReconcile,
+    // --- Ledger side --------------------------------------------------------
+    canWriteLedger,
+    canCorrectLedger,
+    canTagCost,
+    canImportLedger,
+    // Page visibility is a SEPARATE question from action permission. A Viewer
+    // reading the ledger is fine; a Viewer being shown an entry form it cannot
+    // submit is not. Page flags are the union of the actions that screen offers.
+    canViewLedger: canWriteLedger || canCorrectLedger || canImportLedger || canTagCost,
   };
 }
 
