@@ -1,0 +1,55 @@
+<%# Portfolio register (plan task 6.1). Lists ONLY the projects the scope layer
+    authorised — res.locals.projects / projectsFor(user), never q.projects().
+    Baseline state is called out because EVM cannot produce a PV without one. %>
+
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-folder"/></svg>Projects</div>
+    <div class="v"><%= rows.length %></div><div class="f">you may open</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-chart"/></svg>Contract value</div>
+    <div class="v sm">Rp <%= fmt(total) %></div><div class="f">signed, all projects shown</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Baselined</div>
+    <div class="v"><%= baselined %></div><div class="f">baseline locked</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-file"/></svg>Not baselined</div>
+    <div class="v"><%= notBaselined %></div>
+    <div class="f"><span class="wn">EVM needs a baseline</span></div></div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Project register</h2><span class="r"><%= rows.length %> shown</span></div>
+  <div class="tw"><table>
+    <thead><tr>
+      <th>Code</th><th>Name</th><th>Client</th>
+      <th class="r">Contract value</th><th class="r">Cost to date</th>
+      <th>Revenue method</th><th>Dates</th><th>Status</th><th>Baseline</th>
+    </tr></thead>
+    <tbody>
+      <% rows.forEach(function(p){ %>
+      <tr>
+        <td class="mono"><%= p.code %></td>
+        <td><%= p.name %></td>
+        <td><%= p.client_name || '—' %></td>
+        <td class="r mono"><%= p.contract_amount != null ? fmt(p.contract_amount) : '—' %></td>
+        <td class="r mono"><%= fmt(p.cost_to_date) %></td>
+        <td><%= p.revenue_method || '—' %></td>
+        <td class="mono"><%= p.start_date || '—' %> → <%= p.end_date || '—' %></td>
+        <td><span class="chip"><%= p.status %></span></td>
+        <td>
+          <% if (p.baselined) { %>
+            <span class="chip ok">locked</span>
+          <% } else { %>
+            <span class="chip wn">not baselined</span>
+          <% } %>
+        </td>
+      </tr>
+      <% }) %>
+      <% if (!rows.length) { %>
+      <tr><td colspan="9" class="empty">No project is visible to this account.</td></tr>
+      <% } %>
+    </tbody>
+  </table></div>
+  <div class="fnote">
+    Projects appear here only when your role is assigned to them. A project that is
+    not baselined has no planned-value curve, so its schedule performance cannot be
+    measured until a baseline is locked.
+  </div>
+</div>

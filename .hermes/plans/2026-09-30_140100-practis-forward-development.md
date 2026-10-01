@@ -446,10 +446,41 @@ Everything in this module is one vertical slice: **route + service + test + temp
 
 ---
 
-#### Task 6.1 — `/projects` portfolio register page (fixes the 404)
+#### Task 6.1 — `/projects` portfolio register page (fixes the 404) — ✅ DONE 2026-10-01
 
 **Objective:** Make the dead nav link work — list every project with its register state, and make
 the sidebar switcher actually switch.
+
+**Outcome.** Built as `src/routes/projects.js` + `views/projects.ejs`, mounted in `src/server.js`
+after `routes/api`. Test file `test/projects.test.js`, IDs **PR1.1–PR1.7**, port **3904** (see the
+port note below). The switcher half needed **no work**: task 0.9 had already replaced the dead
+`.pc-btn` button with real `<a href="/?project=N">` links rendered from the AUTHORISED list, so
+PR1.4 asserts that existing behaviour rather than building it again.
+
+Two things the plan got wrong, both corrected against the code:
+
+- **Port `3903` was already taken by `test/bola.test.js`** (it runs two servers, 3902 gate-off and
+  3903 gate-on). Used **3904**. Free ports as of this build: 3904, 3907, 3909, 3911+.
+- **The plan's switcher assertion `href="/?project=1"` is vacuous with one project.** With a single
+  authorised project the sidebar deliberately renders a **disabled** button and no menu at all, so
+  the test seeds a second project (`PRJ-2027`) and asserts both links — otherwise it would pass on
+  a broken switcher.
+
+**The register lists `projectsFor(req.user)`, NOT `q.projects()`.** Those differ, and choosing the
+wrong one is precisely the BOLA leak already found on the dashboard. PR1.7 counts the rendered
+project codes for a one-project user and asserts exactly **1** — a status-only assertion would pass
+on a page that listed the whole portfolio.
+
+Also note `seed.js` creates **`PRJ-2026 / Citarum Bridge`** (contract 12,480,000,000). The dev DB
+carries `JC-2026 / Jembatan Citarum` because the owner edited it; tests always use the seeded code.
+
+**Files (actual):**
+- Create: `src/routes/projects.js`, `views/projects.ejs`, `test/projects.test.js`
+- Modify: `src/server.js` (one mount line)
+
+---
+
+#### Task 6.1 — original plan text (kept for reference)
 
 **Files:**
 - Create: `src/routes/projects.js` (mount in `src/server.js` after `middleware/auth.attachUser`)

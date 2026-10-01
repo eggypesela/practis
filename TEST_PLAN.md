@@ -32,6 +32,7 @@ A duplicate ID makes traceability meaningless: "C1.1 failed" named three differe
 | `FX` | **Real-ledger fixture** regression (§8.3) | `fixture.test.js` | 3908 |
 | `BOLA` | **Cross-project isolation** (scope, §0 task 0.9) | `bola.test.js` | 3902 (gate off) + 3903 (gate on) |
 | `FP` | **Frozen periods** (§0 task 0.10, TECH-SPEC §8.4) | `periods.test.js` | 3910 |
+| `PR` | **Portfolio register** (Module 6 task 6.1, §10 step 3) | `projects.test.js` | 3904 |
 
 **Known legacy collisions to re-map when touched:** `advances.test.js` reuses `A1`,`E1`,`C1`,`S1`,
 `R1`,`Z1`; `csrf.test.js` reuses `C1`,`S1`,`C2`,`C3`; `correct.test.js` reuses `C1`–`C4`;
@@ -392,6 +393,35 @@ unaffected. Widening it needs an lpb correction flow that marks the replacement 
 smoke fixture, and `validate.py` was writing throwaway probe rows **into** that month. Those probes
 now live in open months, so a rejection there is once again the rule under test rather than the
 frozen guard firing first.
+
+---
+
+## 12c. PR — Portfolio register — ✅ IMPLEMENTED 2026-10-01
+
+The sidebar links `/projects` on **every page** and it returned **404**: `views/partials/sidebar.ejs`
+had the link, no route existed. `src/routes/projects.js` + `views/projects.ejs` now serve it,
+mounted in `src/server.js` after `routes/api`.
+
+| ID | Assertion |
+|---|---|
+| PR1.1 | `GET /projects` renders the register with every visible project (was 404) |
+| PR1.2 | contract value is rendered grouped (`12.480.000.000`) and baseline state is **labelled**, not blank |
+| PR1.3 | house UI contract: `.hd` block carries `<h1>Projects</h1>` + a non-empty muted sub-title |
+| PR1.4 | the sidebar switcher offers **each** project as a real `<a href="/?project=N">` |
+| PR1.5 | anonymous → 302 `/login` |
+| PR1.6 | a project-scoped user sees their project and **not** the one they are not on (asserted as DATA) |
+| PR1.7 | a one-project user's page renders exactly **1** project code (no whole-portfolio leak) |
+
+Two traps this file encodes, both of which would have produced a **false pass**:
+
+- **PR1.4 needs TWO projects.** With one authorised project the sidebar deliberately renders a
+  disabled button and no menu, so an "offers every project" assertion is vacuous. The test seeds
+  `PRJ-2027`.
+- **PR1.7 counts rendered codes, not status.** `q.projects()` (whole portfolio) and
+  `projectsFor(user)` (authorised set) both render a perfectly good 200 — only counting the rows
+  distinguishes them. This is the same class of bug as the dashboard leak in the BOLA audit.
+
+Also: the scope on this page comes from `projectsFor(req.user)` directly, **not** `q.projects()`.
 
 ---
 
