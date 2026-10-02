@@ -33,6 +33,7 @@ A duplicate ID makes traceability meaningless: "C1.1 failed" named three differe
 | `BOLA` | **Cross-project isolation** (scope, §0 task 0.9) | `bola.test.js` | 3902 (gate off) + 3903 (gate on) |
 | `FP` | **Frozen periods** (§0 task 0.10, TECH-SPEC §8.4) | `periods.test.js` | 3910 |
 | `PR` | **Portfolio register** (Module 6 tasks 6.1–6.3, §10 step 3) | `projects.test.js` | 3904 |
+| `SCH-ERR` | Error pages: 404 contract + 500 content negotiation | `error-pages.test.js` | 3933 |
 
 **Known legacy collisions to re-map when touched:** `advances.test.js` reuses `A1`,`E1`,`C1`,`S1`,
 `R1`,`Z1`; `csrf.test.js` reuses `C1`,`S1`,`C2`,`C3`; `correct.test.js` reuses `C1`–`C4`;

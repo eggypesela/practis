@@ -48,12 +48,11 @@ app.use(require('./routes/api'));
 app.use(require('./routes/projects'));
 app.use(require('./routes/app'));
 
-// 404 + error handler
-app.use((req, res) => res.status(404).render('404', { layout: 'layout-app', title: 'Not found', subtitle: '' }));
-app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ error: 'internal error' });
-});
+// 404 + error handlers live in lib/error-handler.js so tests can reach them (they
+// were inline here, which is exactly why the JSON-vs-HTML defect went unnoticed).
+const { notFoundHandler, errorHandler } = require('./lib/error-handler');
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 // Exported so tests can inspect the route table WITHOUT binding a port
 // (TEST_PLAN §12f asserts every page route is guarded — a structural check that
