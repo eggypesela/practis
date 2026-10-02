@@ -36,6 +36,7 @@
 const db = require('../db/db');
 const q = require('../db/queries');
 const approvals = require('./approvals-service');
+const wbsDefaults = require('./wbs-defaults');
 
 const REVENUE_METHODS = ['milestone', 'poc', 'time_based', 'on_billing'];
 
@@ -197,8 +198,17 @@ function createProject(input, actorId) {
     // Record EVERY step up front, all pending (shared chain module).
     approvals.seedChain('project', id);
 
+    // PRD §5.1: the project's WBS tree comes from the company-standard menu, and
+    // every line carries the default milestone set. Built here, inside the same
+    // transaction, because a project with no tree has nothing to measure progress
+    // against — and a project that exists while its tree silently failed would be
+    // a half-created record. The summary rides the create audit row below, so one
+    // create stays one audit event.
+    const defaults = wbsDefaults.buildWbsTree(db, id, actorId);
+
     const created = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
-    q.audit('project', id, 'create', actorId, null, created);
+    q.audit('project', id, 'create', actorId, null,
+      { ...created, wbs_defaults: { ...defaults, weights: 'equal 25% (decision 7A)' } });
     notifyPending(created, actorId);
     return created;
   });

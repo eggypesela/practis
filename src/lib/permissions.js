@@ -88,6 +88,15 @@ function capabilities(user) {
   // a register of parties, they are an internal grouping), so there is no
   // canApproveTeams. Administrators pass `has(...)` by design (see above).
   const canManageTeams = has('administrator');
+
+  // --- Master data (module 6 task 6.5) -------------------------------------
+  // Two levels on purpose. PRD §8 "Ask first" puts WBS/RBS MENU changes behind
+  // admin rights, while a cost bucket or a ledger account is day-to-day Finance /
+  // Cost Controller work. Splitting the capability is what makes that difference
+  // real rather than a comment — the same form cannot be both.
+  const canManageMaster = has('finance', 'cost_controller', 'project_admin');
+  const canManageStructure = has('administrator');
+
   return {
     roles,
     isAdmin,
@@ -133,6 +142,12 @@ function capabilities(user) {
     // --- Team register -----------------------------------------------------
     canManageTeams,
     canViewTeams: true,
+    // --- Master data (module 6 task 6.5) ------------------------------------
+    canManageMaster,          // day-to-day reference data (COA, CBS, categories)
+    canManageStructure,       // WBS/RBS shape + resource categories (PRD §8 "Ask first")
+    // Readable by everyone signed in: the tagging queue and the import screen
+    // resolve these codes, so hiding the list would not hide the data.
+    canViewMaster: true,
   };
 }
 

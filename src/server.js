@@ -46,6 +46,7 @@ app.use(require('./routes/auth'));
 app.use(require('./routes/admin'));
 app.use(require('./routes/api'));
 app.use(require('./routes/projects'));
+app.use(require('./routes/master'));
 app.use(require('./routes/app'));
 
 // 404 + error handlers live in lib/error-handler.js so tests can reach them (they

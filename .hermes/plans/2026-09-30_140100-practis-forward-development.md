@@ -743,25 +743,74 @@ matters, and it is what the audit found missing on the checker path.
 
 ---
 
-#### Task 6.5 — Master data screens (with the "Ask first" gate)
+#### Task 6.5 — Master data screens (with the "Ask first" gate) — ✅ DONE 2026-10-02
 
 **Objective:** PRD §5.5 — manage `chart_of_accounts`, `cashflow_categories`, `cost_categories`,
 `resource_categories`, `wbs_code`, `rbs_code`, `transaction_accounts` (CBS).
 
-**Files:** Create `src/routes/master.js`, `src/lib/master-service.js`,
-`views/master/{index,coa,cashflow,cost-categories,resource-categories,wbs,rbs,cbs}.ejs`;
-mount in `src/server.js`; extend tests.
+**Built data-driven.** Nine datasets share ONE registry and ONE validated code path
+(`src/lib/master-service.js`), because nine near-identical services would be nine copies of the
+same validation and the copies would drift — the failure the 2026-09-30 audit already found on the
+checker path. A dataset is DECLARED, not implemented; SQL is built from the registry and never from
+request input, so a crafted form cannot reach a column that is not declared.
 
-**Two rules that make this task different from the CRUD it looks like:**
-1. **WBS/RBS menu changes are Admin-approved** (PRD §8 "Ask first"). Gate *edits* on
-   `canApproveProjects`-style admin rights and write `audit_log` rows; a plain user gets 403 with
-   the reason.
-2. **`transaction_accounts` (CBS) is the column `v_cbs_actual` groups by.** Renaming or deactivating
-   one silently re-buckets the cost report. Prefer `active = 0` (soft) over delete/rename, and
-   refuse a delete that has ledger rows pointing at it — assert that in a test.
+**Files:** `src/lib/master-service.js`, `src/routes/master.js`, `views/master/{index,list,form}.ejs`;
+mounted in `src/server.js`; capabilities `canManageMaster` / `canManageStructure` in
+`src/lib/permissions.js`; sidebar entry; tests **MA5.1–MA5.15** (port 3913).
 
-**Verify:** new tests + full suite. Then a **report-integrity check**: `SELECT` the cost report
-before and after deactivating an unused CBS and confirm no existing total moved.
+**The two rules the plan named, implemented:**
+
+1. **WBS/RBS menu changes are Administrator-only** (PRD §8 "Ask first"). This is a SEPARATE
+   capability (`canManageStructure`) from ordinary master data (`canManageMaster`), so the same
+   screen does not become admin-only for cost buckets. Both halves are pinned: MA5.7 (Finance
+   refused on WBS) and MA5.8 (Finance ALLOWED on CBS) — a single admin-only rule would pass one
+   test and defeat the purpose.
+2. **CBS is what `v_cbs_actual` groups by, so nothing is deleted.** MA5.9 asserts against the
+   VIEW, not the column: a ledger line is seeded onto another bucket, the test bucket is
+   deactivated, and the cost-report total must be unchanged. MA5.10 shows the reference counts the
+   screen reports, so the blast radius is visible before someone finds it in a report.
+
+**Schema facts that shaped the screens (measured, not assumed):**
+
+- `industry_types` / `project_types` have **no `code` and no `active` column**, so they are the one
+  dataset type that cannot be set-once-and-deactivate: a rename applies everywhere at once. The
+  screen says so out loud (MA5.12) instead of pretending they behave like the others.
+- `chart_of_accounts` and `cashflow_categories` each carry a **legacy duplicate column**
+  (`category`→`account_type`, and `inflow_outflow`→`direction`), each with its own CHECK. One form
+  field writes BOTH, so they can never disagree — a disagreement would be invisible until a report
+  read the other one.
+
+**Commit.**
+
+---
+
+#### Task 6.6 — RBS + milestone defaults, no dead nav links — ✅ DONE 2026-10-02
+
+**Built:**
+- `src/lib/wbs-defaults.js` — a NEW project now gets its WBS tree (copied from the `wbs_code`
+  master menu) AND the four default milestones per line, inside the project's own transaction. Until
+  now a project registered through the UI got NOTHING: no tree, no milestones, so there was no
+  progress to record. That empty default was invisible until someone tried to tick a milestone.
+- `src/db/seed-master.js` — RBS **proposal** (5 resource categories + 24 RBS codes), industry types
+  (7) and project types (6), both previously EMPTY (which is why the client form said "optional —
+  set up by an Administrator" and had nothing to offer), plus milestones on the demo project.
+- `views/partials/sidebar.ejs` — the FIVE remaining `href="#"` links (Reports, Overview, WBS, CBS
+  plan, Revenue) are REMOVED, not hidden: an advertised link that goes nowhere reads as "broken",
+  not "not built yet". Master data added under a new Setup group.
+
+**Why Setup and not Administration:** the master-data screen is needed by the Cost Controller and
+Finance to maintain the cost buckets and accounts they tag with, and the Administration group is
+hidden from them entirely. The WBS/RBS lists inside stay Administrator-gated. A link they cannot
+reach would have made task 6.5 useless to its main users.
+
+**Decision 6B honoured literally:** the RBS list is marked in the seed as a starting proposal, and
+every code is a plain abbreviation of its own name (L-CAR = Carpenter). **No code is dressed up to
+look like a company standard**, because a resource list that is silently wrong is worse than an
+empty one — it gets used, and then the cost breakdown is wrong in a way nobody questions.
+
+**Acceptance (plan's own wording):** `select count(*) from rbs_code` = 24 (> 0 ✓); a newly created
+project gets four milestone rows at 25% each ✓ (MS6.3/MS6.4); every sidebar `href` resolves to a real
+route ✓ (MS6.8), with a companion test asserting no `href="#"` can come back (MS6.7).
 
 **Commit.**
 

@@ -640,6 +640,81 @@ The handlers were **inline in `server.js`**, where no test could reach them — 
 defect this visible survived 266 passing tests. They now live in `src/lib/error-handler.js` with a unit
 test, so the error path is testable without a router internals hack.
 
+---
+
+## 12i. MA5 — Master data screens — ✅ IMPLEMENTED 2026-10-02
+
+PRD §5.5. Nine datasets (`coa`, `cashflow`, `costcat`, `rescat`, `wbs`, `rbs`, `cbs`, `industry`,
+`projecttype`) driven by ONE registry in `src/lib/master-service.js`.
+
+| ID | Assertion |
+|---|---|
+| MA5.1 | the index and all nine lists render |
+| MA5.2 | an unknown dataset is a **404, not a guess** |
+| MA5.3 | anonymous `/master` redirects to `/login` |
+| MA5.4 | Finance can add a cost category; a duplicate code is refused (no second row) |
+| MA5.5 | a required name is enforced |
+| MA5.6 | **an edit posting no code saves; a crafted `code=HACKED` cannot rename the row** |
+| MA5.7 | **WBS structure is ADMIN-only** — Finance is refused, DB unchanged (PRD §8 "Ask first") |
+| MA5.8 | **CBS is FINANCE-allowed** — the gate is not admin-only everywhere |
+| MA5.8b | an Administrator may change WBS structure |
+| MA5.8c | a Viewer cannot write master data at all |
+| MA5.9 | **report integrity:** deactivating an UNUSED bucket moves no `v_cbs_actual` total |
+| MA5.10 | deactivating a bucket still IN USE is allowed, audited, and its ledger line still reports |
+| MA5.11 | reactivating restores the row |
+| MA5.12 | industry/project types accept an edit and have **no** deactivate action (no `active` column) |
+| MA5.13 | a lookup pointing at nothing is refused (no dangling reference) |
+| MA5.14 | a valid lookup is accepted and the LIST shows the label, not the id |
+| MA5.15 | a list page carries a title and a sub-title (owner UI rule) |
+
+**The gate is two-level, and that is the point.** PRD §8 "Ask first" makes WBS/RBS *shape* changes an
+Administrator decision; a cost bucket or ledger account is day-to-day Finance work. A single
+admin-only rule would pass a naive test and lock the Cost Controller out of the lists they tag with.
+
+**Nothing is deleted, and MA5.9 proves it against the VIEW.** `transaction_accounts` is the column
+`v_cbs_actual` groups by, so a delete or a rename could silently re-bucket a historic cost report.
+The test seeds a real ledger line onto one bucket, deactivates a *different* bucket, and asserts the
+report total is unchanged. It also asserts the row SURVIVES — a hard delete would have passed the
+"total unchanged" assertion while destroying the row.
+
+**Unknown dataset = 404.** The dataset key is a URL segment resolved against the registry, so
+`/master/anything-else` is a clean 404 rather than a crash or a guess.
+
+---
+
+## 12j. MS6 — Project WBS/milestone defaults + sidebar contract — ✅ IMPLEMENTED 2026-10-02
+
+| ID | Assertion |
+|---|---|
+| MS6.1 | a newly registered project gets a **15-node tree copied from the master menu** |
+| MS6.2 | the tree nests: a child's parent is in the SAME project; top-level codes have none |
+| MS6.3 | every WBS line carries the four defaults in order; **none is ticked** |
+| MS6.4 | the four defaults carry **equal 25% weights** (decision 7A) and every line has exactly four |
+| MS6.5 | the tree build is audited (`wbs_defaults_created`) with node/milestone counts |
+| MS6.6 | a second project gets its OWN tree — no cross-project parents, 30 distinct rows |
+| MS6.7 | **no sidebar link is a dead `href="#"`** |
+| MS6.8 | **every sidebar link resolves to a real route** (200 or a deliberate 302, never 404) |
+| MS6.9 | the sidebar offers Master data, and Finance can OPEN it while WBS writes stay admin-only |
+
+**The empty-default problem this fixed.** PRD §5.1 says the project WBS tree comes from the
+company-standard menu and each line carries the default milestones. Until task 6.6 a project
+registered *through the UI* got **no tree and no milestones at all** — the seed script only ever
+touched the single demo project. So there was nothing to tick and no way to record progress. The
+gap was invisible in every existing test because none of them created a project and then looked for
+its tree.
+
+**MS6.4 is deliberately brittle.** `% complete` derives from the milestone weights (PRD §5.1), so if
+decision 7A is ever revisited this test should fail loudly rather than let the number move quietly.
+
+**MS6.7 and MS6.8 are a pair.** One asserts every link works; the other asserts no `href="#"` exists.
+Without the second, the five removed dead links could come back one at a time and each removal would
+be "fine" in isolation.
+
+**Master data sits under a new Setup group, not Administration.** The Cost Controller and Finance
+need it to maintain the buckets and accounts they tag with, and the Administration group is hidden
+from them entirely — so an Administration placement would have made task 6.5 useless to its main
+users. MS6.9 pins both halves: Finance can open `/master`, and still cannot write WBS structure.
+
 **Identity leak (FIXED 2026-10-02):** the repo-local git identity was set to the personal Gmail
 address rather than the `…@users.noreply.github.com` noreply alias the history rewrite used, so the
 five commits after `eaf8def` (7c9cef3, 0f2c851, efc40b7, 241a4fb) republished it on the PUBLIC repo,

@@ -14,7 +14,9 @@
     <a href="/projects" class="<%= _active === 'Projects' ? 'on' : '' %>"><svg><use href="#i-folder"/></svg><span class="lbl">Projects</span></a>
     <a href="/clients" class="<%= _active === 'Clients' ? 'on' : '' %>"><svg><use href="#i-users"/></svg><span class="lbl">Clients</span></a>
     <a href="/suppliers" class="<%= _active === 'Suppliers' ? 'on' : '' %>"><svg><use href="#i-in"/></svg><span class="lbl">Suppliers</span></a>
-    <a href="#"><svg><use href="#i-chart"/></svg><span class="lbl">Reports</span></a>
+    <%# "Reports" was a dead href="#" here. Removed rather than left linking nowhere:
+        a link that goes nowhere reads as "this feature is broken", not "not built yet".
+        It returns when the reports module does (plan module 8/9). %>
     <div class="pctx">
       <span class="pc-lbl caps">Project</span>
       <% const _list = (typeof projects !== 'undefined' && projects) ? projects : []; %>
@@ -35,17 +37,25 @@
       <button class="pc-btn" type="button" disabled><span class="pc-dot"></span><span class="pc-name"><%= _sel ? _sel.name : (_proj || '—') %></span><svg class="pc-chev"><use href="#i-chev"/></svg></button>
       <% } %>
     </div>
+    <div class="grp caps">Setup</div>
+    <%# NOT under Administration even though it looks administrative: Cost Controller
+        and Finance must reach it to maintain the cost buckets and accounts they tag
+        with, and the Administration group above is hidden from them entirely.
+        The WBS/RBS lists inside are gated to Administrator by the route. %>
+    <a href="/master" class="<%= _active === 'Master data' ? 'on' : '' %>"><svg><use href="#i-file"/></svg><span class="lbl">Master data</span></a>
     <div class="grp caps" style="display:none">Project</div>
-    <a href="#"><svg><use href="#i-home"/></svg><span class="lbl">Overview</span></a>
-    <a href="#"><svg><use href="#i-tree"/></svg><span class="lbl">WBS</span></a>
-    <a href="#"><svg><use href="#i-chart"/></svg><span class="lbl">CBS plan</span></a>
+    <%# Overview / WBS / CBS plan were dead href="#" links. Removed for the same reason
+        as Reports above — their routes do not exist yet (plan module 7). Removed, not
+        hidden, so the count of dead links stays at zero and a future test can assert it. %>
     <a href="/ledger" class="<%= _active === 'Ledger' ? 'on' : '' %>"><svg><use href="#i-book"/></svg><span class="lbl">Ledger</span></a>
     <a href="/import" class="<%= _active === 'Import' ? 'on' : '' %>"><svg><use href="#i-in"/></svg><span class="lbl">Import</span></a>
     <a href="/queue" class="<%= _active === 'Tagging queue' ? 'on' : '' %>"><svg><use href="#i-check"/></svg><span class="lbl">Tagging queue</span><% if (_untagged) { %><span class="pill"><%= _untagged %></span><% } %></a>
     <a href="/advances" class="<%= _active === 'Cash advances' ? 'on' : '' %>"><svg><use href="#i-cash"/></svg><span class="lbl">Cash advances</span></a>
     <a href="/expenses" class="<%= _active === 'Expense reports' ? 'on' : '' %>"><svg><use href="#i-file"/></svg><span class="lbl">Expense reports</span></a>
     <a href="/reconciliation" class="<%= _active === 'Reconciliation' ? 'on' : '' %>"><svg><use href="#i-check"/></svg><span class="lbl">Reconciliation</span></a>
-    <a href="#"><svg><use href="#i-in"/></svg><span class="lbl">Revenue</span></a>
+    <%# "Revenue" was a dead href="#". Removed — the revenue module is not built.
+        The tag was removed from the sidebar AND from the sidebar-contract test's
+        expected list, where it was pinning a link that went nowhere. %>
     <% if (typeof isAdmin !== 'undefined' && isAdmin) { %>
     <div class="grp caps">Administration</div>
     <a href="/admin/users" class="<%= _active === 'Users' ? 'on' : '' %>"><svg><use href="#i-users"/></svg><span class="lbl">Users &amp; roles</span></a>

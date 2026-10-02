@@ -1,0 +1,88 @@
+<%# One master-data list (module 6 task 6.5). The columns come from the registry as
+    descriptors, so this view works for all nine datasets without knowing anything
+    about any of them.
+    Markup copies views/clients.ejs (kpi cards, .card + .tw table, .fnote). %>
+<% if (typeof notice !== 'undefined' && notice) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b>Saved.</b> <%= notice %></div>
+<% } %>
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Not saved.</b> <%= error %></p></div></div>
+<% } %>
+
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-file"/></svg>Rows</div>
+    <div class="v"><%= rows.length %></div><div class="f">in this list</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Active</div>
+    <div class="v"><%= activeCount != null ? activeCount : rows.length %></div>
+    <div class="f"><%= activeCount != null ? 'selectable today' : 'no active flag on this list' %></div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-file"/></svg>Inactive</div>
+    <div class="v"><%= activeCount != null ? (rows.length - activeCount) : 0 %></div>
+    <div class="f">kept for history</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-book"/></svg>Referenced</div>
+    <div class="v"><%= rows.filter(function(r){ return r.refTotal > 0; }).length %></div>
+    <div class="f">used by another record</div></div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd">
+    <h2><%= ds.label %></h2>
+    <span class="r">
+      <% if (canWrite) { %>
+        <a class="btn pri" href="/master/<%= ds.key %>/new"><svg><use href="#i-plus"/></svg>Add row</a>
+      <% } else { %>
+        you can view this list but not change it
+      <% } %>
+    </span>
+  </div>
+  <div class="tw"><table>
+    <thead><tr>
+      <% cols.forEach(function(c){ %><th<%= c.kind === 'refs' ? ' class="r"' : '' %>><%= c.label %></th><% }) %>
+      <th></th>
+    </tr></thead>
+    <tbody>
+      <% rows.forEach(function(r){ %>
+      <tr>
+        <% cols.forEach(function(c){ %>
+          <% if (c.kind === 'active') { %>
+            <td><% if (r.active === 1) { %><span class="chip ok">active</span><% } else { %><span class="chip">inactive</span><% } %></td>
+          <% } else if (c.kind === 'lookup') { %>
+            <td><%= r[c.name + '_label'] || '—' %></td>
+          <% } else if (c.kind === 'flag') { %>
+            <td><%= r[c.name] === 1 ? 'yes' : '—' %></td>
+          <% } else if (c.kind === 'refs') { %>
+            <td class="r mono"><%= r.refTotal > 0 ? r.refTotal : '—' %></td>
+          <% } else { %>
+            <td<%= (c.name === 'code' || c.name === ds.keyCol) ? ' class="mono"' : '' %>><%= (r[c.name] != null && r[c.name] !== '') ? r[c.name] : '—' %></td>
+          <% } %>
+        <% }) %>
+        <td class="r">
+          <% if (canWrite) { %>
+            <a class="btn" href="/master/<%= ds.key %>/<%= r.id %>/edit">Edit</a>
+            <% if (activeCount != null) { %>
+              <form method="post" action="/master/<%= ds.key %>/<%= r.id %>/active" style="display:inline">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <input type="hidden" name="action" value="<%= r.active === 1 ? 'deactivate' : 'activate' %>">
+                <button class="btn" type="submit"><%= r.active === 1 ? 'Deactivate' : 'Activate' %></button>
+              </form>
+            <% } %>
+          <% } %>
+        </td>
+      </tr>
+      <% }) %>
+      <% if (!rows.length) { %>
+      <tr><td colspan="<%= cols.length + 1 %>" class="empty">This list is empty.</td></tr>
+      <% } %>
+    </tbody>
+  </table></div>
+  <div class="fnote"><svg><use href="#i-info"/></svg><span>
+    <%= ds.purpose %>
+    <% if (ds.structure) { %> &middot; <b>Changing this list is an Administrator task</b> (PRD §8 "Ask first").<% } %>
+    <% if (activeCount != null) { %> &middot; Rows are <b>deactivated, never deleted</b> — historic ledger
+      lines still point at them, so deleting one would silently change an old report.<% } %>
+    <% if (ds.noActive) { %> &middot; This list has <b>no active flag</b>, so a rename applies everywhere
+      at once.<% } %>
+  </span></div>
+</div>
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
+</defs></svg>

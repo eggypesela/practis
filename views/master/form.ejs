@@ -1,0 +1,90 @@
+<%# Add/edit one master-data row (module 6 task 6.5). The fields come from the
+    registry, so all nine datasets share this form.
+    Markup copies views/client-new.ejs / client-edit.ejs: label.fld with a .dim
+    hint span, a bad() aria-invalid, and a .btn.wide submit — the classes that
+    actually exist in assets/app.css. %>
+<% var isUpdate = (typeof isUpdate !== 'undefined' && isUpdate); %>
+<% var bad = function (k) { return (typeof field !== 'undefined' && field === k) ? 'aria-invalid="true"' : ''; }; %>
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Not saved.</b> <%= error %></p></div></div>
+<% } %>
+<% if (isUpdate && typeof refs !== 'undefined' && refs && refs.length) { %>
+<div class="note wn"><svg><use href="#i-info"/></svg><b>In use.</b>
+  <%= refs.reduce(function(a,b){ return a + b.n; }, 0) %> existing record(s) reference this row
+  (<%= refs.map(function(r){ return r.table + '.' + r.col; }).join(', ') %>). It cannot be deleted —
+  deactivate it instead so those records stay readable.</div>
+<% } %>
+
+<form method="post" action="<%= isUpdate ? '/master/' + ds.key + '/' + row.id : '/master/' + ds.key %>">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+<div class="card" style="max-width:760px">
+  <div class="card-hd">
+    <h2><%= isUpdate ? ('Edit ' + (row[ds.keyCol] || ds.short)) : ('Add to ' + ds.label) %></h2>
+    <span class="r"><a class="btn" href="/master/<%= ds.key %>">Back to the list</a></span>
+  </div>
+  <div class="fbody">
+    <%# formFields() already drops a set-once key on update; this filter repeats the
+        rule for the view because a browser does not submit a disabled input. %>
+    <% var fields = ds.fields.filter(function(f){ return !(isUpdate && !ds.keyEditable && f.name === ds.keyCol); }); %>
+
+    <% fields.forEach(function(f){ %>
+      <% var val = (row[f.name] != null ? row[f.name] : ''); %>
+
+      <% if (isUpdate && f.name === ds.keyCol) { %>
+        <%# Shown, not editable: it is the human key other rows and imports are
+            matched on. Deliberately NOT named, so nothing can post it. %>
+        <label class="fld"><%= f.label %> <span class="dim">set once — cannot be changed</span>
+          <input type="text" value="<%= val %>" disabled readonly></label>
+
+      <% } else if (f.kind === 'flag') { %>
+        <label class="fld"><%= f.label %> <span class="dim">0 or 1</span>
+          <select name="<%= f.name %>" <%= bad(f.name) %>>
+            <option value="1" <%= val === 1 ? 'selected' : '' %>>yes</option>
+            <option value="0" <%= val === 1 ? '' : 'selected' %>>no</option>
+          </select></label>
+
+      <% } else if (f.kind === 'select') { %>
+        <label class="fld"><%= f.label %><% if (f.help) { %> <span class="dim"><%= f.help %></span><% } %>
+          <select name="<%= f.name %>" <%= bad(f.name) %>>
+            <option value="">— not set —</option>
+            <% f.options.forEach(function(o){ %>
+              <option value="<%= o %>" <%= String(val) === String(o) ? 'selected' : '' %>><%= o %></option>
+            <% }) %>
+          </select></label>
+
+      <% } else if (f.kind === 'lookup') { %>
+        <label class="fld"><%= f.label %><% if (f.help) { %> <span class="dim"><%= f.help %></span><% } %>
+          <select name="<%= f.name %>" <%= bad(f.name) %>>
+            <option value="">— not set —</option>
+            <% (lookups[f.name] || []).forEach(function(o){ %>
+              <option value="<%= o.value %>" <%= String(val) === String(o.value) ? 'selected' : '' %>><%= o.label %></option>
+            <% }) %>
+          </select></label>
+
+      <% } else { %>
+        <label class="fld"><%= f.label %>
+          <% if (f.required) { %> <span class="dim">required</span>
+          <% } else if (f.help) { %> <span class="dim"><%= f.help %></span><% } %>
+          <input type="text" name="<%= f.name %>" <%= f.max ? ('maxlength="' + f.max + '"') : '' %>
+                 <%= f.required ? 'required' : '' %> <%= bad(f.name) %> value="<%= val %>"></label>
+      <% } %>
+    <% }) %>
+
+    <% if (!ds.noActive && isUpdate) { %>
+      <label class="fld">Status
+        <select name="active">
+          <option value="1" <%= row.active === 1 ? 'selected' : '' %>>active</option>
+          <option value="0" <%= row.active === 1 ? '' : 'selected' %>>inactive</option>
+        </select></label>
+      <div class="fnote"><svg><use href="#i-info"/></svg><span>A row is deactivated rather than
+        deleted — ledger lines and plans already reference it, and history must stay readable.</span></div>
+    <% } %>
+
+    <button class="btn pri wide" type="submit"><svg><use href="#i-check"/></svg><%= isUpdate ? 'Save changes' : 'Add row' %></button>
+    <a class="btn wide" href="/master/<%= ds.key %>">Cancel</a>
+  </div>
+</div>
+</form>
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
+</defs></svg>

@@ -1,0 +1,47 @@
+<%# Master data index (module 6 task 6.5, PRD §5.5).
+    The reference lists every other screen reads. Each card says WHAT the list is
+    for, because "COA" and "CBS" are only obvious to someone who already knows. %>
+<div class="note"><svg><use href="#i-info"/></svg><span><b>What this is.</b>
+  These lists are the words the rest of the application uses. A code that is wrong here is wrong
+  everywhere: in the import resolver, in the tagging queue, and in the cost report.</span></div>
+
+<div class="grid k3">
+  <% lists.forEach(function(d){ %>
+  <div class="card kpi">
+    <div class="lbl"><svg><use href="#i-file"/></svg><%= d.short %></div>
+    <div class="v"><%= counts[d.key] %></div>
+    <div class="f"><%= counts[d.key] === 1 ? 'row' : 'rows' %></div>
+    <% if (typeof caps !== 'undefined' && (d.structure ? caps.canManageStructure : caps.canManageMaster)) { %>
+      <div style="margin-top:8px"><a class="btn" href="/master/<%= d.key %>">Open</a></div>
+    <% } else { %>
+      <div style="margin-top:8px"><a class="btn" href="/master/<%= d.key %>">View</a></div>
+    <% } %>
+  </div>
+  <% }) %>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>What each list is for</h2></div>
+  <div class="tw"><table>
+    <thead><tr><th>List</th><th>Purpose</th><th class="r">Rows</th><th></th></tr></thead>
+    <tbody>
+      <% lists.forEach(function(d){ %>
+      <tr>
+        <td><b><%= d.label %></b><br><span class="mono"><%= d.table %></span></td>
+        <td><%= d.purpose %></td>
+        <td class="r mono"><%= counts[d.key] %></td>
+        <td class="r">
+          <a class="btn" href="/master/<%= d.key %>"><%= (d.structure ? caps.canManageStructure : caps.canManageMaster) ? 'Manage' : 'View' %></a>
+        </td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table></div>
+  <div class="fnote"><svg><use href="#i-info"/></svg><span>WBS and RBS define the shape of the project
+    menus, so changing them is an Administrator task (PRD §8 "Ask first"). The other lists are
+    day-to-day Finance and Cost Controller work. Nothing here is ever deleted: rows are deactivated,
+    because historic ledger lines still point at them.</span></div>
+</div>
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
+</defs></svg>
