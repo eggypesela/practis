@@ -1,6 +1,15 @@
-<%# Portfolio register (plan task 6.1). Lists ONLY the projects the scope layer
-    authorised — res.locals.projects / projectsFor(user), never q.projects().
-    Baseline state is called out because EVM cannot produce a PV without one. %>
+<%# Portfolio register (module 6 tasks 6.1 + 6.2). Lists ONLY the projects the
+    scope layer authorised — projectsFor(user), never q.projects().
+    Baseline state is called out because EVM cannot produce a PV without one;
+    approval state is shown because this screen manages it. %>
+
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Approval refused.</b> <%= error %></p></div></div>
+<% } %>
+<% if (typeof saved !== 'undefined' && saved) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b>Registered.</b>
+  <%= typeof code !== 'undefined' && code ? code : 'The project' %> was added and is awaiting approval.</div>
+<% } %>
 
 <div class="grid k4">
   <div class="card kpi"><div class="lbl"><svg><use href="#i-folder"/></svg>Projects</div>
@@ -9,9 +18,9 @@
     <div class="v sm">Rp <%= fmt(total) %></div><div class="f">signed, all projects shown</div></div>
   <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Baselined</div>
     <div class="v"><%= baselined %></div><div class="f">baseline locked</div></div>
-  <div class="card kpi"><div class="lbl"><svg><use href="#i-file"/></svg>Not baselined</div>
-    <div class="v"><%= notBaselined %></div>
-    <div class="f"><span class="wn">EVM needs a baseline</span></div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-file"/></svg>Awaiting approval</div>
+    <div class="v"><%= awaiting %></div>
+    <div class="f"><span class="wn">not yet approved</span></div></div>
 </div>
 
 <div class="card" style="margin-top:12px">
@@ -20,7 +29,7 @@
     <thead><tr>
       <th>Code</th><th>Name</th><th>Client</th>
       <th class="r">Contract value</th><th class="r">Cost to date</th>
-      <th>Revenue method</th><th>Dates</th><th>Status</th><th>Baseline</th>
+      <th>Revenue method</th><th>Dates</th><th>Status</th><th>Baseline</th><th>Approval</th><th></th>
     </tr></thead>
     <tbody>
       <% rows.forEach(function(p){ %>
@@ -40,16 +49,42 @@
             <span class="chip wn">not baselined</span>
           <% } %>
         </td>
+        <td>
+          <% if (p.approved) { %>
+            <span class="chip ok">approved</span>
+          <% } else { %>
+            <span class="chip nt">pending</span>
+          <% } %>
+        </td>
+        <td class="r">
+          <% if (typeof caps !== 'undefined' && caps.canManageProjects) { %>
+            <a class="btn" href="/projects/<%= p.id %>/edit">Edit</a>
+          <% } %>
+          <%# Approve is gated on its OWN flag, not canManageProjects: a Project
+              Admin may register but not approve. A one-project user gets a
+              disabled switcher, so the reason box is inline on the row rather
+              than one click deeper. %>
+          <% if (!p.approved && typeof caps !== 'undefined' && caps.canApproveProjects) { %>
+            <form method="post" action="/projects/<%= p.id %>/approve" style="display:inline">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <input type="text" name="reason" placeholder="reason, if you registered it"
+                     <%= (typeof needsReason !== 'undefined' && needsReason && errorProject === p.id) ? 'required' : '' %>
+                     style="width:190px">
+              <button class="btn pri" type="submit">Approve</button>
+            </form>
+          <% } %>
+        </td>
       </tr>
       <% }) %>
       <% if (!rows.length) { %>
-      <tr><td colspan="9" class="empty">No project is visible to this account.</td></tr>
+      <tr><td colspan="11" class="empty">No project is visible to this account.</td></tr>
       <% } %>
     </tbody>
   </table></div>
   <div class="fnote">
     Projects appear here only when your role is assigned to them. A project that is
     not baselined has no planned-value curve, so its schedule performance cannot be
-    measured until a baseline is locked.
+    measured until a baseline is locked. Approving a project you registered yourself
+    requires a written reason, which is kept in the audit trail.
   </div>
 </div>

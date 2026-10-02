@@ -1,14 +1,23 @@
-// PR-series: portfolio register (plan task 6.1, finishes TECH-SPEC §10 step 3).
+// PR2-series: project register + approval workflow (module 6, plan task 6.2).
 //
-// WHY THIS FILE EXISTS
-// `/projects` is linked from the sidebar of every page and returned **404** —
-// there was no route. The register also has to answer the scope question: a
-// project-scoped user must see their projects and nothing else, asserted as
-// DATA (which projects render), never as a bare status code.
+// WHAT THIS FILE EXISTS FOR
+// Two rules that are easy to state and easy to get wrong:
 //
-// The switcher test seeds a SECOND project on purpose. With one authorised
-// project the sidebar renders a disabled button and no <a href> at all, so an
-// "offers every project" assertion would be vacuous rather than passing.
+//   1. APPROVAL IS DATA, not code (plan 6.5b). Which steps must be approved is a
+//      list in the service; the chain itself is rows in `approvals`. The tests
+//      assert the ROWS, because a boolean column would answer "approved?" but
+//      could never say who, when or why.
+//
+//   2. SELF-APPROVAL NEEDS A REASON (owner decision 2026-10-01). A blanket
+//      "approver ≠ requester" rule deadlocks a one-person install — the same
+//      person creates and approves every project and there is no second user.
+//      The rule is therefore "approving your own work requires a written reason
+//      on the record", and the tests pin BOTH halves: refused without a reason,
+//      allowed with one, and a different approver needs nothing.
+//
+// Every deny-case asserts the DATABASE (row counts), not a status code. The five
+// authorization bugs found in the 2026-09-30 audit all answered 302/200 while
+// writing, so a status-only assertion proves nothing.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert');
 const { spawn, execFileSync } = require('node:child_process');
@@ -18,10 +27,9 @@ const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
 const NODE = process.execPath;
-const PORT = 3904;   // 3901 authz · 3902/3903 bola · 3905-3907 security · 3908 fixture · 3910 periods
+const PORT = 3904;   // shared with PR1.* — same file, same server
 
 let dbPath, proc, cookie, db;
-const { client } = require('./helpers/csrf');
 const ORIGIN = `http://127.0.0.1:${PORT}`;
 
 function sh(args, env) {
@@ -30,6 +38,9 @@ function sh(args, env) {
 async function req(pathname, opts = {}) {
   return fetch(`${ORIGIN}${pathname}`, { redirect: 'manual', ...opts });
 }
+const { client } = require('./helpers/csrf');
+
+let base;   // csrf-aware client, built in before()
 
 before(async () => {
   dbPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'practis-projects-')), 'test.db');
@@ -38,8 +49,6 @@ before(async () => {
   sh([path.join('src', 'db', 'seed.js'), 'e@example.com', 'epw12345'], env);
   sh([path.join('src', 'db', 'seed-master.js')], env);
 
-  // A second project, inserted with the test's OWN handle (never
-  // require('../src/...'), which would bind the default DB file).
   db = new (require('better-sqlite3'))(dbPath);
   db.prepare(`INSERT INTO projects (code, name, contract_amount, status, start_date, end_date)
               VALUES (?, ?, ?, 'active', '2026-03-01', '2027-12-31')`)
@@ -57,6 +66,7 @@ before(async () => {
   });
   const cli = await require('./helpers/csrf').loggedIn(ORIGIN, 'e@example.com', 'epw12345');
   cookie = `practis_sid=${cli.j.c['practis_sid']}`;
+  base = cli;
   db = new (require('better-sqlite3'))(dbPath);
 });
 
@@ -66,7 +76,297 @@ after(() => {
   if (dbPath) fs.rmSync(path.dirname(dbPath), { recursive: true, force: true });
 });
 
-// ---- PR1.1 the route exists and lists the register ----
+const projectCount = () => db.prepare('SELECT COUNT(*) n FROM projects').get().n;
+const byCode = (code) => db.prepare('SELECT * FROM projects WHERE code = ?').get(code);
+const approvalsOf = (id) => db.prepare(
+  `SELECT * FROM approvals WHERE entity_type='project' AND entity_id=? ORDER BY id`).all(id);
+const auditOf = (id) => db.prepare(
+  `SELECT * FROM audit_log WHERE entity_type='project' AND entity_id=? ORDER BY id`).all(id);
+
+// A valid registration body. NOTE: `client.post()` takes a URL-encoded body
+// STRING, not an object — an object stringifies to "[object Object]", the CSRF
+// check fails, and the test sees a 403 that reads like an authorization bug.
+const validForm = (over = {}) => new URLSearchParams({
+  code: 'PRJ-3001', name: 'Test Bridge', revenue_method: 'milestone',
+  contract_amount: '1000000', payment_terms_days: '30',
+  start_date: '2026-05-01', end_date: '2027-05-01', ...over,
+}).toString();
+
+// ---- PR2.1 registration ----
+
+test('PR2.1 a Project Admin can register a project; it starts not baselined and not approved', async () => {
+  const { asRole } = require('./helpers/authz');
+  const actor = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'project_admin',
+    { email: 'pr21-admin@example.test' });
+
+  const before = projectCount();
+  const res = await actor.client.post('/projects', validForm({ code: 'PRJ-3001' }));
+  assert.strictEqual(res.status, 302, 'a successful registration redirects to the register');
+
+  assert.strictEqual(projectCount(), before + 1, 'exactly one project row was added');
+  const p = byCode('PRJ-3001');
+  assert.ok(p, 'the project exists');
+  assert.strictEqual(p.baseline_locked, 0, 'PRD §4.1 step 6: created with no baseline');
+  assert.strictEqual(p.created_by, actor.userId, 'the creator is recorded — approval depends on it');
+  assert.strictEqual(p.revenue_method, 'milestone');
+  assert.strictEqual(p.contract_amount, 1000000);
+
+  // The chain is ROWS, not a boolean.
+  const chain = approvalsOf(p.id);
+  assert.strictEqual(chain.length, 4, 'every recorded step exists from the moment of registration');
+  assert.ok(chain.every((r) => r.status === 'pending'), 'all start pending');
+  // LIGHT chain (decision 8A): the required step is pm_approve, not the full
+  // PRD three. Assert the required set through the service so the test fails if
+  // someone flips the data without updating the doc.
+  const svc = require('../src/lib/projects-service');
+  assert.deepStrictEqual(svc.REQUIRED_STEPS.project, ['pm_approve'],
+    'decision 8A is LIGHT: the PM approves');
+});
+
+test('PR2.2 the registration is audited and notifies an approver, not the actor', async () => {
+  const p = byCode('PRJ-3001');
+  const trail = auditOf(p.id);
+  assert.strictEqual(trail.length, 1, 'one audit row for the create');
+  assert.strictEqual(trail[0].action, 'create');
+
+  // A notification must reach someone else. The actor is excluded in
+  // `approverIds`, so if this is the ONLY user we expect zero rows — assert the
+  // exclusion explicitly (the actor must never be told to approve their own work
+  // with no hint that a reason is required).
+  const notes = db.prepare('SELECT * FROM notification_inbox WHERE entity_id = ?').all(p.id);
+  const actorId = p.created_by;
+  assert.ok(!notes.some((n) => n.user_id === actorId),
+    'the person who registered the project is not notified to approve it');
+});
+
+test('PR2.3 revenue method is required (PRD §4.1 step 5)', async () => {
+  const before = projectCount();
+  const res = await base.post('/projects', validForm({ code: 'PRJ-3002', revenue_method: '' }));
+  assert.strictEqual(res.status, 400);
+  assert.match(await res.text(), /revenue recognition method is required/i);
+  assert.strictEqual(projectCount(), before, 'nothing was written');
+  assert.strictEqual(byCode('PRJ-3002'), undefined);
+});
+
+test('PR2.4 an invalid revenue method is refused with a sentence, not a SQL error', async () => {
+  const before = projectCount();
+  const res = await base.post('/projects', validForm({ code: 'PRJ-3003', revenue_method: 'whenever' }));
+  assert.strictEqual(res.status, 400);
+  assert.match(await res.text(), /must be one of/i);
+  assert.strictEqual(projectCount(), before);
+});
+
+test('PR2.5 the project code must be unique — 409, not a 500', async () => {
+  const before = projectCount();
+  const res = await base.post('/projects', validForm({ code: 'PRJ-3001' }));
+  assert.strictEqual(res.status, 409, 'a duplicate code is a conflict, not a server error');
+  assert.match(await res.text(), /already in use/i);
+  assert.strictEqual(projectCount(), before, 'no second row');
+});
+
+test('PR2.6 an end date before the start date is refused', async () => {
+  const before = projectCount();
+  const res = await base.post('/projects',
+    validForm({ code: 'PRJ-3004', start_date: '2027-01-01', end_date: '2026-01-01' }));
+  assert.strictEqual(res.status, 400);
+  assert.match(await res.text(), /end date cannot fall before/i);
+  assert.strictEqual(projectCount(), before);
+});
+
+test('PR2.7 payment terms, when given, must be a positive whole number of days', async () => {
+  const before = projectCount();
+  const bad = await base.post('/projects', validForm({ code: 'PRJ-3005', payment_terms_days: '0' }));
+  assert.strictEqual(bad.status, 400);
+  assert.match(await bad.text(), /positive number of days/i);
+  assert.strictEqual(projectCount(), before);
+});
+
+// ---- PR2.8 authorization on the write path ----
+
+test('PR2.8 a Viewer cannot register a project (403 AND no row written)', async () => {
+  const { asRole } = require('./helpers/authz');
+  const viewer = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'viewer',
+    { email: 'pr28-viewer@example.test' });
+
+  const before = projectCount();
+  const res = await viewer.client.post('/projects', validForm({ code: 'PRJ-3006' }));
+  assert.strictEqual(res.status, 403, '403 with a reason, not a hidden link');
+  assert.strictEqual(projectCount(), before, '*** the row count is the real assertion ***');
+  assert.strictEqual(byCode('PRJ-3006'), undefined);
+});
+
+test('PR2.9 a Cost Controller cannot register a project either (not in PRD §4.1)', async () => {
+  const { asRole } = require('./helpers/authz');
+  const cc = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'cost_controller',
+    { email: 'pr29-cc@example.test' });
+  const before = projectCount();
+  const res = await cc.client.post('/projects', validForm({ code: 'PRJ-3007' }));
+  assert.strictEqual(res.status, 403);
+  assert.strictEqual(projectCount(), before);
+});
+
+// ---- PR2.10 the approval workflow ----
+
+test('PR2.10 a different Project Manager can approve; the approvals row records who and when', async () => {
+  const { asRole } = require('./helpers/authz');
+  const approver = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'project_manager',
+    { email: 'pr210-approver@example.test' });
+
+  const p = byCode('PRJ-3001');
+  const res = await approver.client.post(`/projects/${p.id}/approve`, 'reason=');
+  assert.strictEqual(res.status, 302, 'a different person needs no reason');
+
+  const row = db.prepare(
+    `SELECT * FROM approvals WHERE entity_type='project' AND entity_id=? AND step='pm_approve'`).get(p.id);
+  assert.strictEqual(row.status, 'approved');
+  assert.strictEqual(row.actor_id, approver.userId, 'the approver is recorded');
+  assert.ok(row.acted_at, 'and when');
+});
+
+test('PR2.11 approving is recorded in the audit trail', async () => {
+  const p = byCode('PRJ-3001');
+  const trail = auditOf(p.id);
+  assert.strictEqual(trail.length, 2, 'create + approve');
+  assert.strictEqual(trail[1].action, 'approve');
+  const after = JSON.parse(trail[1].after_json);
+  assert.strictEqual(after.step, 'pm_approve');
+  assert.strictEqual(after.self_approved, false, 'this was a genuine second-person approval');
+});
+
+test('PR2.12 approving twice is refused (409) and does not add a second row', async () => {
+  const { asRole } = require('./helpers/authz');
+  const approver = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'project_manager',
+    { email: 'pr212-approver@example.test' });
+  const p = byCode('PRJ-3001');
+  const res = await approver.client.post(`/projects/${p.id}/approve`, 'reason=');
+  assert.strictEqual(res.status, 409);
+  const rows = db.prepare(
+    `SELECT * FROM approvals WHERE entity_type='project' AND entity_id=? AND step='pm_approve'`).all(p.id);
+  assert.strictEqual(rows.length, 1, 'still exactly one approval row');
+});
+
+// ---- PR2.13 self-approval (the owner's decision) ----
+
+test('PR2.13 the CREATOR cannot approve their own project without a reason', async () => {
+  const { asRole } = require('./helpers/authz');
+  // A PM registers their own project, then tries to approve it with no reason.
+  const pm = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'project_manager',
+    { email: 'pr213-pm@example.test' });
+
+  await pm.client.post('/projects', validForm({ code: 'PRJ-3010' }));
+  const p = byCode('PRJ-3010');
+  assert.strictEqual(p.created_by, pm.userId);
+
+  const res = await pm.client.post(`/projects/${p.id}/approve`, 'reason=');
+  assert.strictEqual(res.status, 403, 'self-approval without a reason is refused');
+  assert.match(await res.text(), /written reason/i);
+
+  const row = db.prepare(
+    `SELECT * FROM approvals WHERE entity_type='project' AND entity_id=? AND step='pm_approve'`).get(p.id);
+  assert.strictEqual(row.status, 'pending', '*** the database still says pending ***');
+});
+
+test('PR2.14 the CREATOR CAN approve their own project by giving a reason — and it is audited', async () => {
+  const { asRole } = require('./helpers/authz');
+  const pm = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'project_manager',
+    { email: 'pr214-pm@example.test' });
+
+  await pm.client.post('/projects', validForm({ code: 'PRJ-3011' }));
+  const p = byCode('PRJ-3011');
+
+  const reason = 'Only operator on this install; verified the contract myself.';
+  const res = await pm.client.post(`/projects/${p.id}/approve`,
+    `reason=${encodeURIComponent(reason)}`);
+  assert.strictEqual(res.status, 302, 'a justified self-approval goes through');
+
+  const row = db.prepare(
+    `SELECT * FROM approvals WHERE entity_type='project' AND entity_id=? AND step='pm_approve'`).get(p.id);
+  assert.strictEqual(row.status, 'approved');
+  assert.strictEqual(row.actor_id, pm.userId);
+  assert.strictEqual(row.comment, reason, 'the reason is stored on the approval itself');
+
+  // And on the audit trail, which is the part that actually answers "why?".
+  const trail = auditOf(p.id);
+  const approve = trail.find((t) => t.action === 'approve');
+  const after = JSON.parse(approve.after_json);
+  assert.strictEqual(after.self_approved, true, 'flagged as a self-approval');
+  assert.strictEqual(after.reason, reason, 'with the justification attached');
+});
+
+test('PR2.15 a one-character reason is not enough (the rule is a real speed bump)', async () => {
+  const { asRole } = require('./helpers/authz');
+  const pm = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'project_manager',
+    { email: 'pr215-pm@example.test' });
+  await pm.client.post('/projects', validForm({ code: 'PRJ-3012' }));
+  const p = byCode('PRJ-3012');
+
+  const res = await pm.client.post(`/projects/${p.id}/approve`, 'reason=ok');
+  assert.strictEqual(res.status, 403);
+  const row = db.prepare(
+    `SELECT * FROM approvals WHERE entity_type='project' AND entity_id=? AND step='pm_approve'`).get(p.id);
+  assert.strictEqual(row.status, 'pending');
+});
+
+test('PR2.16 a Viewer cannot approve anything (403 and still pending)', async () => {
+  const { asRole } = require('./helpers/authz');
+  const viewer = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'viewer',
+    { email: 'pr216-viewer@example.test' });
+  const p = byCode('PRJ-3010');
+  const res = await viewer.client.post(`/projects/${p.id}/approve`,
+    `reason=${encodeURIComponent('a plausible looking reason')}`);
+  assert.strictEqual(res.status, 403);
+  const row = db.prepare(
+    `SELECT * FROM approvals WHERE entity_type='project' AND entity_id=? AND step='pm_approve'`).get(p.id);
+  assert.strictEqual(row.status, 'pending');
+});
+
+// ---- PR2.17 edit ----
+
+test('PR2.17 editing a project is audited and cannot change its code', async () => {
+  const { asRole } = require('./helpers/authz');
+  const pm = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'project_manager',
+    { email: 'pr217-pm@example.test' });
+  const p = byCode('PRJ-3011');
+
+  const res = await pm.client.post(`/projects/${p.id}`,
+    'name=Renamed+Bridge&revenue_method=poc&contract_amount=2000000&status=active&code=HACKED');
+  assert.strictEqual(res.status, 302);
+
+  const after = byCode('PRJ-3011');
+  assert.ok(after, 'the code is unchanged — it is the human key for this project');
+  assert.strictEqual(byCode('HACKED'), undefined);
+  assert.strictEqual(after.name, 'Renamed Bridge');
+  assert.strictEqual(after.revenue_method, 'poc');
+
+  const trail = auditOf(p.id);
+  assert.ok(trail.some((t) => t.action === 'update'), 'the edit is audited');
+});
+
+// ---- PR2.18 the register surfaces approval state ----
+
+test('PR2.18 the register shows which projects are awaiting approval', async () => {
+  const res = await base.get('/projects');
+  assert.strictEqual(res.status, 200);
+  const html = await res.text();
+  assert.match(html, /Awaiting approval/i,
+    'the register must show the approval state it manages');
+  assert.match(html, /not approved|Awaiting|pending/i);
+});
+
+test('PR2.19 the register does not offer Register/Approve to a Viewer', async () => {
+  const { asRole } = require('./helpers/authz');
+  const viewer = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'viewer',
+    { email: 'pr219-viewer@example.test' });
+  const res = await viewer.client.get('/projects');
+  const html = await res.text();
+  assert.doesNotMatch(html, /href="\/projects\/new"/, 'no Register button for a Viewer');
+});
+
+// ===========================================================================
+// PR1-series: the portfolio register itself (module 6, plan task 6.1).
+// Kept in this file because both series drive the same routes and share one
+// server/DB; the port is the same 3904.
+// ===========================================================================
 
 test('PR1.1 GET /projects renders the portfolio register (was 404)', async () => {
   const res = await req('/projects', { headers: { cookie } });
@@ -80,10 +380,7 @@ test('PR1.1 GET /projects renders the portfolio register (was 404)', async () =>
 test('PR1.2 the register shows each project with its contract value and baseline state', async () => {
   const res = await req('/projects', { headers: { cookie } });
   const html = await res.text();
-  // 12,480,000,000 grouped id-ID. Assert the number, not just a label.
   assert.match(html, /12\.480\.000\.000/, 'contract amount is rendered grouped, not raw');
-  // baseline_locked = 0 for both seeded projects, so the register must say so
-  // rather than showing a blank cell (PRD §4.1 step 6 language).
   assert.match(html, /not baselined|Not baselined|no baseline/i,
     'an un-baselined project is labelled, not silently blank (EVM depends on this)');
 });
@@ -99,8 +396,6 @@ test('PR1.3 the page follows the house UI contract (title + muted subtitle)', as
     'title and a non-empty sub-title, in the shared header block');
 });
 
-// ---- PR1.4 the switcher actually offers the projects ----
-
 test('PR1.4 the sidebar switcher offers every authorised project as a real link', async () => {
   const res = await req('/', { headers: { cookie } });
   const html = await res.text();
@@ -109,8 +404,6 @@ test('PR1.4 the sidebar switcher offers every authorised project as a real link'
   assert.match(html, new RegExp(`href="/\\?project=${p1}"`), 'first project is a link, not a dead button');
   assert.match(html, new RegExp(`href="/\\?project=${p2}"`), 'second project too');
 });
-
-// ---- PR1.5 authorization: the seam case ----
 
 test('PR1.5 anonymous GET /projects is sent to /login, not rendered', async () => {
   const res = await req('/projects');
@@ -146,3 +439,4 @@ test('PR1.7 the register counts what it shows (no whole-portfolio query leaking 
   const rows = (html.match(/PRJ-20\d\d/g) || []).length;
   assert.strictEqual(rows, 1, `exactly one project row for a one-project user (saw ${rows})`);
 });
+

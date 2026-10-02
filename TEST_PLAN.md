@@ -32,7 +32,7 @@ A duplicate ID makes traceability meaningless: "C1.1 failed" named three differe
 | `FX` | **Real-ledger fixture** regression (§8.3) | `fixture.test.js` | 3908 |
 | `BOLA` | **Cross-project isolation** (scope, §0 task 0.9) | `bola.test.js` | 3902 (gate off) + 3903 (gate on) |
 | `FP` | **Frozen periods** (§0 task 0.10, TECH-SPEC §8.4) | `periods.test.js` | 3910 |
-| `PR` | **Portfolio register** (Module 6 task 6.1, §10 step 3) | `projects.test.js` | 3904 |
+| `PR` | **Portfolio register** (Module 6 tasks 6.1 + 6.2, §10 step 3) | `projects.test.js` | 3904 |
 
 **Known legacy collisions to re-map when touched:** `advances.test.js` reuses `A1`,`E1`,`C1`,`S1`,
 `R1`,`Z1`; `csrf.test.js` reuses `C1`,`S1`,`C2`,`C3`; `correct.test.js` reuses `C1`–`C4`;
@@ -422,6 +422,49 @@ Two traps this file encodes, both of which would have produced a **false pass**:
   distinguishes them. This is the same class of bug as the dashboard leak in the BOLA audit.
 
 Also: the scope on this page comes from `projectsFor(req.user)` directly, **not** `q.projects()`.
+
+## 12d. PR2 — Project register + approval — ✅ IMPLEMENTED 2026-10-01
+
+Registering a project in-app (PRD §4.1 steps 1–6), with the approval chain living in `approvals` as
+rows, never a boolean column.
+
+| ID | Assertion |
+|---|---|
+| PR2.1 | a Project Admin registers; the project starts **not baselined** and **not approved**, `created_by` recorded |
+| PR2.2 | the create is audited; the **actor is not** notified to approve their own registration |
+| PR2.3 | revenue method is required (PRD §4.1 step 5) |
+| PR2.4 | an invalid revenue method is refused with a sentence, not a SQL error |
+| PR2.5 | a duplicate code is **409**, not a 500 |
+| PR2.6 | end date before start date is refused |
+| PR2.7 | payment terms must be a positive whole number of days |
+| PR2.8 | a Viewer cannot register (403 **and** row count unchanged) |
+| PR2.9 | a Cost Controller cannot register (not a §4.1 initiator) |
+| PR2.10 | **a different** PM approves; the `approvals` row records who and when |
+| PR2.11 | the approval is audited, `self_approved: false` |
+| PR2.12 | approving twice is 409 and adds no second row |
+| PR2.13 | **the creator cannot self-approve without a reason** (DB still `pending`) |
+| PR2.14 | **the creator CAN self-approve with a reason** — stored on the approval AND in the audit trail |
+| PR2.15 | a one-character reason is not enough |
+| PR2.16 | a Viewer cannot approve (403 and still pending) |
+| PR2.17 | an edit is audited and **cannot change the project code** |
+| PR2.18 | the register surfaces the approval state it manages |
+| PR2.19 | the register offers no Register link to a Viewer |
+
+**The load-bearing decision (owner, 2026-10-01).** LIGHT approval (8A) makes the PM both creator and
+approver. A blanket `approver ≠ requester` rule deadlocks a one-person install — every project would
+sit unapproved forever. The rule is therefore: **self-approval is allowed with a typed reason
+(≥10 chars) recorded in the audit trail**; a different approver needs none. PR2.13/PR2.14 pin both
+halves, so the control can never silently degrade to either "impossible" or "rubber stamp".
+
+**Test-harness traps this file hit (all produced misleading failures):**
+
+- **`client.post()` takes a URL-encoded body STRING.** Passing an object stringifies to
+  `[object Object]`, CSRF rejects it, and the test sees **403** — which looks exactly like an
+  authorization bug. `new URLSearchParams({...}).toString()`.
+- **`res.text` is a METHOD, not a property** (undici Response). `assert.match(res.text, ...)` throws
+  `Received type function`; the fix is `await res.text()`. This looked like a page-content failure.
+- **`asRole()` generates one email per role**, so two tests using the same role in the same DB collide
+  on `UNIQUE constraint failed: users.email` unless each passes a distinct `email` option.
 
 ---
 

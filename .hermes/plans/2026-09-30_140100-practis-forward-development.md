@@ -527,7 +527,51 @@ test('the sidebar switcher offers every project', async () => {
 
 ---
 
-#### Task 6.2 — Project register: create/edit with the approval workflow
+#### Task 6.2 — Project register: create/edit with the approval workflow — ✅ DONE 2026-10-01
+
+**Outcome.** `src/lib/projects-service.js` + routes in `src/routes/projects.js` + `views/project-new.ejs`
+/ `project-edit.ejs`. Tests **PR2.1–PR2.19** (same file, same port 3904). Suite floor **217 → 236**.
+
+**THE DECISION THIS TASK NEEDED (owner, 2026-10-01).** PRD §4.1 gives the project register four
+different actors (PM starts → Finance → PM → Admin). Decision 8A collapses it to *"the PM approves"* —
+and the PM is also the one who starts it, so creator and approver are the same person. A blanket
+`approver ≠ requester` rule would **deadlock this install**: every project would sit unapproved
+forever, because there is no second user.
+
+The answer: **self-approval is allowed, but only with a typed reason (≥10 characters) recorded in the
+audit trail.** The control is not "you may not approve your own work" — it is "approving your own work
+is a deliberate, attributable act that has to be justified on the record". A different approver needs
+no reason. `checkSelfApproval()` is the predicate; PR2.13–PR2.15 pin both halves, and PR2.11 asserts
+the reason lands in `audit_log.after_json.reason` with `self_approved: true`.
+
+**Approval is DATA (plan 6.5b).** `REQUIRED_STEPS` / `RECORDED_STEPS` in the service; every step is
+written to `approvals` as a pending row at registration, and only `pm_approve` is *required* under the
+light chain. Switching to the full PRD chain is then a data change, not a refactor — and no history is
+lost because all four steps were always recorded.
+
+**Two things that 500'd and why (both real, both fixed):**
+1. `svc.clientNameFor is not a function` — the helper was defined but **not exported**. The register
+   500'd on every render. Caught by reading the server's stderr in a debug script, not by guessing.
+2. `notification_inbox.alert_type` has **no CHECK constraint** (it is only a comment), so
+   `approval_pending` is a legal value. `severity` IS constrained to `info|warning|critical`.
+
+**`industry_type` and `client_id` are optional and their tables are EMPTY.** `industry_types` and
+`project_types` are seeded by an Administrator (PRD §4.1 step 1) — that is task 6.5, not built yet —
+so making them mandatory would make registration impossible on a fresh install. They render as
+optional selects.
+
+**The form does not promise visibility.** A scoped PM who registers a project cannot necessarily open
+it (`projectsFor` grants only assigned projects; `SCOPE_ENFORCE` governs refusal). The POST therefore
+redirects to `/projects?saved=N` with a confirmation, rather than into the project.
+
+**Files (actual):**
+- Create: `src/lib/projects-service.js`, `views/project-new.ejs`, `views/project-edit.ejs`
+- Modify: `src/routes/projects.js`, `src/db/queries.js`, `src/lib/permissions.js`
+  (+ `canManageProjects`, `canApproveProjects`, `canViewProjects` — **added, nothing restructured**)
+
+---
+
+#### Task 6.2 — original plan text (kept for reference)
 
 **Objective:** Let a PM/Controller/Project Admin register a project in-app (PRD §4.1 steps 1–6).
 

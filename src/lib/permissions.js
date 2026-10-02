@@ -60,6 +60,13 @@ function capabilities(user) {
   // into v_cbs_actual, i.e. into the cost report.
   const canTagCost = has('cost_controller', 'project_controller');
   const canImportLedger = has('finance');
+  // --- Project register (module 6 task 6.2, PRD §4.1) -----------------------
+  // Who may REGISTER a project. PRD §4.1: "PM / Project Controller / Project
+  // Admin initiate". Registering is the narrow act of entering master data.
+  const canManageProjects = has('project_manager', 'project_controller', 'project_admin');
+  // Who may APPROVE it. Decision 8A (LIGHT): the PM approves. An Administrator
+  // holds every role by design, so they pass `has(...)` without being listed.
+  const canApproveProjects = has('project_manager');
   return {
     roles,
     isAdmin,
@@ -87,6 +94,13 @@ function capabilities(user) {
     // reading the ledger is fine; a Viewer being shown an entry form it cannot
     // submit is not. Page flags are the union of the actions that screen offers.
     canViewLedger: canWriteLedger || canCorrectLedger || canImportLedger || canTagCost,
+    // --- Project register --------------------------------------------------
+    canManageProjects,
+    canApproveProjects,
+    // The register is readable by everyone signed in (PRD §2.3 scopes it by
+    // assignment, which the scope layer already does). Only the write actions
+    // are gated, which is why this is a flat true rather than a role test.
+    canViewProjects: true,
   };
 }
 

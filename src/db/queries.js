@@ -6,6 +6,61 @@ const db = require('./db');
 const _projects = db.prepare(`SELECT * FROM projects ORDER BY name`);
 const _projectById = db.prepare(`SELECT * FROM projects WHERE id = ?`);
 
+// ---- project register (module 6 task 6.2) ---------------------------------
+// `created_by` is NOT NULL: the approval rule (decision: self-approval needs a
+// typed reason) is meaningless without a recorded creator.
+const _insertProject = db.prepare(`
+  INSERT INTO projects
+    (code, name, client_id, industry_type, contract_amount, revenue_method,
+     payment_terms_days, start_date, end_date, created_by)
+  VALUES (@code, @name, @client_id, @industry_type, @contract_amount, @revenue_method,
+          @payment_terms_days, @start_date, @end_date, @created_by)`);
+
+const _updateProject = db.prepare(`
+  UPDATE projects SET
+    name = @name,
+    client_id = @client_id,
+    industry_type = @industry_type,
+    contract_amount = @contract_amount,
+    revenue_method = @revenue_method,
+    payment_terms_days = @payment_terms_days,
+    start_date = @start_date,
+    end_date = @end_date,
+    status = @status
+  WHERE id = @id`);
+
+// Approval chain for one entity. `approvals` is generic (entity_type/entity_id)
+// so the register reads it by entity, never by joining a project column.
+const _approvalsFor = db.prepare(`
+  SELECT a.*, u.email AS actor_email, u.full_name AS actor_name
+  FROM approvals a LEFT JOIN users u ON u.id = a.actor_id
+  WHERE a.entity_type = ? AND a.entity_id = ?
+  ORDER BY a.id`);
+
+const _insertApproval = db.prepare(`
+  INSERT INTO approvals (entity_type, entity_id, step, required_role, status, actor_id, acted_at, comment)
+  VALUES (@entity_type, @entity_id, @step, @required_role, @status, @actor_id,
+          CASE WHEN @status = 'pending' THEN NULL ELSE datetime('now') END, @comment)`);
+
+const _setApprovalStatus = db.prepare(`
+  UPDATE approvals SET status = ?, actor_id = ?, acted_at = datetime('now'), comment = ?
+  WHERE entity_type = ? AND entity_id = ? AND step = ?`);
+
+const _insertNotification = db.prepare(`
+  INSERT INTO notification_inbox (user_id, project_id, alert_type, severity, title, body, entity_type, entity_id)
+  VALUES (@user_id, @project_id, @alert_type, @severity, @title, @body, @entity_type, @entity_id)`);
+
+const _notificationsFor = db.prepare(`
+  SELECT * FROM notification_inbox WHERE user_id = ? ORDER BY id DESC LIMIT 50`);
+
+// Reference data for the project registration form. Both tables are seeded by an
+// Administrator (PRD §4.1 step 1) and are EMPTY on a fresh install, so the form
+// renders them as optional selects rather than failing.
+const _clients = db.prepare(`
+  SELECT c.id, c.code, c.name, c.payment_terms_days FROM clients c
+  WHERE c.active = 1 ORDER BY c.name`);
+const _industryTypes = db.prepare(`SELECT * FROM industry_types ORDER BY name`);
+
 const _ledgerForProject = db.prepare(`
   SELECT v.*, r.id AS reversal_id, r.date AS reversal_date
   FROM v_ledger_period v
@@ -472,6 +527,30 @@ module.exports = {
   },
   insertAudit: (entityId, actorId, before, after) =>
     _insertAudit.run(entityId, actorId, JSON.stringify(before), JSON.stringify(after)),
+
+  // ---- project register (module 6 task 6.2) ----
+  insertProject: (row) => _insertProject.run(row),
+  updateProject: (row) => _updateProject.run(row),
+  approvalsFor: (entityType, entityId) => _approvalsFor.all(entityType, entityId),
+  insertApproval: (row) => _insertApproval.run(row),
+  setApprovalStatus: (status, actorId, comment, entityType, entityId, step) =>
+    _setApprovalStatus.run(status, actorId, comment, entityType, entityId, step),
+  insertNotification: (row) => _insertNotification.run(row),
+  notificationsFor: (userId) => _notificationsFor.all(userId),
+  userIdsForRole: (roleCode) => db.prepare(
+    `SELECT DISTINCT user_id FROM user_roles WHERE role_code = ? AND project_id IS NULL`)
+    .all(roleCode).map((r) => r.user_id),
+  adminUserIds: () => db.prepare(
+    'SELECT id FROM users WHERE is_system_admin = 1 AND is_active = 1')
+    .all().map((r) => r.id),
+  notificationsPendingFor: (userId) => db.prepare(
+    `SELECT COUNT(*) AS n FROM notification_inbox WHERE user_id = ? AND read_at IS NULL`)
+    .get(userId).n,
+  approvalByStep: (entityType, entityId, step) => db.prepare(
+    `SELECT * FROM approvals WHERE entity_type = ? AND entity_id = ? AND step = ?`)
+    .get(entityType, entityId, step),
+  clients: () => _clients.all(),
+  industryTypes: () => _industryTypes.all(),
   insertLedger: (row) => _insertLedger.run(row),
   insertLedgerAudit: (entityId, actorId, after) =>
     _insertLedgerAudit.run(entityId, actorId, JSON.stringify(after)),
