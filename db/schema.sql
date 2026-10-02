@@ -12,7 +12,7 @@
 -- DDL is copied verbatim out of sqlite_master. To change it, write a migration and
 -- re-run the generator — never edit this file directly.
 --
--- Composition: 43 tables, 43 indexes, 25 triggers, 9 views.
+-- Composition: 43 tables, 45 indexes, 25 triggers, 9 views.
 
 -- TABLES (43)
 CREATE TABLE acceptance_register (
@@ -588,7 +588,7 @@ CREATE TABLE wbs_progress (
   UNIQUE (wbs_node_id, period_month)
 );
 
--- INDEXS (43)
+-- INDEXS (45)
 CREATE INDEX idx_acceptance_project ON acceptance_register(project_id);
 CREATE INDEX idx_approvals_entity ON approvals(entity_type, entity_id);
 CREATE INDEX idx_approvals_pending ON approvals(status) WHERE status = 'pending';
@@ -629,6 +629,8 @@ CREATE INDEX idx_proc_reg_project ON procurement_register(project_id);
 CREATE INDEX idx_projects_client ON projects(client_id);
 CREATE INDEX idx_projects_status ON projects(status);
 CREATE INDEX idx_pwreset_user ON password_resets(user_id);
+CREATE INDEX idx_rbs_load_bucket_lookup ON rbs_load(
+  project_id, wbs_node_id, rbs_code, version);
 CREATE INDEX idx_rbs_load_project ON rbs_load(project_id);
 CREATE INDEX idx_rev_recog_project ON revenue_recognized(project_id);
 CREATE INDEX idx_sessions_expiry ON sessions(expires_at);
@@ -640,6 +642,13 @@ CREATE INDEX idx_wbs_nodes_project ON wbs_nodes(project_id);
 CREATE INDEX idx_wbs_progress_period ON wbs_progress(period_month);
 CREATE UNIQUE INDEX uq_cbs_plan_bucket ON cbs_plan(
   project_id, transaction_account_id, COALESCE(wbs_node_id, 0), plan_type, period_month, version);
+CREATE UNIQUE INDEX uq_rbs_load_bucket ON rbs_load(
+  project_id,
+  wbs_node_id,
+  rbs_code,
+  COALESCE(transaction_account_id, 0),
+  version
+);
 
 -- TRIGGERS (25)
 CREATE TRIGGER trg_audit_log_no_delete

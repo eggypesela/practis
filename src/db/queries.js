@@ -587,6 +587,8 @@ module.exports = {
   untaggedLines: (projectId) => _untaggedLines.all(projectId),
   cbsOptions: () => _cbsOptions.all(),
   wbsOptions: (projectId) => _wbsOptions.all(projectId),
+  // Live cost accounts for the CBS/RBS pickers (`active` and not `hidden`).
+  transactionAccounts: () => _cbsOptions.all(),
   wbsMasterCodes: () => _wbsMasterCodes.all(),
   untaggedLineById: (id) => _untaggedLineById.get(id),
   // audit 2026-09-30 task 0.6: these two were inline SQL in src/routes/app.js

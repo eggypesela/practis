@@ -1,0 +1,144 @@
+<%# Resource plan (module 7 part 7.3; PRD §5.1).
+    What each line of work will consume: days of a crew, tonnes of steel, hours of a
+    crane — at a rate.
+
+    The form asks for RATE and QUANTITY, never a total. The total is multiplied and
+    stored by the service, so money has one source of truth. Every figure here is
+    whole rupiah, like every other money column in the system.
+
+    The title and sub-title come from the layout (`page()` in routes/rbs.js), so this
+    file starts at the content — matching views/wbs.ejs. %>
+<% if (typeof notice !== 'undefined' && notice) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b><%= notice %></b></div>
+<% } %>
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Not done.</b> <%= error %></p></div></div>
+<% } %>
+
+<div class="grid k3">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-file"/></svg>Plan lines</div>
+    <div class="v"><%= rows.length %></div>
+    <div class="f">current versions</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-chart"/></svg>Plan total</div>
+    <div class="v mono"><%= plan_total.toLocaleString('en-US') %></div>
+    <div class="f">IDR — the resource side of the budget reconciliation</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-book"/></svg>Resources available</div>
+    <div class="v"><%= resources.length %></div>
+    <div class="f">from Setup → RBS codes</div></div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd">
+    <h2>Plan lines</h2>
+    <span class="r"><%= rows.length %> lines</span>
+  </div>
+  <% if (!rows.length) { %>
+  <div class="fbody"><p class="dim">Nothing planned yet. Add the first line below — for
+    example 12 days of a carpenter on <b>2.1 Excavation &amp; earthworks</b>.</p></div>
+  <% } else { %>
+  <div class="tw"><table>
+    <thead><tr>
+      <th>Work line</th><th>Resource</th><th>Cost account</th>
+      <th class="r">Rate</th><th class="r">Quantity</th><th class="r">Total</th>
+      <th class="r">Version</th>
+      <% if (canManage) { %><th class="r">Actions</th><% } %>
+    </tr></thead>
+    <tbody>
+      <% rows.forEach(function(r){ %>
+      <tr>
+        <td><span class="mono"><%= r.wbs_code %></span> <%= r.wbs_name %></td>
+        <td><span class="mono"><%= r.rbs_code %></span> <%= r.rbs_name || '' %>
+          <% if (r.category_name) { %><span class="chip nt"><%= r.category_name %></span><% } %></td>
+        <td>
+          <% if (r.account_code) { %>
+          <span class="mono"><%= r.account_code %></span> <%= r.account_name %>
+          <% } else { %>
+          <span class="chip wn">not assigned</span>
+          <% } %>
+        </td>
+        <td class="r mono"><%= Number(r.rate).toLocaleString('en-US') %></td>
+        <td class="r mono"><%= Number(r.units).toLocaleString('en-US') %>
+          <% if (r.unit_label) { %><span class="dim"><%= r.unit_label %></span><% } %></td>
+        <td class="r mono"><b><%= Number(r.total_amount || 0).toLocaleString('en-US') %></b></td>
+        <td class="r mono">v<%= r.version %></td>
+        <% if (canManage) { %>
+        <td class="r">
+          <%# Withdraw rather than delete: a version at zero takes the amount out of
+              the plan total while the earlier figure stays readable. %>
+          <form method="post" action="/rbs/load/clear" style="display:inline">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <input type="hidden" name="wbs_node_id" value="<%= r.wbs_node_id %>">
+            <input type="hidden" name="rbs_code" value="<%= r.rbs_code %>">
+            <input type="hidden" name="transaction_account_id" value="<%= r.transaction_account_id || '' %>">
+            <button class="btn sm" type="submit">Withdraw</button>
+          </form>
+        </td>
+        <% } %>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table></div>
+  <% } %>
+</div>
+
+<% if (canManage) { %>
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Add or change a plan line</h2>
+    <span class="r">rate × quantity</span></div>
+  <div class="fbody">
+    <div class="note">
+      <svg><use href="#i-info"/></svg>
+      <span>Choosing a <b>work line + resource + cost account</b> that is already planned
+        updates that line as a new version instead of adding a second one — so the plan
+        total cannot double by accident. The cost account may be left unassigned and filled
+        in later.</span>
+    </div>
+    <form method="post" action="/rbs/load">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="fgrid">
+        <label class="fld">Work line
+          <select name="wbs_node_id" required>
+            <% wbs_lines.forEach(function(l){ %>
+            <option value="<%= l.id %>"><%= l.wbs_code %> · <%= l.name %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label class="fld">Resource
+          <select name="rbs_code" required>
+            <% resources.forEach(function(r){ %>
+            <option value="<%= r.code %>"><%= r.code %> · <%= r.name %> (<%= r.category_name || '—' %>)</option>
+            <% }); %>
+          </select>
+        </label>
+        <label class="fld">Cost account
+          <select name="transaction_account_id">
+            <option value="">— not assigned yet —</option>
+            <% accounts.forEach(function(a){ %>
+            <option value="<%= a.id %>"><%= a.code %> · <%= a.name %></option>
+            <% }); %>
+          </select>
+          <span class="dim">Optional: assigning the account is the Cost Controller's call.</span>
+        </label>
+        <label class="fld">Rate (IDR per unit)
+          <input type="number" name="rate" min="0" step="1" required placeholder="250000">
+        </label>
+        <label class="fld">Quantity
+          <input type="number" name="units" min="0" step="any" required placeholder="12">
+          <span class="dim">Hours, tonnes, days — whatever the unit below says.</span>
+        </label>
+        <label class="fld">Unit
+          <input type="text" name="unit_label" maxlength="16" placeholder="day">
+        </label>
+        <label class="fld">Note
+          <input type="text" name="description" maxlength="120" placeholder="piling crew">
+        </label>
+      </div>
+      <div class="fend"><button class="btn pri" type="submit">Save plan line</button></div>
+    </form>
+  </div>
+</div>
+<% } %>
+
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
+</defs></svg>

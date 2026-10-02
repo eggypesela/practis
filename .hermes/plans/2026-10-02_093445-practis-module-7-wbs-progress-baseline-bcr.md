@@ -359,7 +359,59 @@ as nothing done), and `ev` treats them the same way only if the row exists.
 
 ---
 
-## Part 7.3 — RBS load
+## Part 7.3 — RBS load — ✅ DONE 2026-10-02
+
+**Delivered:** `db/migrations/013_rbs_load_uniqueness.sql`; `src/lib/rbs-service.js`;
+`src/routes/rbs.js`; `views/rbs.ejs`; the sidebar's Resource plan link; `q.transactionAccounts()`.
+Tests **RB7.1–RB7.17** in `test/rbs.test.js`, port **3906**. Suite 358 → **375**.
+
+**A SCHEMA DEFECT FOUND AND FIXED — `rbs_load` could be loaded twice.** Its inline UNIQUE names
+`transaction_account_id`, which is deliberately OPTIONAL (decision 2A) and therefore usually NULL —
+and SQLite treats NULLs as DISTINCT in UNIQUE constraints, so the constraint applied to nothing.
+Measured on a freshly migrated, seeded database: two identical rows inserted happily and the plan
+total came out at **6,000,000 instead of 3,000,000** (12 days of a carpenter, twice). That breaks the
+PRD's named invariant from the resource side (part 7.4 checks plan = account total = budget), and it
+is a plausible user action — a planner entering a line twice, or a double-click on Save.
+
+`cbs_plan` already got this right (`uq_cbs_plan_bucket` wraps wbs_node_id in `COALESCE(...,0)`), so
+013 follows the established pattern rather than inventing one. The rule is an INDEX, not a service
+check, for the same reason as migration 011: a rule that lives only in the service dies at the first
+direct write. RB7.7 inserts a duplicate **directly**, bypassing the service, to pin that.
+
+**THE ARITHMETIC:** `total_amount = Math.round(rate × units)`, materialised at write time, asserted
+with `Number.isInteger` — every other money column here is a whole-rupiah integer and a float total
+would break the reconciliation where nobody would look.
+
+**Steps**
+
+3.1 ✅ RB7.1–RB7.3 — the arithmetic, including rounding and the refusal of nonsense. A zero line is
+    legal, because withdrawal is a zero version.
+3.2 ✅ Decision 2A enforced: `wbs_node_id` and `rbs_code` REQUIRED (a load with neither belongs to
+    nothing and can never be reconciled); `transaction_account_id` OPTIONAL. RB7.12/RB7.13.
+3.3 ✅ RB7.11 — an unknown code is refused with a message naming the RBS list, not an FK crash.
+3.4 ✅ RB7.8 — an edit inserts version+1; the old rate stays readable at its own version.
+    RB7.10 — "withdraw" is a zero version, so nothing is ever deleted.
+
+**Extras added while building:** RB7.4/RB7.5 (the duplicate-line bug, using the BLANK account — a test
+with an assigned account would have passed against the broken schema and proved nothing), RB7.6 (an
+assigned account is its own bucket), RB7.9 (the screen shows the latest version), RB7.14 (a bogus
+account id), RB7.15 (a viewer is refused with the 403 page), RB7.16 (**no cross-project write**), and
+RB7.17 (**the plan total sums the LATEST version of each bucket only** — a raw SUM over the table
+would count superseded versions and grow on every rate edit).
+
+**A trap worth recording:** the test helper for the plan total was first written as a raw
+`SUM(total_amount)`, which is wrong in exactly the way the product must not be. It now writes its own
+latest-version SQL rather than calling the service, so the test does not check the service against
+itself. `db/schema.sql` is GENERATED — regenerate with `node db/dump-schema.js`, never hand-edit.
+
+**Verification:** RB7.1–RB7.17 green; full suite 375/375; schema drift clean (43 tables, 45 indexes).
+
+**Commit:** `feat(rbs): resource load with materialised totals`
+
+---
+
+## Part 7.3 — RBS load (original draft, superseded above)
+
 
 **Objective:** resource plan per WBS line and CBS account, with `rate × units = total_amount`
 materialised so the PRD's invariant can be checked against a stored number.
