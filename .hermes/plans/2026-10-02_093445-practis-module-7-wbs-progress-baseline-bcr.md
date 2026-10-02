@@ -561,7 +561,71 @@ accidental forecast row written as a baseline would corrupt PV. The route accept
 
 ---
 
-## Part 7.5 — `applyBaselineChange()` — the one mutation path (extracted)
+## Part 7.5 — `applyBaselineChange()` — the one mutation path — ✅ DONE 2026-10-02
+
+**Delivered:** `db/migrations/016_rbs_rows_for_change_order.sql`; `src/lib/baseline-service.js`;
+`test/helpers/practis-fixture.js` (new shared harness); tests **BS7.1–BS7.13**,
+`test/baseline.test.js`, port **3915**. Suite 393 → **407**.
+
+**TWO PROPERTIES, BOTH ABOUT NOT LYING**
+
+* **Prospective** (BS7.1): a change applies from its effective period FORWARD; months before it
+  are byte-identical, asserted by comparing the actual rows (version and all) rather than a sum.
+  EIA-748 G-30. The reason is not tidiness — those months were REPORTED, so rewriting them moves a
+  live SPI with nothing to explain it.
+* **Atomic** (BS7.2–BS7.7): the archive, the resource plan, the DELETE and the INSERT share one
+  transaction, and a failing POST-CONDITION throws, rolling all of it back. A half-applied baseline
+  is the worst state in the product: PV part old and part new, so every later SPI/CPI is wrong in a
+  way no screen explains.
+
+**THE POST-CONDITION RE-READS THE TABLE OVER THE ACCOUNT'S WHOLE HISTORY** — not just the months
+being written. Measured reason: a change confined to unconsumed months plus a second change in an
+already-reported month left the account over-planned with a *later period* that still reconciled, so
+a per-period check reported success while the account was 1,000,000 over. An over- or under-spread
+is a property of the ACCOUNT.
+
+**A DESIGN CONSEQUENCE THE TESTS FORCED OUT (BS7.1, BS7.6).** Because the invariant is
+"Σ buckets = the resource plan", a change that moves money can never reconcile on its own — the
+budget would be adjusted against a plan still showing the old figure. So `applyBaselineChange` takes
+`rbsRows` and writes the resource plan and the buckets in ONE transaction: they can never be seen
+mid-move. `impactCost` non-zero with no `rbsRows` is refused outright.
+
+**AND A HARDER CONSEQUENCE, STATED PLAINLY:** a reduction that lands in an already-reported month
+cannot be applied prospectively, because the money is already earned against — taking it out of that
+month would rewrite a published SPI. So a *late* reduction has no prospective form at all. The
+correct treatment for an overspend is variance reporting, not a quieter baseline; a change that must
+cut money has to take it out of future months. The tests now demonstrate the addition case; the
+reduction case is not silently allowed and not silently refused at the wrong layer.
+
+**VERSIONS CONTINUE ACROSS A CHANGE (BS7.11).** The first implementation said so in a comment and
+did not do it: `MAX(version)` was read AFTER the DELETE, so the numbering restarted at 1 and the
+archive showed two different figures both claiming to be v1. Now the per-bucket maximum is captured
+BEFORE the delete. Found only because a test asserted the claim rather than the behaviour.
+
+**STEPS** 5.1 ✅ BS7.1 + BS7.1b (a change may not even NAME a month before its own effective period).
+5.2 ✅ BS7.2 archive = the whole prior baseline, row for row, compared against the raw pre-change
+table. 5.3 ✅ BS7.3 rolled-back group unchanged *and* the row count identical. 5.4 ✅ implemented;
+BS7.4 asserts `db.inTransaction === false` after a failure. 5.5 ✅ the rollback covers the archive
+too (BS7.12). **Extras:** BS7.5 untagged row refused with 015 as the backstop, BS7.7 a resource plan
+on the WRONG account rolls back (nothing half-written), BS7.8/BS7.9 the proposal side
+(`setProposedBaseline` refuses once the request is past draft), BS7.10 no reason / blank reason,
+BS7.13 guards the shared harness itself.
+
+**NEW SHARED HARNESS** `test/helpers/practis-fixture.js` — holds the three traps this codebase has
+already paid for: PRACTIS_DB must be passed to `seed-master.js` (or it silently seeds the dev
+database), a service under test needs EVERY module under `src/` purged from `require.cache` (not
+just `db.js`, or a transaction and its audit write land on two connections and deadlock for the full
+5s busy_timeout), and wait for the server's real readiness line.
+
+**Verification:** BS7.1–BS7.13 green; full suite 407/407; schema drift clean (30 triggers);
+migrate + seed + seed-master + seed-smoke.sql all apply cleanly (PV 2026-03 still 240,000,000).
+
+**Commit:** `feat(baseline): one prospective, archiving, atomic baseline mutation`
+
+---
+
+## Part 7.5 — `applyBaselineChange()` — the one mutation path (original draft, superseded above)
+
 
 **Objective:** ONE function that changes an applied baseline, used by both the BCR workflow (7.6)
 and de-scope (7.7). Built before the freeze so the freeze has something to guard.

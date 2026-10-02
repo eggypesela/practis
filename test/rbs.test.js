@@ -206,15 +206,23 @@ test('RB7.6 the same bucket with an ASSIGNED account is a separate line', async 
 });
 
 test('RB7.7 the database itself refuses a duplicate version, whatever the service does', () => {
-  // The service check gives a readable message; the INDEX is what makes it true.
+  // The service check gives a readable message; the database is what makes it true.
   // Written directly, bypassing the service entirely — this is the "rule that dies
   // at the first direct write" case that migration 013 exists to prevent.
+  //
+  // Two guards can answer here and EITHER is a refusal: the unique bucket index
+  // (013) or the version-is-current trigger (016), which fires first because it is
+  // BEFORE INSERT. The test accepts the message of either and then checks the row
+  // count, so it pins the OUTCOME (no duplicate row) rather than which guard spoke.
   const node = nodeByCode('2.1');
+  const before = db.prepare('SELECT COUNT(*) AS n FROM rbs_load').get().n;
   assert.throws(() => db.prepare(`INSERT INTO rbs_load
       (project_id, wbs_node_id, rbs_code, transaction_account_id, description,
        rate, units, unit_label, total_amount, version)
       VALUES (1, ?, 'L-CAR', NULL, 'duplicate', 250000, 12, 'day', 3000000, 1)`)
-    .run(node.id), /UNIQUE|constraint/i);
+    .run(node.id), /UNIQUE|constraint|newest version/i);
+  assert.strictEqual(db.prepare('SELECT COUNT(*) AS n FROM rbs_load').get().n, before,
+    'nothing was written by the refused insert');
 });
 
 // ---- versioning and history -------------------------------------------------

@@ -12,7 +12,7 @@
 -- DDL is copied verbatim out of sqlite_master. To change it, write a migration and
 -- re-run the generator — never edit this file directly.
 --
--- Composition: 43 tables, 45 indexes, 27 triggers, 9 views.
+-- Composition: 43 tables, 45 indexes, 30 triggers, 9 views.
 
 -- TABLES (43)
 CREATE TABLE acceptance_register (
@@ -650,7 +650,7 @@ CREATE UNIQUE INDEX uq_rbs_load_bucket ON rbs_load(
   version
 );
 
--- TRIGGERS (27)
+-- TRIGGERS (30)
 CREATE TRIGGER trg_audit_log_no_delete
 BEFORE DELETE ON audit_log
 BEGIN
@@ -950,6 +950,37 @@ WHEN NEW.status = 'checked' AND OLD.status IN ('blocked','rejected')
 BEGIN
   SELECT RAISE(ABORT,
     'lpb_statements: a blocked or rejected line cannot be checked — clear the block or enter a corrected line');
+END;
+CREATE TRIGGER trg_rbs_load_no_negative
+BEFORE INSERT ON rbs_load
+WHEN NEW.total_amount < 0 OR NEW.rate < 0 OR NEW.units < 0
+BEGIN
+  SELECT RAISE(ABORT, 'A resource-load figure cannot be negative.');
+END;
+CREATE TRIGGER trg_rbs_load_version_is_current_insert
+BEFORE INSERT ON rbs_load
+WHEN NEW.version <= (
+  SELECT COALESCE(MAX(r.version), 0) FROM rbs_load r
+  WHERE r.project_id = NEW.project_id
+    AND r.wbs_node_id = NEW.wbs_node_id
+    AND r.rbs_code = NEW.rbs_code
+    AND COALESCE(r.transaction_account_id, 0) = COALESCE(NEW.transaction_account_id, 0)
+)
+BEGIN
+  SELECT RAISE(ABORT, 'A resource-load row must be the newest version for its bucket.');
+END;
+CREATE TRIGGER trg_rbs_load_version_is_current_update
+BEFORE UPDATE OF version, wbs_node_id, rbs_code, transaction_account_id ON rbs_load
+WHEN NEW.version < (
+  SELECT COALESCE(MAX(r.version), 0) FROM rbs_load r
+  WHERE r.project_id = NEW.project_id
+    AND r.wbs_node_id = NEW.wbs_node_id
+    AND r.rbs_code = NEW.rbs_code
+    AND COALESCE(r.transaction_account_id, 0) = COALESCE(NEW.transaction_account_id, 0)
+    AND r.id <> NEW.id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'A resource-load row must not be given a version lower than the current one.');
 END;
 
 -- VIEWS (9)
