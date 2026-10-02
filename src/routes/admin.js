@@ -320,4 +320,134 @@ router.post('/invite/:token', async (req, res) => {
   return res.redirect('/login?setup=1');
 });
 
+// ---- module 6 task 6.4: team register (PRD §4.1 "Team register") ----
+//
+// Administrator-only, like the rest of this file: creating a team and putting
+// people in it is an administrative act. Reuses `invites.sendInvite` for the
+// invitation step rather than writing a second invite path.
+
+const teamsSvc = require('../lib/teams-service');
+
+const teamGuard = [requirePage, projectContext, requireAdmin];
+
+// Every render of the team screens shares these locals, so the success and error
+// paths cannot drift apart.
+function teamLocals(res, extra = {}) {
+  return {
+    layout: 'layout-app',
+    crumb: 'Administration / Teams',
+    active: 'Teams',
+    projectName: res.locals.project?.name || 'No project',
+    roles: q.roles(),
+    ...extra,
+  };
+}
+
+// One-time link handling mirrors the users screen: the raw token rides the
+// redirect so a browser refresh cannot silently mint a second invitation.
+function inviteFlash(query) {
+  const raw = (v, n = 200) => (typeof v === 'string' ? v.slice(0, n) : null);
+  return {
+    notice: raw(query.msg),
+    issuedLink: raw(query.token) ? `/invite/${raw(query.token)}` : null,
+    invitedEmail: raw(query.email),
+  };
+}
+
+router.get('/admin/teams', teamGuard, (req, res) => {
+  res.render('teams', teamLocals(res, {
+    title: 'Teams',
+    subtitle: 'Teams and their members · Administrator only',
+    rows: q.teams(),
+    ...inviteFlash(req.query),
+  }));
+});
+
+router.post('/admin/teams', teamGuard, (req, res) => {
+  const out = teamsSvc.createTeam(req.body, actorOf(req));
+  if (!out.ok) {
+    return res.status(out.status || 400).render('teams', teamLocals(res, {
+      title: 'Teams', subtitle: 'the team was not created',
+      rows: q.teams(), error: out.message, notice: null,
+      issuedLink: null, invitedEmail: null,
+    }));
+  }
+  return res.redirect(`/admin/teams/${out.team.id}?msg=${encodeURIComponent(`${out.team.code} created`)}`);
+});
+
+// The roster: one team, its members, and the add/invite forms.
+router.get('/admin/teams/:id', teamGuard, (req, res) => {
+  const id = idOf(req.params.id);
+  const team = id ? q.teamById(id) : null;
+  if (!team) return res.status(404).render('404', { layout: 'layout-app', title: 'Not found', subtitle: '' });
+
+  const members = q.teamMembers(id);
+  const memberIds = new Set(members.map((m) => m.id));
+  res.render('team', teamLocals(res, {
+    title: team.name,
+    subtitle: `${team.code} · members and invitations`,
+    crumb: `Administration / Teams / ${team.code}`,
+    team, members,
+    // Already-members are excluded from the assign picker: offering a choice that
+    // is guaranteed to be refused is a bad screen, not a safe one.
+    available: q.usersWithTeam().filter((u) => u.is_active === 1 && !memberIds.has(u.id)),
+    ...inviteFlash(req.query),
+  }));
+});
+
+router.post('/admin/teams/:id', teamGuard, (req, res) => {
+  const id = idOf(req.params.id);
+  const out = id ? teamsSvc.updateTeam(id, req.body, actorOf(req)) : { ok: false, status: 404, message: 'That team does not exist.' };
+  if (!out.ok) {
+    const team = id ? q.teamById(id) : null;
+    if (!team) return res.status(404).render('404', { layout: 'layout-app', title: 'Not found', subtitle: '' });
+    return res.status(out.status || 400).render('team', teamLocals(res, {
+      title: team.name, subtitle: 'the change was not saved',
+      crumb: `Administration / Teams / ${team.code}`,
+      team, members: q.teamMembers(id), available: [],
+      error: out.message, notice: null, issuedLink: null, invitedEmail: null,
+    }));
+  }
+  return res.redirect(`/admin/teams/${id}?msg=${encodeURIComponent('Team saved')}`);
+});
+
+router.post('/admin/teams/:id/members', teamGuard, (req, res) => {
+  const id = idOf(req.params.id);
+  const userId = idOf(req.body.user_id);
+  const out = (id && userId)
+    ? teamsSvc.assignMember(id, userId, actorOf(req))
+    : { ok: false, status: 400, message: 'Choose an account to add.' };
+  const msg = out.ok ? `${out.name} added to the team` : out.message;
+  return res.redirect(`/admin/teams/${id}?msg=${encodeURIComponent(msg)}`);
+});
+
+router.post('/admin/teams/:id/members/:userId/remove', teamGuard, (req, res) => {
+  const id = idOf(req.params.id);
+  const userId = idOf(req.params.userId);
+  const out = (id && userId)
+    ? teamsSvc.removeMember(id, userId, actorOf(req))
+    : { ok: false, status: 400, message: 'That account is not in this team.' };
+  const msg = out.ok ? `${out.name} removed from the team` : out.message;
+  return res.redirect(`/admin/teams/${id}?msg=${encodeURIComponent(msg)}`);
+});
+
+router.post('/admin/teams/:id/invite', teamGuard, (req, res) => {
+  const id = idOf(req.params.id);
+  const out = id
+    ? teamsSvc.inviteIntoTeam(id, {
+        email: req.body.email,
+        fullName: req.body.full_name,
+        roleCode: req.body.role_id,
+      }, actorOf(req))
+    : { ok: false, status: 404, message: 'That team does not exist.' };
+
+  if (!out.ok) {
+    return res.redirect(`/admin/teams/${id}?msg=${encodeURIComponent(out.message)}`);
+  }
+  const token = String(out.link || '').split('/invite/')[1] || '';
+  return res.redirect(
+    `/admin/teams/${id}?msg=${encodeURIComponent(`Invitation created for ${out.email}`)}`
+    + `&email=${encodeURIComponent(out.email)}&token=${encodeURIComponent(token)}`);
+});
+
 module.exports = router;

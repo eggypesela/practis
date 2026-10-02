@@ -545,6 +545,101 @@ green one):**
   **A test that accuses the code is not automatically right — check whether the data is legitimately
   public before "fixing" the app.**
 
+---
+
+## 12g. SP4 / TM4 — Supplier + team registers — ✅ IMPLEMENTED 2026-10-02
+
+PRD §4.1 "Supplier register" (Procurement → Finance → Admin) and "Team register" (Admin creates the
+team and its roles, invites members). The supplier register is the **third** consumer of
+`approvals-service.js`, which is the point: the identical rule must hold in all three.
+
+### Supplier (`test/suppliers.test.js`, port 3911)
+
+| ID | Assertion |
+|---|---|
+| SP4.1 | registering records **all four** PRD §4.1 steps as `pending`; create is audited |
+| SP4.2 | a duplicate code is refused with a sentence, no second row |
+| SP4.3 | a supplier needs a name (whitespace is not a name) |
+| SP4.4 | a malformed email is refused |
+| SP4.5 | **an edit posting NO code (the real browser shape) still saves** |
+| SP4.6 | a posted `code=SP-HACKED` is **ignored** — the code is set once |
+| SP4.7 | a **different** approver needs no reason, `self_approved: false` |
+| SP4.8 | the creator **cannot** self-approve without a reason (DB still `pending`, no actor) |
+| SP4.9 | the creator **can** self-approve with a reason — stored on the approval **and** the trail |
+| SP4.10 | approving twice is refused and adds no second approved row |
+| SP4.11 | a Viewer cannot register (403 **and** row count unchanged) |
+| SP4.12 | a Viewer cannot approve (403 and still `pending`) |
+| SP4.13 | a supplier is deactivated, never deleted |
+| SP4.14 | the register lists suppliers for a signed-in user |
+| SP4.15 | an unknown supplier id is a 404 page, not a crash |
+| SP4.16 | anonymous `/suppliers` redirects to `/login` |
+
+### Team (`test/teams.test.js`, port 3912)
+
+| ID | Assertion |
+|---|---|
+| TM4.1 | creating a team writes the row and an audit event |
+| TM4.2 | a duplicate code is refused, nothing written |
+| TM4.3 | a team needs a name |
+| TM4.4 | the team list and the roster render |
+| TM4.5 | an unknown team id is a 404 page |
+| TM4.6 | anonymous visitors are redirected to sign in |
+| TM4.7 | assigning an existing account sets `users.team_id` and audits it |
+| TM4.8 | adding someone already in the team changes nothing (no second audit row) |
+| TM4.9 | moving a member records **both** the old and the new team |
+| TM4.10 | removing a member clears the assignment, keeps the account, **leaves roles untouched** |
+| TM4.11 | inviting into a team creates the invitation **and** the membership in one step |
+| TM4.12 | a Project Manager cannot create a team (403, nothing written) |
+| TM4.13 | a Project Manager cannot open the team screens (403) |
+| TM4.14 | a Viewer cannot add a member (403, DB unchanged) |
+| TM4.15 | **a team carries NO approval chain** (`approvals` has zero `team` rows) |
+| TM4.16 | editing posts no code and a crafted code cannot rename the team |
+
+**Design decisions worth recording:**
+
+- **Membership IS `users.team_id`.** The schema has no junction table (`db/schema.sql` line 546), so
+  "add a member" is an assignment on the account, not a link-table insert. Moving someone records both
+  ends so "who was where when" stays readable.
+- **A team grants nothing.** Access comes from `user_roles`. TM4.10 and TM4.14 pin this: team changes
+  must never touch a role row. Conflating a team with a permission set is the specific failure mode
+  this register invites.
+- **No approval chain for teams.** `approvals-service.js` covers project/client/supplier — registers of
+  *parties*. A team is an internal grouping; PRD §4.1 gives it no verify/approve steps, and inventing
+  one would be inventing a control. TM4.15 asserts the absence.
+- **Invitations reuse `invites.sendInvite`.** The plan is explicit that a second invite path must not
+  be written — two paths means two places for the token/expiry/hashing rules to drift. TM4.11 asserts
+  a real `user_invitations` row, i.e. the shared machinery actually ran.
+- **`suppliers.approved_by` / `approved_at` are deliberately left unmaintained.** They are legacy
+  columns (nothing in `src/` reads them) that can hold one name and one date. The `approvals` table is
+  authoritative because it records *which step*, by whom, when and why. Filling in the legacy pair too
+  would create a second source of truth for the same fact, and the two would drift.
+
+---
+
+## 12h. SCH-ERR — error pages (404 contract + 500 content negotiation) — ✅ IMPLEMENTED 2026-10-02
+
+| ID | Assertion |
+|---|---|
+| SCH-ERR.1 | a **browser** hitting a crashing page gets an HTML page (and `500.ejs` compiles) |
+| SCH-ERR.2 | a client asking for JSON (`Accept: application/json`) still gets JSON |
+| SCH-ERR.3 | a throw inside an **`/api/`** route returns JSON even though fetch sends `Accept: */*` |
+| SCH-ERR.4 | a browser asking for `text/html` gets HTML, not JSON |
+| SCH-ERR.5 | the 500 body never leaks the error message or stack (information disclosure) |
+| SCH-ERR.6 | the 404 handler renders the `404` view with the documented locals |
+
+The 500 handler previously answered `res.json({error:'internal error'})` for **every** request, so a
+signed-in user whose page hit a bug saw the raw string `{"error":"internal error"}` — no navigation, no
+way to tell whether their data saved. Meanwhile a *typo* in a URL got a properly designed 404 page.
+
+The content-negotiation rule is **not** a naive `Accept: text/html` test: `fetch()` and XHR send
+`Accept: */*`, so an error inside the import screen (an `/api/` route) must still answer JSON or the
+screen tries to parse `<!DOCTYPE` as JSON. The URL space is the deciding signal
+(`req.path.startsWith('/api/')`), mirroring how `requireApiCapability` already separates the two.
+
+The handlers were **inline in `server.js`**, where no test could reach them — which is precisely why a
+defect this visible survived 266 passing tests. They now live in `src/lib/error-handler.js` with a unit
+test, so the error path is testable without a router internals hack.
+
 **Identity leak (FIXED 2026-10-02):** the repo-local git identity was set to the personal Gmail
 address rather than the `…@users.noreply.github.com` noreply alias the history rewrite used, so the
 five commits after `eaf8def` (7c9cef3, 0f2c851, efc40b7, 241a4fb) republished it on the PUBLIC repo,

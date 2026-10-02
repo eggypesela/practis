@@ -80,6 +80,28 @@ const _updateClient = db.prepare(`
     active = @active
   WHERE id = @id`);
 
+// ---- supplier register (module 6 task 6.4) --------------------------------
+// `active` is selected explicitly so a reader can filter without a second query;
+// there is no lookup table for `supplier_type` (it is legacy free text), so no
+// LEFT JOIN is needed — unlike clients/industry_types.
+const _suppliers = db.prepare(`SELECT * FROM suppliers ORDER BY name`);
+
+const _insertSupplier = db.prepare(`
+  INSERT INTO suppliers (code, name, supplier_type, address, correspondence_person, email, phone, description, created_by, active)
+  VALUES (@code, @name, @supplier_type, @address, @correspondence_person, @email, @phone, @description, @created_by, 1)`);
+
+const _updateSupplier = db.prepare(`
+  UPDATE suppliers SET
+    name = @name,
+    supplier_type = @supplier_type,
+    address = @address,
+    correspondence_person = @correspondence_person,
+    email = @email,
+    phone = @phone,
+    description = @description,
+    active = @active
+  WHERE id = @id`);
+
 const _ledgerForProject = db.prepare(`
   SELECT v.*, r.id AS reversal_id, r.date AS reversal_date
   FROM v_ledger_period v
@@ -221,6 +243,33 @@ const _allUsers = db.prepare(`
   ORDER BY u.is_active DESC, r.name, u.email`);
 
 const _roles = db.prepare(`SELECT code, name, domain FROM roles ORDER BY domain, name`);
+
+// ---- team register (module 6 task 6.4) --------------------------------------
+// Membership IS `users.team_id` (schema line 546) — there is no junction table,
+// so a member count and the roster both read from `users`.
+const _teams = db.prepare(`
+  SELECT t.*, (SELECT COUNT(*) FROM users u WHERE u.team_id = t.id) AS member_count
+  FROM teams t
+  ORDER BY t.name`);
+
+const _teamById = db.prepare(`
+  SELECT t.*, (SELECT COUNT(*) FROM users u WHERE u.team_id = t.id) AS member_count
+  FROM teams t WHERE t.id = ?`);
+
+// Member roster, with the member's GLOBAL role (project_id IS NULL) — the same
+// grant the admin-users screen shows.
+const _teamMembers = db.prepare(`
+  SELECT u.id, u.email, u.full_name, u.is_active,
+         COALESCE(r.code, '') AS role_code, COALESCE(r.name, '—') AS role_name
+  FROM users u
+  LEFT JOIN user_roles ur ON ur.user_id = u.id AND ur.project_id IS NULL
+  LEFT JOIN roles r ON r.code = ur.role_code
+  WHERE u.team_id = ?
+  ORDER BY u.full_name`);
+
+const _insertTeam = db.prepare(`INSERT INTO teams (code, name, active) VALUES (@code, @name, 1)`);
+
+const _updateTeam = db.prepare(`UPDATE teams SET name = @name, active = @active WHERE id = @id`);
 
 const _userWithRole = db.prepare(`
   SELECT u.*, COALESCE(r.code, '') AS role_code, COALESCE(r.name, '—') AS role_name,
@@ -577,6 +626,14 @@ module.exports = {
   insertClient: (row) => _insertClient.run(row),
   updateClient: (row) => _updateClient.run(row),
   industryTypes: () => _industryTypes.all(),
+  // ---- supplier register (module 6 task 6.4) ----
+  suppliers: () => _suppliers.all(),
+  suppliersAll: () => _suppliers.all(),
+  // Active only — the supplier pickers want the ones a user may actually choose.
+  suppliersActive: () => _suppliers.all().filter((s) => s.active === 1),
+  supplierById: (id) => db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id),
+  insertSupplier: (row) => _insertSupplier.run(row),
+  updateSupplier: (row) => _updateSupplier.run(row),
   insertLedger: (row) => _insertLedger.run(row),
   insertLedgerAudit: (entityId, actorId, after) =>
     _insertLedgerAudit.run(entityId, actorId, JSON.stringify(after)),
@@ -590,6 +647,20 @@ module.exports = {
       after == null ? null : JSON.stringify(after)),
 
   // ---- user administration (TS-01 §3.1) ----
+  // ---- team register (module 6 task 6.4) ----
+  teams: () => _teams.all(),
+  teamById: (id) => _teamById.get(id),
+  teamMembers: (id) => _teamMembers.all(id),
+  insertTeam: (row) => _insertTeam.run(row),
+  updateTeam: (row) => _updateTeam.run(row),
+  setUserTeam: (userId, teamId) =>
+    db.prepare('UPDATE users SET team_id = ? WHERE id = ?').run(teamId, userId),
+  // Every account, with its current team (by NAME) — the "assign a member"
+  // picker shows who is already in another team rather than hiding them.
+  usersWithTeam: () => db.prepare(`
+    SELECT u.id, u.email, u.full_name, u.is_active, u.team_id, t.name AS team_name
+    FROM users u LEFT JOIN teams t ON t.id = u.team_id
+    ORDER BY u.full_name`).all(),
   allUsers: () => _allUsers.all(),
   roles: () => _roles.all(),
   userWithRole: (id) => _userWithRole.get(id),

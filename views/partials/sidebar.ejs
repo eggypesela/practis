@@ -13,6 +13,7 @@
     <a href="/" class="<%= _active === 'Dashboard' ? 'on' : '' %>"><svg><use href="#i-grid"/></svg><span class="lbl">Dashboard</span></a>
     <a href="/projects" class="<%= _active === 'Projects' ? 'on' : '' %>"><svg><use href="#i-folder"/></svg><span class="lbl">Projects</span></a>
     <a href="/clients" class="<%= _active === 'Clients' ? 'on' : '' %>"><svg><use href="#i-users"/></svg><span class="lbl">Clients</span></a>
+    <a href="/suppliers" class="<%= _active === 'Suppliers' ? 'on' : '' %>"><svg><use href="#i-in"/></svg><span class="lbl">Suppliers</span></a>
     <a href="#"><svg><use href="#i-chart"/></svg><span class="lbl">Reports</span></a>
     <div class="pctx">
       <span class="pc-lbl caps">Project</span>
@@ -48,6 +49,7 @@
     <% if (typeof isAdmin !== 'undefined' && isAdmin) { %>
     <div class="grp caps">Administration</div>
     <a href="/admin/users" class="<%= _active === 'Users' ? 'on' : '' %>"><svg><use href="#i-users"/></svg><span class="lbl">Users &amp; roles</span></a>
+    <a href="/admin/teams" class="<%= _active === 'Teams' ? 'on' : '' %>"><svg><use href="#i-tree"/></svg><span class="lbl">Teams</span></a>
     <a href="/periods" class="<%= _active === 'Accounting periods' ? 'on' : '' %>"><svg><use href="#i-book"/></svg><span class="lbl">Accounting periods</span></a>
     <% } %>
   </nav>

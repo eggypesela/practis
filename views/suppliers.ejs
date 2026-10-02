@@ -1,0 +1,75 @@
+<%# Supplier register (module 6 task 6.4, PRD §4.1 "Supplier register").
+    Org-wide, NOT project-scoped: one supplier serves many projects, so this list
+    is deliberately not filtered by the current project. %>
+
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Approval refused.</b> <%= error %></p></div></div>
+<% } %>
+<% if (typeof saved !== 'undefined' && saved) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b>Registered.</b>
+  <%= typeof code !== 'undefined' && code ? code : 'The supplier' %> was added and is awaiting approval.</div>
+<% } %>
+
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-users"/></svg>Suppliers</div>
+    <div class="v"><%= rows.length %></div><div class="f">on the register</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Awaiting approval</div>
+    <div class="v"><%= awaiting %></div>
+    <div class="f"><span class="wn">not yet approved</span></div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-file"/></svg>Inactive</div>
+    <div class="v"><%= inactive %></div><div class="f">kept for history</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-cash"/></svg>Active</div>
+    <div class="v"><%= rows.length - inactive %></div><div class="f">available to select</div></div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Supplier register</h2><span class="r"><%= rows.length %> shown</span></div>
+  <div class="tw"><table>
+    <thead><tr>
+      <th>Code</th><th>Name</th><th>Type</th><th>Contact</th><th>Email</th>
+      <th>Status</th><th>Approval</th><th></th>
+    </tr></thead>
+    <tbody>
+      <% rows.forEach(function(s){ %>
+      <tr>
+        <td class="mono"><%= s.code %></td>
+        <td><%= s.name %></td>
+        <td><%= s.supplier_type || '—' %></td>
+        <td><%= s.correspondence_person || '—' %></td>
+        <td><%= s.email || '—' %></td>
+        <td>
+          <% if (s.active === 1) { %><span class="chip ok">active</span>
+          <% } else { %><span class="chip">inactive</span><% } %>
+        </td>
+        <td>
+          <% if (s.approved) { %><span class="chip ok">approved</span>
+          <% } else { %><span class="chip nt">pending</span><% } %>
+        </td>
+        <td class="r">
+          <% if (typeof caps !== 'undefined' && caps.canManageSuppliers) { %>
+            <a class="btn" href="/suppliers/<%= s.id %>/edit">Edit</a>
+          <% } %>
+          <% if (!s.approved && typeof caps !== 'undefined' && caps.canApproveSuppliers) { %>
+            <form method="post" action="/suppliers/<%= s.id %>/approve" style="display:inline">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <input type="text" name="reason" placeholder="reason, if you registered it"
+                     <%= (typeof needsReason !== 'undefined' && needsReason && errorSupplier === s.id) ? 'required' : '' %>
+                     style="width:190px">
+              <button class="btn pri" type="submit">Approve</button>
+            </form>
+          <% } %>
+        </td>
+      </tr>
+      <% }) %>
+      <% if (!rows.length) { %>
+      <tr><td colspan="8" class="empty">No supplier has been registered yet.</td></tr>
+      <% } %>
+    </tbody>
+  </table></div>
+  <div class="fnote"><svg><use href="#i-info"/></svg><span>A supplier is deactivated rather than deleted —
+    ledger lines already reference it, and history must stay readable. Approving a supplier you registered
+    yourself requires a written reason, which is kept in the audit trail. Suppliers are never project-scoped.</span></div>
+</div>
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
+</defs></svg>

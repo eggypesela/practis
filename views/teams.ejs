@@ -1,0 +1,54 @@
+<%# Team register (module 6 task 6.4, PRD §4.1 "Team register":
+    Admin creates the team and its roles, invites members).
+    Org-wide, Administrator-only. A team is an internal grouping, NOT a register
+    of parties, so it carries no approval chain. %>
+
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Not saved.</b> <%= error %></p></div></div>
+<% } %>
+<% if (typeof notice !== 'undefined' && notice) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><%= notice %></div>
+<% } %>
+
+<div class="grid k3">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-users"/></svg>Teams</div>
+    <div class="v"><%= rows.length %></div><div class="f">on the register</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Active</div>
+    <div class="v"><%= rows.filter(function(t){ return t.active === 1; }).length %></div>
+    <div class="f">available to assign</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-file"/></svg>Members</div>
+    <div class="v"><%= rows.reduce(function(n,t){ return n + t.member_count; }, 0) %></div>
+    <div class="f">assigned across teams</div></div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Team register</h2><span class="r"><%= rows.length %> shown</span></div>
+  <div class="tw"><table>
+    <thead><tr>
+      <th>Code</th><th>Name</th><th class="r">Members</th><th>Status</th><th></th>
+    </tr></thead>
+    <tbody>
+      <% rows.forEach(function(t){ %>
+      <tr>
+        <td class="mono"><%= t.code %></td>
+        <td><%= t.name %></td>
+        <td class="r mono"><%= t.member_count %></td>
+        <td>
+          <% if (t.active === 1) { %><span class="chip ok">active</span>
+          <% } else { %><span class="chip">inactive</span><% } %>
+        </td>
+        <td class="r"><a class="btn" href="/admin/teams/<%= t.id %>">Open</a></td>
+      </tr>
+      <% }) %>
+      <% if (!rows.length) { %>
+      <tr><td colspan="5" class="empty">No team has been created yet.</td></tr>
+      <% } %>
+    </tbody>
+  </table></div>
+  <div class="fnote"><svg><use href="#i-info"/></svg><span>Creating a team is an Administrator task (PRD §4.1).
+    A team groups people; it does not grant access on its own — access comes from the roles granted on the
+    Users &amp; roles screen. Teams carry no approval chain because they are internal, not a party you contract with.</span></div>
+</div>
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
+</defs></svg>

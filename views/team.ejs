@@ -1,0 +1,114 @@
+<%# The team roster (module 6 task 6.4). One team, its members, and the invite
+    machinery (PRD §4.1 step 3: "Team receives email invitation, creates account").
+    Membership IS `users.team_id`, so this screen assigns an existing account, and
+    the invite form below creates a new one INTO this team. %>
+
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Not saved.</b> <%= error %></p></div></div>
+<% } %>
+<% if (typeof notice !== 'undefined' && notice) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><%= notice %></div>
+<% } %>
+<% if (typeof issuedLink !== 'undefined' && issuedLink) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b>Invitation created.</b> Give this one-time link to
+  <%= invitedEmail %>: <span class="mono"><%= issuedLink %></span></div>
+<% } %>
+
+<div class="card">
+  <div class="card-hd"><h2><%= team.code %></h2>
+    <span class="r"><%= team.active === 1 ? 'active' : 'inactive' %></span></div>
+  <div class="fbody">
+    <div class="fnote"><svg><use href="#i-info"/></svg><span>Members are accounts assigned to this team.
+      A person joins by being assigned here, or by receiving an invitation below and creating an account.
+      Team membership does not grant permissions by itself — grant roles on the Users &amp; roles screen.</span></div>
+  </div>
+</div>
+
+<form method="post" action="/admin/teams/<%= team.id %>" style="margin-top:12px">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+<div class="card" style="max-width:720px">
+  <div class="card-hd"><h2>Team details</h2><span class="r">PRD §4.1</span></div>
+  <div class="fbody">
+    <label class="fld">Team code <span class="dim">set at creation and not editable</span>
+      <input type="text" value="<%= team.code %>" readonly disabled></label>
+
+    <label class="fld">Team name
+      <input type="text" name="name" required value="<%= team.name %>"></label>
+
+    <label class="fld">Status
+      <select name="active">
+        <option value="1" <%= team.active === 1 ? 'selected' : '' %>>active</option>
+        <option value="0" <%= team.active === 0 ? 'selected' : '' %>>inactive</option>
+      </select></label>
+
+    <button class="btn pri wide" type="submit"><svg><use href="#i-check"/></svg>Save team</button>
+  </div>
+</div>
+</form>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Members</h2><span class="r"><%= members.length %> assigned</span></div>
+  <div class="tw"><table>
+    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+      <% members.forEach(function(m){ %>
+      <tr>
+        <td><%= m.full_name %></td>
+        <td><%= m.email %></td>
+        <td><%= m.role_code || '—' %></td>
+        <td>
+          <% if (m.is_active === 1) { %><span class="chip ok">active</span>
+          <% } else { %><span class="chip nt">invited</span><% } %>
+        </td>
+        <td class="r">
+          <form method="post" action="/admin/teams/<%= team.id %>/members/<%= m.id %>/remove" style="display:inline">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button class="btn" type="submit">Remove from team</button>
+          </form>
+        </td>
+      </tr>
+      <% }) %>
+      <% if (!members.length) { %>
+      <tr><td colspan="5" class="empty">Nobody is assigned to this team yet.</td></tr>
+      <% } %>
+    </tbody>
+  </table></div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Add members</h2><span class="r">assign or invite</span></div>
+  <div class="fbody">
+    <form method="post" action="/admin/teams/<%= team.id %>/members">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <label class="fld">Assign an existing account
+        <select name="user_id">
+          <option value="">— choose an account —</option>
+          <% available.forEach(function(u){ %>
+          <option value="<%= u.id %>"><%= u.full_name %> · <%= u.email %><%= u.team_name ? ' (in ' + u.team_name + ')' : '' %></option>
+          <% }) %>
+        </select></label>
+      <button class="btn pri" type="submit"><svg><use href="#i-plus"/></svg>Add to team</button>
+    </form>
+
+    <div class="fnote" style="margin-top:10px"><svg><use href="#i-info"/></svg><span>Inviting creates the account
+      AND puts the new person in this team in one step.</span></div>
+
+    <form method="post" action="/admin/teams/<%= team.id %>/invite">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <label class="fld">Full name
+        <input type="text" name="full_name" maxlength="200" placeholder="The person's name"></label>
+      <label class="fld">Email
+        <input type="email" name="email" maxlength="200" placeholder="name@example.com"></label>
+      <label class="fld">Role <span class="dim">what they may do — access comes from the role, not the team</span>
+        <select name="role_id">
+          <% roles.forEach(function(r){ %>
+          <option value="<%= r.code %>"><%= r.name %></option>
+          <% }) %>
+        </select></label>
+      <button class="btn pri wide" type="submit"><svg><use href="#i-plus"/></svg>Invite to team</button>
+    </form>
+  </div>
+</div>
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
+</defs></svg>

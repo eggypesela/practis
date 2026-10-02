@@ -18,6 +18,7 @@ const { projectsFor, capabilities } = require('../lib/permissions');
 const requirePage = require('../middleware/auth').requirePage;
 const svc = require('../lib/projects-service');
 const clientsSvc = require('../lib/clients-service');
+const suppliersSvc = require('../lib/suppliers-service');
 
 const IDR = new Intl.NumberFormat('id-ID');
 const fmt = (n) => IDR.format(n || 0);
@@ -65,7 +66,7 @@ function page(res, title, subtitle, crumb, bodyView, opts = {}) {
 // The path list must be an ARRAY (or an anchored regex). Express 5's
 // '/projects/{*path}' and '/projects/*splat' forms were tested and SILENTLY DROP
 // the guard on the bare prefix '/projects' itself — see TEST_PLAN §12f.
-const PAGE_PATHS = ['/projects', '/clients'];
+const PAGE_PATHS = ['/projects', '/clients', '/suppliers'];
 router.use(PAGE_PATHS, requirePage);
 
 // The register carries a cost-to-date figure per project, so it needs the same
@@ -367,6 +368,127 @@ router.post('/clients/:id/approve',
       });
     }
     return res.redirect(`/clients?approved=${id}`);
+  });
+
+// ---- module 6 task 6.4: supplier register -----------------------------------
+//
+// Suppliers are NOT project-scoped, for the same reason clients are not: one
+// supplier serves many projects, so the register is org-wide and the middleware
+// ordering (requirePage only) is deliberate.
+
+router.get('/suppliers', (req, res) => {
+  const caps = capabilities(req.user);
+  const rows = q.suppliersAll().map((s) => {
+    const state = suppliersSvc.approvalState('supplier', s.id);
+    return { ...s, approved: state.isApproved, approval: state.rows };
+  });
+
+  page(res, 'Suppliers', 'The supplier register · who the project buys from',
+    'Portfolio / Suppliers', 'suppliers', {
+      active: 'Suppliers',
+      actions: caps.canManageSuppliers
+        ? '<a class="btn pri" href="/suppliers/new"><svg><use href="#i-plus"/></svg>Register supplier</a>'
+        : '',
+      locals: {
+        rows, caps,
+        awaiting: rows.filter((r) => !r.approved).length,
+        inactive: rows.filter((r) => r.active !== 1).length,
+        saved: req.query.saved ? Number(req.query.saved) : null,
+        code: req.query.code || null,
+        error: null, errorSupplier: null, needsReason: false,
+      },
+    });
+});
+
+router.get('/suppliers/new',
+  requireCapability('canManageSuppliers', 'Registering a supplier is a Procurement, Finance, Project Manager, Project Controller or Project Admin task.'),
+  (req, res) => {
+    page(res, 'Register supplier', 'PRD §4.1 · the supplier register',
+      'Portfolio / Suppliers / New', 'supplier-new', {
+        active: 'Suppliers',
+        locals: { form: {}, error: null, field: null },
+      });
+  });
+
+router.post('/suppliers',
+  requireCapability('canManageSuppliers', 'Registering a supplier is a Procurement, Finance, Project Manager, Project Controller or Project Admin task.'),
+  (req, res) => {
+    const out = suppliersSvc.createSupplier(req.body, req.user.id);
+    if (!out.ok) {
+      return res.status(out.status || 400).render('supplier-new', {
+        layout: 'layout-app', title: 'Register supplier',
+        subtitle: 'PRD §4.1 · the supplier was not registered',
+        crumb: 'Portfolio / Suppliers / New', active: 'Suppliers', actions: '',
+        projectName: res.locals.project?.name || 'No project',
+        form: req.body, error: out.message, field: out.field,
+      });
+    }
+    return res.redirect(`/suppliers?saved=${out.supplier.id}&code=${encodeURIComponent(out.supplier.code)}`);
+  });
+
+router.get('/suppliers/:id/edit',
+  requireCapability('canManageSuppliers', 'Editing a supplier is a Procurement, Finance, Project Manager, Project Controller or Project Admin task.'),
+  (req, res) => {
+    const supplier = q.supplierById(Number(req.params.id));
+    if (!supplier) {
+      return res.status(404).render('404', {
+        layout: 'layout-app', title: 'Not found', subtitle: '', projectName: 'No project',
+      });
+    }
+    page(res, `Edit ${supplier.code}`, `${supplier.name} · registration details`,
+      `Portfolio / Suppliers / ${supplier.code}`, 'supplier-edit', {
+        active: 'Suppliers',
+        locals: {
+          supplier, form: supplier, error: null, field: null,
+          state: suppliersSvc.approvalState('supplier', supplier.id),
+        },
+      });
+  });
+
+router.post('/suppliers/:id',
+  requireCapability('canManageSuppliers', 'Editing a supplier is a Procurement, Finance, Project Manager, Project Controller or Project Admin task.'),
+  (req, res) => {
+    const id = Number(req.params.id);
+    const out = suppliersSvc.updateSupplier(id, req.body, req.user.id);
+    if (!out.ok) {
+      const supplier = q.supplierById(id);
+      return res.status(out.status || 400).render('supplier-edit', {
+        layout: 'layout-app',
+        title: supplier ? `Edit ${supplier.code}` : 'Edit supplier',
+        subtitle: 'the change was not saved', crumb: 'Portfolio / Suppliers',
+        active: 'Suppliers', actions: '',
+        projectName: res.locals.project?.name || 'No project',
+        supplier: supplier || {}, form: req.body, error: out.message, field: out.field,
+        state: suppliersSvc.approvalState('supplier', id),
+      });
+    }
+    return res.redirect(`/suppliers?updated=${id}`);
+  });
+
+router.post('/suppliers/:id/approve',
+  requireCapability('canApproveSuppliers', 'Approving a supplier is a Project Manager task.'),
+  (req, res) => {
+    const id = Number(req.params.id);
+    const out = suppliersSvc.approveSupplier(id, req.user.id, req.body.reason);
+    if (!out.ok) {
+      const supplier = q.supplierById(id);
+      if (!supplier) return res.redirect('/suppliers');
+      const caps = capabilities(req.user);
+      return res.status(out.status || 400).render('suppliers', {
+        layout: 'layout-app', title: 'Suppliers',
+        subtitle: 'the approval was refused', crumb: 'Portfolio / Suppliers',
+        active: 'Suppliers', actions: '',
+        projectName: res.locals.project?.name || 'No project',
+        rows: q.suppliersAll().map((s) => {
+          const st = suppliersSvc.approvalState('supplier', s.id);
+          return { ...s, approved: st.isApproved, approval: st.rows };
+        }),
+        caps, awaiting: 0, inactive: 0,
+        saved: null, code: null,
+        error: out.message, errorSupplier: id, needsReason: out.field === 'reason',
+      });
+    }
+    return res.redirect(`/suppliers?approved=${id}`);
   });
 
 module.exports = router;

@@ -698,21 +698,28 @@ bill an invoice, confirm `v_aging.days_aged` moves off `current` only after the 
 
 ---
 
-#### Task 6.4 — Supplier and team registers
+#### Task 6.4 — Supplier and team registers — ✅ DONE 2026-10-02
 
 **Objective:** PRD §4.1 "Supplier register" (Procurement → Finance → Admin) and "Team register"
 (Admin creates team + roles, invites members).
 
-**Files:** Create `src/lib/suppliers-service.js`, `views/suppliers.ejs`, `views/teams.ejs`;
-modify `src/routes/projects.js`, `src/routes/admin.js` (teams live under Admin); extend tests.
+**Built:** `src/lib/suppliers-service.js` (delegates the chain to `approvals-service.js`, which
+already carried the supplier steps), `src/lib/teams-service.js`, `views/suppliers.ejs`,
+`views/supplier-new.ejs`, `views/supplier-edit.ejs`, `views/teams.ejs`, `views/team.ejs`; supplier
+routes in `src/routes/projects.js`, team routes in `src/routes/admin.js`; supplier/team accessors in
+`src/db/queries.js`; capabilities in `src/lib/permissions.js`; sidebar links; tests
+**SP4.1–SP4.16** (port 3911) and **TM4.1–TM4.16** (port 3912).
 
-**Note:** team invitations already exist (`src/lib/invites.js`, `POST /admin/invitations/:id/resend`).
-**Reuse that machinery — do not write a second invite path.** Team = a `teams` row + `user_roles`
-grants; the invitation flow already covers account creation.
+**Decisions taken while building:**
 
-**Verify:** new tests + `npm test` green.
-
-**Commit.**
+- **No migration was needed.** 012 already added `suppliers.created_by`, and `approvals-service.js`
+  already had the supplier REQUIRED/ RECORDED steps and approver roles. Nothing new was invented.
+- **Teams have NO approval chain.** A team is an internal grouping, not a register of parties; the
+  PRD gives it no verify/approve steps. Membership IS `users.team_id` (no junction table exists).
+- **A team grants no access.** Roles do. Team changes must never touch `user_roles` (pinned by tests).
+- **`suppliers.approved_by`/`approved_at` are left unmaintained** — legacy columns nothing reads; the
+  `approvals` table is authoritative and a second source of truth would drift.
+- **Invitations reuse `invites.sendInvite`** rather than a second invite path.
 
 ---
 

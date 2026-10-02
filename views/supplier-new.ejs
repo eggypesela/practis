@@ -1,0 +1,53 @@
+<%# Register a supplier (module 6 task 6.4, PRD §4.1 "Supplier register").
+    `supplier_type` is legacy free text (there is no lookup table), so it is an
+    open text field rather than a select. %>
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Not registered.</b> <%= error %></p></div></div>
+<% } %>
+
+<% const v = (k) => (typeof form !== 'undefined' && form && form[k] != null) ? form[k] : ''; %>
+<% const bad = (k) => (typeof field !== 'undefined' && field === k) ? 'aria-invalid="true"' : ''; %>
+
+<form method="post" action="/suppliers">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+<div class="card" style="max-width:720px">
+  <div class="card-hd"><h2>Supplier registration</h2><span class="r">PRD §4.1 · supplier register</span></div>
+  <div class="fbody">
+    <label class="fld">Supplier code <span class="dim">unique, e.g. SP-2027</span>
+      <input type="text" name="code" maxlength="40" required <%= bad('code') %>
+             value="<%= v('code') %>" placeholder="SP-2027"></label>
+
+    <label class="fld">Supplier name
+      <input type="text" name="name" required <%= bad('name') %>
+             value="<%= v('name') %>" placeholder="Who the supplier is"></label>
+
+    <label class="fld">Supplier type <span class="dim">optional — free text, e.g. materials, services</span>
+      <input type="text" name="supplier_type" maxlength="100" value="<%= v('supplier_type') %>"></label>
+
+    <label class="fld">Correspondence person <span class="dim">optional — who you deal with</span>
+      <input type="text" name="correspondence_person" maxlength="200"
+             value="<%= v('correspondence_person') %>"></label>
+
+    <label class="fld">Email <span class="dim">optional</span>
+      <input type="email" name="email" maxlength="200" <%= bad('email') %> value="<%= v('email') %>"></label>
+
+    <label class="fld">Phone <span class="dim">optional</span>
+      <input type="text" name="phone" maxlength="50" value="<%= v('phone') %>"></label>
+
+    <label class="fld">Address <span class="dim">optional</span>
+      <textarea name="address" rows="2" maxlength="500"><%= v('address') %></textarea></label>
+
+    <label class="fld">Description <span class="dim">optional</span>
+      <textarea name="description" rows="2" maxlength="1000"><%= v('description') %></textarea></label>
+
+    <div class="fnote"><svg><use href="#i-info"/></svg><span>Registration also starts the approval chain:
+      the supplier is <b>not approved</b> until a Project Manager approves it. Only an approved, active
+      supplier should be chosen on cost documents.</span></div>
+
+    <button class="btn pri wide" type="submit"><svg><use href="#i-plus"/></svg>Register supplier</button>
+  </div>
+</div>
+</form>
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
+</defs></svg>

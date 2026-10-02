@@ -75,6 +75,19 @@ function capabilities(user) {
   // Decision 8A (LIGHT): the PM approves. See approvals-service.js for why the
   // creator may approve their own record with a written reason.
   const canApproveClients = has('project_manager');
+  // --- Supplier register (module 6 task 6.4, PRD §4.1) ---------------------
+  // PRD §4.1: "Procurement → Finance → Admin". Registering master data is the
+  // same class of act as registering a project or client, so the initiator set
+  // matches; `procurement` is added because the PRD names them as the starters
+  // of this register. Approval is LIGHT (decision 8A): the PM approves.
+  const canManageSuppliers = has('procurement', 'finance', 'project_manager', 'project_controller', 'project_admin');
+  const canApproveSuppliers = has('project_manager');
+  // --- Team register (module 6 task 6.4, PRD §4.1) -------------------------
+  // PRD §4.1: "Admin creates the team and its roles, invites members." Creating
+  // a team is an ADMINISTRATOR act. Teams carry no approval chain (they are not
+  // a register of parties, they are an internal grouping), so there is no
+  // canApproveTeams. Administrators pass `has(...)` by design (see above).
+  const canManageTeams = has('administrator');
   return {
     roles,
     isAdmin,
@@ -113,6 +126,13 @@ function capabilities(user) {
     canManageClients,
     canApproveClients,
     canViewClients: true,
+    // --- Supplier register -------------------------------------------------
+    canManageSuppliers,
+    canApproveSuppliers,
+    canViewSuppliers: true,
+    // --- Team register -----------------------------------------------------
+    canManageTeams,
+    canViewTeams: true,
   };
 }
 
