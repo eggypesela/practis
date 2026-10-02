@@ -527,6 +527,30 @@ that isn't there. The misleading UI label "drives the aging report due date" was
 **Test-harness lesson:** a test that posts fields a browser would not post can pass while the real UI
 is broken. When a field is disabled on purpose, the test must mirror the browser.
 
+**CARRY-OVER DEFECTS FIXED IN THE NEXT COMMIT (this one shipped two red tests — a true report, not a
+green one):**
+
+- **AZ4.4** — "Finance CAN stage and confirm" failed with `8 !== 9`. `test/authz.test.js`'s
+  `csvWith()` built a **single debit line**: a legal per-row shape, but not a double entry. §8.4 now
+  quarantines it, so the row never reached the ledger and the test failed for a *balance* reason while
+  looking like an authorization failure. Fixed by writing a real two-line entry (debit the cost,
+  credit the bank, both against seeded COA codes) and asserting `before + 2`. **Do not "fix" this by
+  weakening §8.4** — the export's own shape is two-leg and the fixture proves it.
+- **I8.4** — "EVERY page route demands a session" reported `/invite/1` as a leak. It is not: the
+  invitation-acceptance page MUST be public (a new user has no session yet), and it is safe because
+  the token is the credential (32 random bytes, stored only as a hash, one generic message for
+  missing/used/revoked). The route was simply absent from the test's `PUBLIC` list. Also note the
+  list is now matched **before** the `:param → 1` substitution, so it can name the real route.
+  **A test that accuses the code is not automatically right — check whether the data is legitimately
+  public before "fixing" the app.**
+
+**Identity leak (separate, still open):** the repo-local git identity was
+`Regina Citra Pesela <[redacted]>` — not the `40174390+eggypesela@users.noreply.github.com`
+noreply alias the history rewrite used. So the **five commits after `eaf8def` (7c9cef3, 0f2c851,
+efc40b7, 241a4fb) published the personal address on the PUBLIC repo**, undoing that part of the
+rewrite. `git config user.email` is now the noreply alias for this repo. The already-pushed commits
+still carry it.
+
 ---
 
 ## 13. Workflow coverage vs PRD §4

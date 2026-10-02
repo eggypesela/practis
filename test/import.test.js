@@ -527,8 +527,15 @@ test('I8.4 EVERY page route demands a session (the guard list is complete)', asy
   // It reads the route table from the live Express app rather than a hand-copied
   // list, so a new route added without being added to APP_PATHS fails here.
   const app = require('../src/server');
+  // `/invite/:token` is DELIBERATELY public: invitation acceptance is how a new
+  // user sets their first password, so there is no session to demand. It is safe
+  // because the token is the credential — 32 random bytes, stored only as a hash,
+  // and an unknown token renders one generic "not valid or has expired" page with
+  // no enumeration (see routes/admin.js). It was missing from this list, which
+  // made the test report the page as a leak; the omission was in the list, not
+  // in the app.
   const PUBLIC = new Set(['/login', '/logout', '/health', '/favicon.ico',
-    '/app.css', '/fonts.css']);
+    '/app.css', '/fonts.css', '/invite/:token']);
 
   const routes = [];
   const walk = (stack, prefix = '') => {
@@ -548,8 +555,12 @@ test('I8.4 EVERY page route demands a session (the guard list is complete)', asy
   walk(app.router?.stack || app._router?.stack || []);
 
   const pageRoutes = routes
-    .map((r) => r.replace(/:[A-Za-z_][\w]*/g, '1'))     // :id → 1
+    // PUBLIC is matched against the REAL route path (`/invite/:token`), so it is
+    // filtered BEFORE the :param substitution below. Matching after substitution
+    // would require listing the mangled form (`/invite/1`), which reads like a
+    // literal id and invites someone to "tidy" it away.
     .filter((r) => !PUBLIC.has(r))
+    .map((r) => r.replace(/:[A-Za-z_][\w]*/g, '1'))     // :id → 1
     .filter((r) => !r.startsWith('/api/'));             // JSON endpoints: 401, not 302
 
   assert.ok(pageRoutes.length > 10,

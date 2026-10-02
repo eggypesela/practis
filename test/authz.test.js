@@ -219,8 +219,18 @@ const HEADER = 'transaction_id,date,account_code,debit,credit,amount,project_cod
 // partial and keyed on (transaction_id, document_no, date, amount, project), so
 // re-uploading the same row is legitimately skipped as a duplicate — which would
 // make a "did the ledger grow?" assertion fail for the wrong reason.
+//
+// The group must ALSO balance (TECH-SPEC §8.4). A single debit line is not a
+// valid double entry: §8.4 quarantines the whole group, so a lone-debit fixture
+// makes AZ4.4 ("Finance CAN confirm") fail for the balance reason instead of the
+// authorization reason it exists to test. This is a real double entry — debit
+// the cost, credit the bank — and it is what the real export looks like.
 function csvWith(txnId) {
-  return [HEADER, `${txnId},2026-01-15,500000000000001,5000000,0,5000000,PRJ-2026,Material,10001,Expense,PO-${txnId},,`].join('\n');
+  return [
+    HEADER,
+    `${txnId},2026-01-15,500000000000001,5000000,0,5000000,PRJ-2026,Material,10001,Expense,PO-${txnId},1.1.1,`,
+    `${txnId},2026-01-15,100000000000001,0,5000000,-5000000,PRJ-2026,Material,10001,Expense,PO-${txnId},1.1.1,`,
+  ].join('\n');
 }
 
 test('AZ4.1 a Viewer cannot stage an import', async () => {
@@ -268,7 +278,10 @@ test('AZ4.4 Finance CAN stage and confirm (the guard is not a wall)', async () =
   });
 
   assert.strictEqual(res.status, 200);
-  assert.strictEqual(ledgerCount(), before + 1, 'Finance committed the import');
+  // TWO rows: a valid double entry (see csvWith) — debit the cost, credit the
+  // bank. One lone debit would be quarantined by §8.4 before it ever reached the
+  // ledger, and this test would fail for the wrong reason.
+  assert.strictEqual(ledgerCount(), before + 2, 'Finance committed the import');
 });
 
 // =============================================================================

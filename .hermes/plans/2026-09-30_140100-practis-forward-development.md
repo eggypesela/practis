@@ -618,7 +618,8 @@ test('the project code must be unique', async () => { ... });  // UNIQUE(code) �
 
 **Outcome.** `src/lib/clients-service.js`, `views/clients.ejs`, `views/client-new.ejs`,
 `views/client-edit.ejs`; routes in `src/routes/projects.js`; migration `012_client_provenance.sql`.
-Tests **PR3.1–PR3.18**. Suite floor **236 → 256**.
+Tests **PR3.1–PR3.18**. Suite floor **236 → 266** (264 green at first commit: two pre-existing
+tests, AZ4.4 and I8.4, were broken by this work and fixed immediately after — see below).
 
 **THE SHARED-CONTROL REFACTOR.** 6.2 had the segregation-of-duties rule inside
 `projects-service.js`. Copying it here would be how a control drifts, so it was extracted to
