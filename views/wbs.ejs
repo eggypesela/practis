@@ -11,6 +11,11 @@
 <div class="errb"><div class="errb-tx"><p><b>Not done.</b> <%= error %></p></div></div>
 <% } %>
 
+<%# The period a tick is reported against. Defaults to the current month, which is
+    the usual case, but it is editable because a Controller often reports a month
+    that has already closed. Must be YYYY-MM or the service refuses it. %>
+<% var defaultPeriod = new Date().toISOString().slice(0, 7); %>
+
 <div class="grid k4">
   <div class="card kpi"><div class="lbl"><svg><use href="#i-tree"/></svg>Lines</div>
     <div class="v"><%= counts.total %></div>
@@ -69,9 +74,47 @@
             <input type="hidden" name="reason" value="reported from the tree">
             <button class="btn sm" type="submit"><%= l.status === 'completed' ? 'Reopen' : 'Mark complete' %></button>
           </form>
+          <%# Reporting a period is separate from ticking, so that "nothing done yet"
+              can be reported as a real 0 rather than left as an absence — a missing
+              row and a zero row are different facts. %>
+          <form method="post" action="/wbs/lines/<%= l.id %>/progress" style="display:inline">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <input type="hidden" name="period" value="<%= defaultPeriod %>">
+            <button class="btn sm" type="submit" title="Record this line's progress for the current period">Report</button>
+          </form>
         </td>
         <% } %>
       </tr>
+      <% if (l.milestones && l.milestones.length) { %>
+      <tr>
+        <td colspan="<%= canManage ? 6 : 5 %>" style="background:var(--bg2, #fafafa)">
+          <%# One control per milestone. A tick is a fact about the milestone; the
+              period figure is DERIVED from the ticked set by the service, so the
+              browser never states a percentage — otherwise the number feeding `ev`
+              would be whatever was posted. %>
+          <% l.milestones.forEach(function(m){ %>
+          <form method="post" action="/wbs/milestones/<%= m.id %>/<%= m.ticked ? 'untick' : 'tick' %>"
+                style="display:inline-block; margin:0 10px 0 0">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <input type="hidden" name="period" value="<%= defaultPeriod %>">
+            <% if (canManage) { %>
+            <button class="btn sm<%= m.ticked ? ' pri' : '' %>" type="submit"
+                    title="<%= m.ticked ? 'Untick' : 'Tick' %> — reports against <%= defaultPeriod %>">
+              <%= m.ticked ? '☑' : '☐' %> <%= m.name %> <%= m.pct_weight %>%
+            </button>
+            <% } else { %>
+            <span class="chip <%= m.ticked ? 'ok' : 'nt' %>"><%= m.ticked ? '☑' : '☐' %> <%= m.name %> <%= m.pct_weight %>%</span>
+            <% } %>
+          </form>
+          <% }); %>
+          <div class="dim" style="margin-top:4px">
+            A tick reports <b><%= defaultPeriod %></b> for this line, as the percentage
+            earned <b>in that period</b>. A later period gets its own figure and never
+            rewrites an earlier one.
+          </div>
+        </td>
+      </tr>
+      <% } %>
       <% }); %>
     </tbody>
   </table></div>

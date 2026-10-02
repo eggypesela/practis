@@ -237,7 +237,60 @@ decision 3A ("exactly one door") enforced from part 7.1 rather than left for par
 
 ---
 
-## Part 7.2 — Milestone ticks → % complete
+## Part 7.2 — Milestone ticks → % complete — ✅ DONE 2026-10-02
+
+**Delivered:** `src/lib/progress-service.js`; four routes on `src/routes/wbs.js`
+(`/wbs/milestones/:id/tick`, `/untick`, `/wbs/lines/:id/progress`, `/wbs/lines/:id/weights`);
+milestone tick controls per line in `views/wbs.ejs`; `seed-master.js` backfill. Tests
+**MP7.1–MP7.15** in `test/progress.test.js`, port **3915** (NOT 3906 — security.test.js holds it).
+Suite 341 → **358**.
+
+**THE DECISION THIS PART TURNED ON — `pct_complete` is the PERIOD INCREMENT.** `v_evm_period`
+computes `SUM(ba * wp.pct_complete / 100.0)` grouped by `(project, period_month)` and sums ONLY that
+period. PV and AC are monthly too. A cumulative `pct_complete` would therefore compare earned-to-date
+against a monthly PV and inflate every SPI by construction. A milestone is ticked once and has no
+period, so the increment is derived: `ticked-now − already-reported-before-P`. MP7.9 is the test that
+pins it (tick 3 in July = +25, not +75). The same property makes a later period leave an earlier one
+untouched, which is the "never rewrite history" rule again.
+
+**LIVE-INSTALL BUG FOUND AND FIXED.** `seed-master.js` still gated the milestone step on the demo
+code, so the real project (`JC-2026`) had 15 WBS lines and ZERO milestones — nothing tickable, `ev`
+dark, no error. It now backfills every WBS line that has none, for every project, idempotently.
+Verified on the dev DB: 60 milestones created, 0 lines left bare.
+
+**Steps**
+
+2.1 ✅ Pure-function tests first (MP7.1–MP7.3): 2-of-4 = 50, none = 0, all = 100, unequal weights.
+2.2 ✅ `pctFromMilestones()` clamps at 100 — the clamp is load-bearing, because
+    `wbs_progress.pct_complete` is CHECKed 0..100 and an over-100 weight set would otherwise be a
+    database error at write time rather than a correct number.
+2.3 ✅ Weight guard: **> 100 refused, < 100 allowed** (decision 4A). MP7.4/MP7.5 assert both halves,
+    and MP7.5b drives it through the app and asserts the database is unchanged.
+2.4 ✅ MP7.7 — a tick writes ONE row for the period with `source='milestones'` and the reporter.
+2.5 ✅ MP7.8/MP7.9 — same period UPDATES its row; a later period inserts a new one and leaves the
+    earlier period byte-identical.
+2.6 ✅ MP7.12 — a frozen period is refused, the figure is untouched, and the milestone is left
+    UNticked (the refusal is all-or-nothing).
+2.7 ✅ MP7.10 — a line with nothing ticked still gets a 0% row. Missing ≠ zero.
+
+**Extra tests added while building:** MP7.6/MP7.6b (the seed backfill, and that a hand-edited weight
+survives a re-run), MP7.11 (unticking never yields a negative), MP7.13 (a viewer is refused with the
+403 page — a ROLE refusal, not a redirect), MP7.14 (bad period), MP7.15 (**no cross-project write**:
+a milestone id belonging to another project writes nothing).
+
+**A trap worth recording:** `fail()` in `routes/wbs.js` originally keyed on `instanceof WbsError`, so
+the new service's refusals became generic 500s and three tests failed while the rules worked. It now
+keys on the error's own 4xx `status`.
+
+**Verification:** MP7.1–MP7.15 green (17/17); WB7.1–WB7.10 still green (27/27 together); full suite
+358/358.
+
+**Commit:** `feat(progress): milestone ticks drive per-period % complete`
+
+---
+
+## Part 7.2 — Milestone ticks → % complete (original draft, superseded above)
+
 
 **Objective:** ticking milestones produces the per-period `pct_complete` that feeds `ev`.
 

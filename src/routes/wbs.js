@@ -15,6 +15,7 @@ const express = require('express');
 const router = express.Router();
 
 const svc = require('../lib/wbs-service');
+const svc2 = require('../lib/progress-service');
 const q = require('../db/queries');
 const { capabilities } = require('../lib/permissions');
 const { requirePage } = require('../middleware/auth');
@@ -86,9 +87,16 @@ router.get('/wbs', (req, res) => {
 
 // A single place that turns a service error into the right response, so no route
 // can accidentally report a refusal as success.
+//
+// Deliberately keys on the error's own 4xx `status` rather than an `instanceof`
+// check: this route already calls two services (wbs-service, progress-service) and
+// an instanceof list silently turns the second one's refusals into "Something went
+// wrong" 500s — which is exactly what happened on the first run. Any service that
+// carries a 4xx status is a REFUSAL and its message is meant for the user; anything
+// else is a bug, and its message is NOT leaked.
 function fail(res, err, back = '/wbs') {
-  const status = err instanceof svc.WbsError ? err.status : 500;
-  if (status >= 500) {
+  const userFacing = typeof err.status === 'number' && err.status >= 400 && err.status < 500;
+  if (!userFacing) {
     console.error('[wbs]', err);
     return res.status(500).redirect(`${back}?err=${msg('Something went wrong; nothing was changed.')}`);
   }
@@ -155,6 +163,64 @@ router.post('/wbs/lines/:id/status', guard, (req, res) => {
       status: str(req.body.status), reason: str(req.body.reason),
     });
     return res.redirect('/wbs?msg=' + msg(`${node.wbs_code} is now ${str(req.body.status)}.`));
+  } catch (err) { return fail(res, err); }
+});
+
+// ---------------------------------------------------------------------------
+// progress (part 7.2) — ticking milestones is how a line reports as progressed.
+//
+// Every one of these re-derives the PERIOD's figure from the milestone set rather
+// than accepting a percentage from the form. The browser must not be able to state
+// progress directly, or the number feeding `ev` would be whatever was posted.
+// ---------------------------------------------------------------------------
+
+router.post('/wbs/milestones/:id/tick', guard, (req, res) => {
+  const project = projectOf(res);
+  try {
+    const out = svc2.setMilestoneTick({
+      projectId: project.id, actorId: req.user.id, milestoneId: Number(req.params.id),
+      ticked: true, period: str(req.body.period), note: str(req.body.note),
+    });
+    return res.redirect('/wbs?msg=' + msg(
+      `Progress reported for ${str(req.body.period)}: ${out.pct_complete}% earned in the period.`));
+  } catch (err) { return fail(res, err); }
+});
+
+router.post('/wbs/milestones/:id/untick', guard, (req, res) => {
+  const project = projectOf(res);
+  try {
+    const out = svc2.setMilestoneTick({
+      projectId: project.id, actorId: req.user.id, milestoneId: Number(req.params.id),
+      ticked: false, period: str(req.body.period), note: str(req.body.note),
+    });
+    return res.redirect('/wbs?msg=' + msg(
+      `Milestone unticked; ${str(req.body.period)} now reports ${out.pct_complete}% for the period.`));
+  } catch (err) { return fail(res, err); }
+});
+
+// An explicit "report this line for this period" action, so a line with NOTHING
+// ticked can still be reported as zero — "nobody has reported" and "reported as
+// nothing done" are different facts and `ev` should be able to tell them apart.
+router.post('/wbs/lines/:id/progress', guard, (req, res) => {
+  const project = projectOf(res);
+  try {
+    const out = svc2.writePeriod({
+      projectId: project.id, actorId: req.user.id, nodeId: Number(req.params.id),
+      period: str(req.body.period),
+    });
+    return res.redirect('/wbs?msg=' + msg(
+      `${str(req.body.period)} recorded: ${out.pct_complete}% for the period.`));
+  } catch (err) { return fail(res, err); }
+});
+
+router.post('/wbs/lines/:id/weights', guard, (req, res) => {
+  const project = projectOf(res);
+  try {
+    const weights = str(req.body.weights).split(',').map((w) => w.trim()).filter((w) => w !== '');
+    svc2.setMilestoneWeights({
+      projectId: project.id, actorId: req.user.id, nodeId: Number(req.params.id), weights,
+    });
+    return res.redirect('/wbs?msg=' + msg('Milestone weights updated.'));
   } catch (err) { return fail(res, err); }
 });
 

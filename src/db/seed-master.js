@@ -218,16 +218,26 @@ function main() {
   const insPtype = db.prepare('INSERT OR IGNORE INTO project_types (name, description) VALUES (?, ?)');
   for (const [name, desc] of PROJECT_TYPES) insPtype.run(name, desc);
 
-  // Default milestones on the demo project's WBS lines (PRD §5.1, decision 7A:
-  // equal 25% weights). New projects get the same set at registration
-  // (src/lib/wbs-defaults.js); this covers the seeded project only.
-  if (project) {
-    const insMilestone = db.prepare(`
-      INSERT OR IGNORE INTO progress_milestones (wbs_node_id, seq, name, pct_weight)
-      SELECT id, ?, ?, ? FROM wbs_nodes WHERE project_id = ? AND wbs_code = ?`);
-    for (const m of MILESTONES) {
-      for (const row of WBS) insMilestone.run(m.seq, m.name, m.pct_weight, project.id, row[1]);
-    }
+  // Default milestones for EVERY project's WBS line that has none (PRD §5.1,
+  // decision 7A: equal 25% weights).
+  //
+  // This used to run only for the DEMO project, which meant a real install whose
+  // bridge is `JC-2026` got its WBS tree but ZERO milestones — 15 lines, nothing to
+  // tick, so no line could ever be reported as progressed and `ev` stayed dark.
+  // (Same root cause as the 6.5/6.6 seed bug: gating company-wide data on a demo
+  // code.) New projects still get their tree and milestones at registration
+  // (src/lib/wbs-defaults.js); this is the catch-up for anything created before
+  // that existed, and it is idempotent — `NOT EXISTS` means a line that already has
+  // milestones is left exactly as it is, so a hand-edited weight set is never reset.
+  const insMilestone = db.prepare(`
+    INSERT INTO progress_milestones (wbs_node_id, seq, name, pct_weight) VALUES (?, ?, ?, ?)`);
+  const bareLines = db.prepare(`
+    SELECT n.id FROM wbs_nodes n
+    WHERE NOT EXISTS (SELECT 1 FROM progress_milestones m WHERE m.wbs_node_id = n.id)`).all();
+  let backfilled = 0;
+  for (const node of bareLines) {
+    for (const m of MILESTONES) insMilestone.run(node.id, m.seq, m.name, m.pct_weight);
+    backfilled += MILESTONES.length;
   }
 
   const counts = {
@@ -240,6 +250,9 @@ function main() {
     industry_types: db.prepare('SELECT COUNT(*) n FROM industry_types').get().n,
     project_types: db.prepare('SELECT COUNT(*) n FROM project_types').get().n,
     progress_milestones: db.prepare('SELECT COUNT(*) n FROM progress_milestones').get().n,
+    // How many milestone rows this run added. 0 on a second run, because the
+    // backfill only touches lines with no milestones at all.
+    milestones_backfilled: backfilled,
     // Only meaningful when the demo project exists; 0 does not mean the WBS master
     // menu is empty, so report that separately to avoid a misleading zero.
     wbs_master_codes: db.prepare('SELECT COUNT(*) n FROM wbs_code').get().n,
