@@ -12,7 +12,7 @@
 -- DDL is copied verbatim out of sqlite_master. To change it, write a migration and
 -- re-run the generator — never edit this file directly.
 --
--- Composition: 43 tables, 45 indexes, 25 triggers, 9 views.
+-- Composition: 43 tables, 45 indexes, 27 triggers, 9 views.
 
 -- TABLES (43)
 CREATE TABLE acceptance_register (
@@ -650,7 +650,7 @@ CREATE UNIQUE INDEX uq_rbs_load_bucket ON rbs_load(
   version
 );
 
--- TRIGGERS (25)
+-- TRIGGERS (27)
 CREATE TRIGGER trg_audit_log_no_delete
 BEFORE DELETE ON audit_log
 BEGIN
@@ -694,6 +694,20 @@ WHEN OLD.status <> 'open'
 BEGIN
   SELECT RAISE(ABORT,
     'cash_advance: cannot delete a pot that is not open or that carries Expense Report detail');
+END;
+CREATE TRIGGER trg_cbs_plan_baseline_needs_wbs_insert
+BEFORE INSERT ON cbs_plan
+FOR EACH ROW WHEN NEW.plan_type = 'baseline' AND NEW.wbs_node_id IS NULL
+BEGIN
+  SELECT RAISE(ABORT,
+    'a baseline bucket must name a work line (plan_type=baseline, wbs_node_id IS NULL)');
+END;
+CREATE TRIGGER trg_cbs_plan_baseline_needs_wbs_update
+BEFORE UPDATE OF wbs_node_id ON cbs_plan
+FOR EACH ROW WHEN NEW.plan_type = 'baseline' AND NEW.wbs_node_id IS NULL
+BEGIN
+  SELECT RAISE(ABORT,
+    'a baseline bucket must name a work line (plan_type=baseline, wbs_node_id IS NULL)');
 END;
 CREATE TRIGGER trg_ledger_frozen_period_effective_date
 BEFORE UPDATE OF effective_date, date ON accounting_ledger
@@ -968,16 +982,42 @@ FROM (
 GROUP BY project_id, transaction_account_id, period_month;
 CREATE VIEW v_descoped_lines AS
 SELECT n.id, n.project_id, n.wbs_code, n.name, n.status, n.version, n.de_scope_period,
+       -- What was actually spent on the cancelled line. Reads the ledger directly: a
+       -- de-scope never touches a booked cost, which is the point of the rule.
        (SELECT SUM(amount) FROM accounting_ledger l WHERE l.wbs_node_id = n.id) AS cost_incurred,
-       (SELECT SUM(amount) FROM cbs_plan c
-         WHERE c.wbs_node_id = n.id AND c.plan_type = 'baseline') AS budget_removed
+       -- The budget that left scope: the line's CURRENT baseline only. Summing every
+       -- version would report a removed budget larger than the one that ever existed.
+       (SELECT SUM(c.amount) FROM cbs_plan c
+         WHERE c.wbs_node_id = n.id AND c.plan_type = 'baseline'
+           AND c.version = (
+             SELECT MAX(c2.version) FROM cbs_plan c2
+             WHERE c2.project_id = c.project_id
+               AND c2.transaction_account_id = c.transaction_account_id
+               AND COALESCE(c2.wbs_node_id, 0) = COALESCE(c.wbs_node_id, 0)
+               AND c2.plan_type = c.plan_type
+               AND c2.period_month = c.period_month
+           )) AS budget_removed
 FROM wbs_nodes n
 WHERE n.status = 'de_scoped';
 CREATE VIEW v_evm_period AS
-WITH pv AS (
+WITH cur AS (
+  -- The current version of every baseline bucket. Every reader below goes through
+  -- this, so no branch can accidentally sum two versions of the same figure.
+  SELECT c.*
+  FROM cbs_plan c
+  WHERE c.plan_type = 'baseline'
+    AND c.version = (
+      SELECT MAX(c2.version) FROM cbs_plan c2
+      WHERE c2.project_id = c.project_id
+        AND c2.transaction_account_id = c.transaction_account_id
+        AND COALESCE(c2.wbs_node_id, 0) = COALESCE(c.wbs_node_id, 0)
+        AND c2.plan_type = c.plan_type
+        AND c2.period_month = c.period_month
+    )
+),
+pv AS (
   SELECT project_id, period_month, SUM(amount) AS pv
-  FROM cbs_plan
-  WHERE plan_type = 'baseline'
+  FROM cur
   GROUP BY project_id, period_month
 ),
 ev AS (
@@ -986,8 +1026,11 @@ ev AS (
   FROM wbs_progress wp
   JOIN wbs_nodes n ON n.id = wp.wbs_node_id
   LEFT JOIN (
+    -- The line's whole approved budget: every month of its current baseline, summed.
+    -- `wbs_node_id IS NOT NULL` is kept because a budget with no work line cannot
+    -- earn anything — there is no progress to attach it to.
     SELECT wbs_node_id, SUM(amount) AS ba
-    FROM cbs_plan WHERE plan_type = 'baseline' AND wbs_node_id IS NOT NULL
+    FROM cur WHERE wbs_node_id IS NOT NULL
     GROUP BY wbs_node_id
   ) b ON b.wbs_node_id = n.id
   GROUP BY n.project_id, wp.period_month

@@ -113,6 +113,15 @@ function capabilities(user) {
   // Administrator from baseline approval, so this flag is used by part 7.6.
   const canApproveBaseline = hasExact('project_manager');
 
+  // --- Cost baseline (module 7 part 7.4, PRD §4.4/§6) -----------------------
+  // Setting the budget is the Cost Controller's job; the PM owns the project and may
+  // also do it. Reading the screen is not restricted — a budget is not confidential.
+  const canManageCbs = has('cost_controller', 'project_manager');
+  // Who may raise a baseline change request (part 7.6). The PM is included because
+  // they are the one who approves it; the SoD check (initiator ≠ approver) is what
+  // stops them approving their own, not this flag.
+  const canInitiateBcr = has('project_controller', 'cost_controller', 'project_manager');
+
   return {
     roles,
     isAdmin,
@@ -164,6 +173,10 @@ function capabilities(user) {
     // step 4). Built in part 7.6; the flag exists here so the exclusion is stated
     // in one place rather than rediscovered per route.
     canApproveBaseline,
+    // --- Cost baseline (module 7 part 7.4) ---------------------------------
+    canManageCbs,
+    // --- Baseline change requests (module 7 part 7.6) ----------------------
+    canInitiateBcr,
     // The tree is readable by everyone signed in; the scope layer narrows which
     // projects a user may open.
     canViewWbs: true,

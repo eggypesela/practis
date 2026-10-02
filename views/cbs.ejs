@@ -1,0 +1,200 @@
+<%# Cost baseline (module 7 part 7.4; PRD §5.1, §6).
+    The approved plan in money per month. It is what `v_evm_period.pv` reads, so this
+    screen is the denominator of every SPI in the product.
+
+    The reconciliation table is the point of the page: the PRD names one invariant
+    (Σ monthly buckets = the account total = the RBS total), so an account that does not
+    yet agree is shown ABOVE the buckets rather than buried in them. The account total
+    is never stored as a row — it is calculated from the buckets, which is why there is
+    no "total" column to enter.
+
+    Title and sub-title come from `page()` in routes/cbs.js. %>
+<% if (typeof notice !== 'undefined' && notice) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b><%= notice %></b></div>
+<% } %>
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Not done.</b> <%= error %></p></div></div>
+<% } %>
+
+<div class="grid k3">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-book"/></svg>Baseline total</div>
+    <div class="v mono"><%= baseline_total.toLocaleString('en-US') %></div>
+    <div class="f">IDR — what planned value (PV) is built from</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-grid"/></svg>Months planned</div>
+    <div class="v"><%= by_month.length %></div>
+    <div class="f"><%= by_month.length ? by_month[0].period_month + ' → ' + by_month[by_month.length - 1].period_month : 'nothing yet' %></div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Accounts agreeing</div>
+    <div class="v"><%= recon.filter(function(r){ return r.rbs_total === r.budget; }).length %> / <%= recon.length %></div>
+    <div class="f">Σ monthly buckets = the resource plan</div></div>
+</div>
+
+<% if (unbalanced.length) { %>
+<div class="errb" style="margin-top:12px"><div class="errb-tx">
+  <p><b><%= unbalanced.length %> account<%= unbalanced.length === 1 ? '' : 's' %> do not yet agree with the resource plan.</b>
+    The PRD requires the monthly buckets, the account total and the resource plan to be the same
+    figure. Spread each one below and this list empties.</p>
+</div></div>
+<% } %>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd">
+    <h2>Reconciliation by cost account</h2>
+    <span class="r">Σ monthly buckets = account total = resource plan</span>
+  </div>
+  <% if (!recon.length) { %>
+  <div class="fbody"><p class="dim">No account has a resource plan yet. Plan resources first
+    (Resource plan in the sidebar), then spread the resulting totals here.</p></div>
+  <% } else { %>
+  <div class="tw"><table>
+    <thead><tr>
+      <th>Cost account</th><th class="r">Resource plan</th><th class="r">Spread as buckets</th>
+      <th class="r">Difference</th><th>State</th>
+    </tr></thead>
+    <tbody>
+      <% recon.forEach(function(r){ var diff = r.rbs_total - r.budget; %>
+      <tr>
+        <td><span class="mono"><%= r.code %></span> <%= r.name %></td>
+        <td class="r mono"><%= Number(r.rbs_total).toLocaleString('en-US') %></td>
+        <td class="r mono"><%= Number(r.budget).toLocaleString('en-US') %></td>
+        <td class="r mono"><%= diff === 0 ? '—' : (diff > 0 ? '' : '+') + Math.abs(diff).toLocaleString('en-US') %></td>
+        <td>
+          <% if (r.rbs_total === r.budget) { %>
+            <% if (r.rbs_total === 0) { %><span class="chip nt">nothing planned</span>
+            <% } else { %><span class="chip ok">agrees</span><% } %>
+          <% } else if (r.budget === 0) { %>
+            <span class="chip wn">not spread yet</span>
+          <% } else { %>
+            <span class="chip bd">out by <%= Math.abs(diff).toLocaleString('en-US') %></span>
+          <% } %>
+        </td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table></div>
+  <% } %>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Monthly buckets</h2>
+    <span class="r"><%= buckets.length %> rows</span></div>
+  <% if (!buckets.length) { %>
+  <div class="fbody"><p class="dim">The budget has not been spread yet. Enter the months below,
+    or let the system spread one figure straight across a line's dates.</p></div>
+  <% } else { %>
+  <div class="tw"><table>
+    <thead><tr><th>Month</th><th>Cost account</th><th>Work line</th>
+      <th class="r">Amount</th><th class="r">Version</th></tr></thead>
+    <tbody>
+      <% buckets.forEach(function(b){ %>
+      <tr>
+        <td class="mono"><%= b.period_month %></td>
+        <td><span class="mono"><%= b.account_code %></span> <%= b.account_name %></td>
+        <td><% if (b.wbs_code) { %><span class="mono"><%= b.wbs_code %></span> <%= b.wbs_name %>
+          <% } else { %><span class="chip bd">no work line</span><% } %></td>
+        <td class="r mono"><%= Number(b.amount).toLocaleString('en-US') %></td>
+        <td class="r mono">v<%= b.version %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table></div>
+  <% } %>
+</div>
+
+<% if (canManage) { %>
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Enter the months yourself</h2>
+    <span class="r">must add up to the account's resource plan</span></div>
+  <div class="fbody">
+    <div class="note">
+      <svg><use href="#i-info"/></svg>
+      <span>Every bucket must name a <b>work line</b>. The account total is worked out from the
+        buckets and is never stored as its own row — storing it as well would count the same
+        money twice in planned value. Whatever you enter must add up to the account's resource
+        plan; if it does not, nothing is saved and you are told the difference.</span>
+    </div>
+    <form method="post" action="/cbs/spread">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="fgrid">
+        <label class="fld">Cost account
+          <select name="transaction_account_id" required>
+            <% accounts.forEach(function(a){ %>
+            <option value="<%= a.id %>"><%= a.code %> · <%= a.name %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label class="fld">Work line
+          <select name="wbs_node_id" required>
+            <% wbs_lines.forEach(function(l){ %>
+            <option value="<%= l.id %>"><%= l.wbs_code %> · <%= l.name %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label class="fld">Note
+          <input type="text" name="note" maxlength="160" placeholder="why this spread">
+        </label>
+      </div>
+      <div class="fgrid">
+        <% [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].forEach(function(i){ %>
+        <label class="fld">Month <%= i + 1 %>
+          <input type="month" name="period_month">
+        </label>
+        <label class="fld">Amount
+          <input type="number" name="amount" min="0" step="1" placeholder="0">
+        </label>
+        <% }); %>
+      </div>
+      <p class="dim">Leave a month blank to skip it. A deliberate zero month is allowed; a negative
+        amount is not. <b>The whole spread goes in at once</b> — the months you enter must add up to
+        the account's resource plan exactly, so use one line per month of the plan.</p>
+      <div class="fend"><button class="btn pri" type="submit">Save the spread</button></div>
+    </form>
+  </div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Spread one figure straight across a line</h2>
+    <span class="r">uses the line's own start and end dates</span></div>
+  <div class="fbody">
+    <div class="note">
+      <svg><use href="#i-info"/></svg>
+      <span>Straight-line only. The PRD also allows spreading by <b>milestone weight</b>, which is
+        not built yet — choosing it is refused with a message rather than quietly spreading evenly,
+        because the two produce different monthly figures and swapping one for the other would make
+        the curve wrong without saying so. A line with no dates cannot be spread this way.</span>
+    </div>
+    <form method="post" action="/cbs/auto">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="fgrid">
+        <label class="fld">Cost account
+          <select name="transaction_account_id" required>
+            <% accounts.forEach(function(a){ %>
+            <option value="<%= a.id %>"><%= a.code %> · <%= a.name %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label class="fld">Work line
+          <select name="wbs_node_id" required>
+            <% wbs_lines.forEach(function(l){ %>
+            <option value="<%= l.id %>"><%= l.wbs_code %> · <%= l.name %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label class="fld">Total to spread (IDR)
+          <input type="number" name="amount" min="0" step="1" required placeholder="3000000">
+        </label>
+        <label class="fld">Method
+          <select name="method">
+            <option value="straight">Straight-line across the line's dates</option>
+            <option value="milestone">By milestone weight (not built yet)</option>
+          </select>
+        </label>
+      </div>
+      <div class="fend"><button class="btn" type="submit">Spread straight-line</button></div>
+    </form>
+  </div>
+</div>
+<% } %>
+
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
+</defs></svg>

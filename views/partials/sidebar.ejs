@@ -50,6 +50,7 @@
         count of dead links stays at zero and a future test can assert it. %>
     <a href="/wbs" class="<%= _active === 'WBS' ? 'on' : '' %>"><svg><use href="#i-tree"/></svg><span class="lbl">WBS</span></a>
     <a href="/rbs" class="<%= _active === 'Resource plan' ? 'on' : '' %>"><svg><use href="#i-book"/></svg><span class="lbl">Resource plan</span></a>
+    <a href="/cbs" class="<%= _active === 'Budget' ? 'on' : '' %>"><svg><use href="#i-chart"/></svg><span class="lbl">Budget</span></a>
     <a href="/ledger" class="<%= _active === 'Ledger' ? 'on' : '' %>"><svg><use href="#i-book"/></svg><span class="lbl">Ledger</span></a>
     <a href="/import" class="<%= _active === 'Import' ? 'on' : '' %>"><svg><use href="#i-in"/></svg><span class="lbl">Import</span></a>
     <a href="/queue" class="<%= _active === 'Tagging queue' ? 'on' : '' %>"><svg><use href="#i-check"/></svg><span class="lbl">Tagging queue</span><% if (_untagged) { %><span class="pill"><%= _untagged %></span><% } %></a>

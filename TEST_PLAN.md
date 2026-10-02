@@ -735,7 +735,7 @@ The product workflow, step by step, and whether a test exists. **Empty rows are 
 | PRD § | Workflow step | Status |
 |---|---|---|
 | 4.1 | Initialisation: create project, assign roles **per project**, COA/WBS/CBS setup, team, client/supplier, approval chain | ❌ **no tests, no UI** (skipped §10 step 3; Module 6) |
-| 4.2 | Planning: WBS tree, milestones + weights, RBS load, CBS budget, **baseline**, **freeze** | ⚠️ **partial** — WBS tree ✅ (WB7.1–WB7.10), milestones + per-period % complete ✅ (MP7.1–MP7.15), RBS load ✅ (RB7.1–RB7.17); CBS budget, baseline, freeze ❌ (parts 7.4–7.8) |
+| 4.2 | Planning: WBS tree, milestones + weights, RBS load, CBS budget, **baseline**, **freeze** | ⚠️ **partial** — WBS tree ✅ (WB7.1–WB7.10), milestones + per-period % complete ✅ (MP7.1–MP7.15), RBS load ✅ (RB7.1–RB7.17), **CBS budget + the Σ = RBS invariant ✅ (BL7.1–BL7.18)**; baseline change, freeze, BCR ❌ (parts 7.5–7.8) |
 | 4.3 | Execution: progress ticks → EV · actual cost from ledger + checked lines · revenue recognition · billed vs received | ⚠️ **partial** — actual cost ✅ (CA2.2, XO1.9); progress ticks ✅ (MP7.x); revenue, billed≠received ❌ |
 | 4.4 | Monitoring: EVM SPI/CPI, forecast, variance, **de-scope/BCR**, aging, dashboards | ❌ no tests (Module 8) |
 | 4.5 | Closing (3-step): close, final reconciliation, archive, **hide from live dashboards** | ❌ no tests (Module 8) |

@@ -451,7 +451,72 @@ already permitted.
 
 ---
 
-## Part 7.4 — CBS baseline, and the one invariant the PRD names
+## Part 7.4 — CBS baseline, and the one invariant the PRD names — ✅ DONE 2026-10-02
+
+**Delivered:** `db/migrations/014_evm_latest_version.sql`, `db/migrations/015_cbs_plan_baseline_needs_wbs.sql`;
+`src/lib/cbs-service.js`; `src/routes/cbs.js`; `views/cbs.ejs`; sidebar Budget link; `canManageCbs`
++ `canInitiateBcr`. Tests **BL7.1–BL7.18** in `test/cbs.test.js`, port **3909**. Suite 375 → **393**.
+
+**THE DEFECT F2 IS REAL, WAS MEASURED, AND WAS FIXED — twice over.** PV doubled from 3,000,000 to
+6,000,000 in two independent ways, both of which parts 7.5–7.7 would have created routinely:
+
+1. **A superseded version.** `cbs_plan` is versioned so an old figure stays readable, but
+   `v_evm_period` summed baseline rows with **no version filter** — so a re-stated bucket counted
+   twice. This is not hypothetical: an approved BCR (7.6) or a de-scope (7.7) writes exactly that
+   version-2 row. Migration **014** rebuilds the view (and `v_descoped_lines`) to read the CURRENT
+   version of each bucket only, via a `cur` CTE keyed like `uq_cbs_plan_bucket`.
+2. **An account-total row beside per-WBS rows.** The view's `pv` sums ALL baseline rows while its
+   `ev` uses only WBS-tagged ones, so an untagged row is counted in PV and can never be earned
+   against. Migration **015** is a TRIGGER refusing `plan_type='baseline'` with a NULL `wbs_node_id`
+   (INSERT and UPDATE OF wbs_node_id), so the rule cannot be bypassed by `db/seed-smoke.sql` or by
+   Module 8's forecast work. The `ev` branch is left exactly as it was — it was already correct.
+
+Both are database-level because both are silent: no error, just an SPI that is wrong forever.
+Verified no existing figure moved: `db/seed-smoke.sql` applies cleanly under the trigger and PV for
+2026-03 is still 240,000,000.
+
+**A THIRD INSTANCE OF THE SAME BUG, FOUND BY A TEST FAILING FOR THE WRONG REASON.** `assertReconciles`
+— the service's own post-condition — summed ALL versions, so after one legitimate re-spread it read
+10,000,000 against a budget of 8,000,000 and ROLLED THE RE-SPREAD BACK, leaving the old figures
+stored while the user was told "they must agree". Migration 014 fixed the views; the same rule now
+holds in the service via a shared `CURRENT` predicate used by `assertReconciles`, `remainingFor` and
+the read helpers. **The lesson: when a fix is "count the current version", grep for every other place
+the same number is computed — a view migration does not fix the service.**
+
+**THE INVARIANT (§6):** Σ monthly buckets = the account total = the RBS total, checked BEFORE any
+write and again inside the transaction after it, re-read from the table. **Equality, not "no more
+than"** — BL7.4 pins the undershoot case too, because budget planned but never spread lets `ev` earn
+against money PV never planned, and every SPI reads high. A stated consequence: **a spread goes in
+one submission**, since after the first the account already reconciles.
+
+**Steps**
+
+4.1 ✅ BL7.1 (service message AND the trigger, written directly bypassing the service) + BL7.2 (the
+    invariant) + BL7.3 (overshoot refused pre-write) + BL7.4 (undershoot refused).
+4.2 ✅ `spreadBaseline()` validates and sums before any write, inside `db.transaction()`.
+4.3 ✅ BL7.5 a zero month mid-spread is legal; BL7.6 negative refused; BL7.7 malformed month,
+    fractional amount and a duplicated month each refused by name.
+4.4 ✅ BL7.8 straight-line over the line's dates; the remainder goes to the earliest months so no
+    rupiah is lost (1,000,001 over 4 months = 250,001 + 250,000×3); BL7.9 a line with no dates is
+    refused; **BL7.10 milestone-weighting is refused BY NAME** rather than silently straight-lined —
+    the two produce different curves and substituting one for the other moves PV without saying so.
+    (All 15 seeded lines have NULL dates, so auto-spread needs dates set first.)
+4.5 ✅ BL7.14 a forecast row is not written here and would not count as PV if it existed.
+
+**Extras:** BL7.11/BL7.13 (a superseded version does not add into PV; a revised bucket moves PV to
+the new figure only, both versions kept and the old one still readable), BL7.12 (report side = table
+side, asserted independently), BL7.15 (a viewer gets the 403 page), BL7.16 (no cross-project write),
+BL7.17 (the screen renders the reconciliation), BL7.18 (a superseded WBS line is refused).
+
+**Verification:** BL7.1–BL7.18 green; full suite 393/393; schema drift clean (43 tables, 45 indexes,
+27 triggers).
+
+**Commit:** `feat(cbs): cost baseline with Σ = RBS enforced, and PV no longer double-counts`
+
+---
+
+## Part 7.4 — CBS baseline, and the one invariant the PRD names (original draft, superseded above)
+
 
 **Objective:** the monthly-bucketed money book that becomes `pv`.
 
