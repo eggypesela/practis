@@ -55,4 +55,12 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'internal error' });
 });
 
-app.listen(PORT, () => console.log(`PRACTIS on http://localhost:${PORT}`));
+// Exported so tests can inspect the route table WITHOUT binding a port
+// (TEST_PLAN §12f asserts every page route is guarded — a structural check that
+// a hand-maintained list of "public paths" cannot perform). `server.boot` is the
+// real entry point; requiring this module no longer starts a listener.
+module.exports = app;
+module.exports.boot = () => app.listen(PORT, () => console.log(`PRACTIS on http://localhost:${PORT}`));
+
+// Only listen when run directly (`node src/server.js`), not when required.
+if (require.main === module) module.exports.boot();

@@ -6,9 +6,11 @@
 //
 // The fixture was ORIGINALLY a genuine export from a genuine project, carrying real
 // vendor names and real payment amounts. It is now SYNTHETIC but shape-identical —
-// same 26 rows, same ragged widths, same Excel serial dates, same unbalanced group
-// (see db/make-fixture.js). The assertions below are about SHAPE, so they keep their
-// full force; only the values changed.
+// same 26 rows, same ragged widths, same Excel serial dates, **same unbalanced
+// group** (see db/make-fixture.js). The unbalanced group is kept on purpose: it is
+// the regression case for TECH-SPEC §8.4, which requires every imported transaction
+// group to balance to zero or be quarantined. 25 of the 26 rows import; the lone
+// 14,200,000 debit of `SAL-24-10-0038` does not, and must never reach the ledger.
 //
 // WHY THIS TEST IS WORTH ITS WEIGHT: it drives an export shaped like the real-world one end to
 // end (parse → stage → preview → confirm → ledger rows), and it immediately caught two
@@ -182,7 +184,7 @@ test('FX1.3 Excel serial dates decode to the right calendar day', async () => {
 
 // ---- FX2/FX3: the whole import path over the fixture ------------------------
 
-test('FX2.1 every one of the 26 fixture rows stages clean (0 quarantined)', async () => {
+test('FX2.1 the fixture stages, quarantining ONLY the one unbalanced group (§8.4)', async () => {
   const text = fs.readFileSync(FIXTURE, 'utf8');
   const up = await upload(text);
   assert.strictEqual(up.status, 201, `stage should accept the fixture, got ${up.status}`);
@@ -190,25 +192,65 @@ test('FX2.1 every one of the 26 fixture rows stages clean (0 quarantined)', asyn
 
   const pv = await preview(up.body.batchId);
   assert.strictEqual(pv.status, 200);
-  assert.strictEqual(pv.body.newCount, EXPECTED_ROWS,
-    'all fixture rows must be importable — any invalid row means master seed or parsing is wrong');
-  assert.strictEqual(pv.body.invalid.length, 0,
-    `no row should quarantine: ${JSON.stringify(pv.body.invalid.slice(0, 3))}`);
 
-  // Confirm the fixture rows actually land, and only as import-sourced lines.
+  // THE POINT OF THIS TEST. The fixture is shaped like a real export and carries
+  // a real defect: group `SAL-24-10-0038` is a lone 14,200,000 debit with no
+  // credit leg, so it does not balance. TECH-SPEC §8.4 requires "every imported
+  // transaction group balances to zero or is quarantined" — so exactly that
+  // group's single line must be refused, and the other 25 rows must import.
+  //
+  // Before §8.4 was enforced this test asserted newCount === 26 and the broken
+  // group imported silently, putting a one-sided debit into actual cost with no
+  // matching credit. That is the bug this asserts is fixed.
+  assert.strictEqual(pv.body.unbalancedGroups.length, 1,
+    'exactly one transaction group in this export fails to balance');
+  assert.strictEqual(pv.body.unbalancedGroups[0].transaction_id, 'SAL-24-10-0038');
+  assert.strictEqual(pv.body.unbalancedGroups[0].drift, 14200000,
+    'the drift is the size of the missing credit leg');
+  assert.strictEqual(pv.body.unbalancedGroups[0].lines, 1,
+    'the whole group is one lone line');
+
+  const expectedImportable = EXPECTED_ROWS - 1;
+  assert.strictEqual(pv.body.newCount, expectedImportable,
+    'every row except the unbalanced group is importable');
+  assert.strictEqual(pv.body.invalid.length, 1,
+    `only the unbalanced line quarantines: ${JSON.stringify(pv.body.invalid)}`);
+  assert.strictEqual(pv.body.invalid[0].transaction_id, 'SAL-24-10-0038');
+  assert.strictEqual(pv.body.invalid[0].group_unbalanced, true,
+    'the refusal is flagged as a group-balance refusal, not a row error');
+
+  // Confirm: only the balanced rows land, and only as import-sourced lines.
   const before = ledgerCount();
   const cf = await confirm(up.body.batchId);
   assert.strictEqual(cf.status, 200);
-  assert.strictEqual(cf.body.inserted, EXPECTED_ROWS);
-  assert.strictEqual(ledgerCount(), before + EXPECTED_ROWS);
-  assert.strictEqual(importedCount(), EXPECTED_ROWS);
+  assert.strictEqual(cf.body.inserted, expectedImportable);
+  assert.strictEqual(ledgerCount(), before + expectedImportable);
+  assert.strictEqual(importedCount(), expectedImportable, 'the lone debit did NOT reach the ledger');
+});
+
+test('FX2.2 the unbalanced group is ABSENT from the ledger (the actual §8.4 guarantee)', async () => {
+  // Asserted against the database, not the API response: the guarantee is about
+  // what is stored. If §8.4 regresses, this is the assertion that fails.
+  const rows = db.prepare(
+    `SELECT COUNT(*) n FROM accounting_ledger WHERE transaction_id = 'SAL-24-10-0038'`).get().n;
+  assert.strictEqual(rows, 0, 'no line of the unbalanced group may exist in the ledger');
+
+  // And the ledger holds no other one-sided group either — the property, not
+  // just the one known instance.
+  const oneSided = db.prepare(`
+    SELECT transaction_id, SUM(debit) - SUM(credit) AS drift
+      FROM accounting_ledger WHERE source='import'
+     GROUP BY transaction_id HAVING SUM(debit) - SUM(credit) <> 0`).all();
+  assert.deepStrictEqual(oneSided, [],
+    `every imported group must net to zero; offenders: ${JSON.stringify(oneSided)}`);
 });
 
 test('FX3.1 the imported rows satisfy the ledger invariants', async () => {
   const rows = db.prepare(`SELECT transaction_id, date, effective_date, amount, debit, credit,
                                   line_role, in_cost_basis, source, project_id
                              FROM accounting_ledger WHERE source='import'`).all();
-  assert.strictEqual(rows.length, EXPECTED_ROWS);
+  // 25, not 26: the unbalanced group is quarantined by §8.4 (see FX2.1/FX2.2).
+  assert.strictEqual(rows.length, EXPECTED_ROWS - 1);
   for (const r of rows) {
     assert.strictEqual(r.project_id, 9001, `${r.transaction_id} must resolve to the fixture project`);
     // §8.4: amount = debit - credit, one side only, whole rupiah.
@@ -225,10 +267,16 @@ test('FX3.2 the decoded dates land in the October 2023 window', async () => {
   const rows = db.prepare(`SELECT date, effective_date FROM accounting_ledger WHERE source='import'`).all();
   const dates = rows.map((r) => r.date).sort();
   assert.strictEqual(dates[0], '2023-10-01', 'the earliest posting date in the export');
-  assert.strictEqual(dates[dates.length - 1], '2023-10-25', 'the latest posting date in the export');
+  // The latest date in the WHOLE export belongs to the quarantined group
+  // (serial 45224 = 2023-10-25), so the latest date that actually imports is the
+  // second-latest: 45223. This is a real consequence of §8.4, not a coincidence
+  // worth hiding — if someone later makes the group balance, this number moves.
+  assert.strictEqual(dates[dates.length - 1], '2023-10-24',
+    'the latest posting date that survives the §8.4 quarantine');
   // date_adjustment is populated on this export; it must survive as effective_date.
+  // 12 of the export's 13 such rows import — the 13th is in the quarantined group.
   const withAdj = rows.filter((r) => r.effective_date).length;
-  assert.strictEqual(withAdj, 13, 'this export carries date_adjustment on 13 rows');
+  assert.strictEqual(withAdj, 12, 'this export carries date_adjustment on 13 rows, 12 of which balance');
 });
 
 test('FX3.3 the type column maps to the legacy vocabulary decision', async () => {
@@ -258,12 +306,21 @@ test('FX4.2 the extension allowlist widened to .tsv but still rejects anything e
 test('FX4.1 re-importing the same file adds nothing (dedupe holds)', async () => {
   // §8.4: "Import never overwrites existing tagged lines; duplicates skipped/counted."
   // The dedupe index is keyed on (transaction_id, document_no, date, amount, project).
+  //
+  // ORDER MATTERS HERE and the numbers show it: dedupe runs BEFORE the group
+  // balance check, so the ABSORBED rows (the 25 that imported) are recognised as
+  // duplicates, while the quarantined row is still refused — not for being a
+  // duplicate, but for its group still not balancing. Its group was never
+  // absorbed by anyone, so it cannot be "already imported".
   const before = ledgerCount();
   const up = await upload(fs.readFileSync(FIXTURE, 'utf8'));
   assert.strictEqual(up.status, 201);
   const pv = await preview(up.body.batchId);
-  assert.strictEqual(pv.body.newCount, 0, 'every row is already present');
-  assert.strictEqual(pv.body.skippedCount, EXPECTED_ROWS, 'all 26 counted as duplicates');
+  assert.strictEqual(pv.body.newCount, 0, 'every importable row is already present');
+  assert.strictEqual(pv.body.skippedCount, EXPECTED_ROWS - 1,
+    'the 25 absorbed rows are counted as duplicates');
+  assert.strictEqual(pv.body.unbalancedGroups.length, 1,
+    'the one unbalanced group is still refused, and for its own reason');
   const cf = await confirm(up.body.batchId);
   assert.strictEqual(cf.body.inserted, 0, 'nothing re-applied');
   assert.strictEqual(ledgerCount(), before, 'the ledger did not grow');

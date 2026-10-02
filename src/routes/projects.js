@@ -52,13 +52,27 @@ function page(res, title, subtitle, crumb, bodyView, opts = {}) {
   });
 }
 
-router.use(requirePage);
+// Scoped so the guard only runs for THIS router's paths.
+//
+// A bare `router.use(requirePage)` looks harmless but is a real defect: this
+// router is mounted at the root, so an unscoped middleware runs for EVERY
+// request in the app — including URLs that belong to no route at all. An
+// anonymous request to an unknown path was therefore redirected to /login by
+// this guard before Express could reach the 404 handler, so the app answered
+// "sign in" to a URL that does not exist and would still not exist afterwards.
+// (A signed-in user correctly got 404, because requirePage passes them through.)
+//
+// The path list must be an ARRAY (or an anchored regex). Express 5's
+// '/projects/{*path}' and '/projects/*splat' forms were tested and SILENTLY DROP
+// the guard on the bare prefix '/projects' itself — see TEST_PLAN §12f.
+const PAGE_PATHS = ['/projects', '/clients'];
+router.use(PAGE_PATHS, requirePage);
 
 // The register carries a cost-to-date figure per project, so it needs the same
 // project context the rest of the app uses (for the switcher + the "current"
 // highlight). Import the shared middleware rather than re-deriving scope here.
 const { projectContext } = require('../middleware/scope');
-router.use(projectContext);
+router.use(PAGE_PATHS, projectContext);
 
 router.get('/projects', (req, res) => {
   // The AUTHORISED set. Never q.projects() — see the file header.

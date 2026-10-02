@@ -23,7 +23,27 @@ function page(res, title, subtitle, crumb, bodyView, opts = {}) {
   });
 }
 
-router.use(requirePage, projectContext);
+// SCOPED to this router's own paths — see the note in routes/projects.js.
+//
+// A bare `router.use(requirePage, …)` on a root-mounted router runs for EVERY
+// request in the app. Express runs each router's middleware in REGISTRATION
+// order, so this guard fired on unknown URLs before the application's 404
+// handler, and an anonymous request to a URL that matches no route was answered
+// with a redirect to /login. The list must be an ARRAY (or anchored regex);
+// Express 5's '/x/{*path}' and '/x/*splat' forms silently DROP the guard on the
+// bare prefix itself (verified — see TEST_PLAN §12f).
+//
+// Every path this router serves must appear here. @see APP_PATHS below, and
+// TEST_PLAN §12f which asserts the list is complete.
+const APP_PATHS = [
+  '/', '/ledger', '/ledger/entry', '/ledger/:id/correct', '/ledger/:id/reverse',
+  '/queue', '/queue/tag', '/import', '/periods', '/periods/freeze',
+  '/periods/unfreeze', '/advances', '/advances/new', '/advances/:id',
+  '/advances/:id/lines', '/expenses', '/expenses/:lineId/check',
+  '/expenses/:lineId/reject', '/expenses/:lineId/block', '/expenses/:lineId/unblock',
+  '/reconciliation',
+];
+router.use(APP_PATHS, requirePage, projectContext);
 
 router.get('/', (req, res) => {
   // ONLY the projects this user may see. `q.projects()` is the whole portfolio

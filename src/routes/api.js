@@ -117,6 +117,8 @@ router.post('/api/imports', requireAuth, canImport, async (req, res) => {
       newCount: out.newCount,
       skippedCount: out.skipped,
       invalidCount: out.invalid.length,
+      // §8.4: transactions refused in full because they did not balance to zero.
+      unbalancedGroupCount: (out.unbalancedGroups || []).length,
       status: 'staged',
     });
   } catch (err) {
