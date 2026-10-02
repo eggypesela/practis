@@ -132,7 +132,7 @@ CREATE TABLE bcr_register (
   decision_note      TEXT,
   old_baseline_json  TEXT,                     -- archived prior values (audit)
   new_baseline_json  TEXT
-);
+, rbs_rows_json TEXT);
 CREATE TABLE "cash_advance" (
   id             INTEGER PRIMARY KEY,
   project_id     INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,

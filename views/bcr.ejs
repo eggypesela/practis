@@ -1,0 +1,139 @@
+<%# Change requests (module 7 part 7.6; PRD §4.2, §4.4).
+    The register of every change to the frozen baseline, and the freeze itself.
+
+    Two things get their own block at the top because both are decisions a reader has to
+    be able to make from this page:
+      * the FREEZE, which is one-time and is the PM's alone (an Administrator is refused —
+        PRD §4.2 step 4 says so explicitly);
+      * the LEGAL MOVES on each request, which come from the service so the buttons and
+        the rules cannot drift apart.
+
+    Title and sub-title come from `page()` in routes/bcr.js. %>
+<% if (typeof notice !== 'undefined' && notice) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b><%= notice %></b></div>
+<% } %>
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Not done.</b> <%= error %></p></div></div>
+<% } %>
+
+<div class="grid k3">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-book"/></svg>Baseline</div>
+    <div class="v mono"><%= Number(baseline_total).toLocaleString('en-US') %></div>
+    <div class="f"><%= month_count %> month<%= month_count === 1 ? '' : 's' %> planned</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-lock"/></svg>Freeze</div>
+    <div class="v"><%= project.baseline_locked === 1 ? 'Frozen' : 'Open' %></div>
+    <div class="f"><%= project.baseline_locked === 1
+      ? (project.baseline_locked_at ? 'locked ' + project.baseline_locked_at : 'locked')
+      : 'the baseline can still be edited directly' %></div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Pending</div>
+    <div class="v"><%= pending %></div>
+    <div class="f">draft or verified, waiting on someone</div></div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd">
+    <h2><%= project.baseline_locked === 1 ? 'Baseline frozen' : 'Freeze the baseline' %></h2>
+    <span class="r"><%= project.baseline_locked === 1 ? 'one-time, and it is the PM\u2019s decision' : 'locks the approved plan' %></span>
+  </div>
+  <div class="fbody">
+    <% if (project.baseline_locked === 1) { %>
+    <div class="note">
+      <svg><use href="#i-lock"/></svg>
+      <span>This baseline is frozen<%= project.baseline_locked_at ? ' as of ' + project.baseline_locked_at : '' %>.
+        From here it can only change through an <b>approved change request</b>: the old figures are
+        archived, the new ones become planned value, and the change applies from its effective month
+        <b>forward</b> — months already reported are never rewritten.</span>
+    </div>
+    <% } else { %>
+    <div class="note">
+      <svg><use href="#i-info"/></svg>
+      <span>Freezing is what makes every later change auditable. Until then the baseline is still
+        being built and is edited directly on the Budget screen. Approving a baseline is the
+        <b>Project Manager's</b> decision — an Administrator does not approve baselines, because the
+        baseline is the commitment the PM is accountable for.</span>
+    </div>
+    <% if (can_freeze) { %>
+    <form method="post" action="/projects/<%= project.id %>/baseline/freeze">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="fend"><button class="btn pri" type="submit">Freeze the baseline</button></div>
+    </form>
+    <% } else { %>
+    <p class="dim">You are not the Project Manager on this project, so you cannot freeze it. A
+      Project Manager must do this.</p>
+    <% } %>
+    <% } %>
+  </div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd">
+    <h2>Register</h2>
+    <span class="r"><%= rows.length %> request<%= rows.length === 1 ? '' : 's' %></span>
+  </div>
+  <% if (!rows.length) { %>
+  <div class="fbody"><p class="dim">No change has been requested on this project.
+    <% if (can_raise && project.baseline_locked === 1) { %>
+      <a href="/bcr/new">Raise the first change request</a>.
+    <% } else if (project.baseline_locked !== 1) { %>
+      There is nothing to change until the baseline is frozen.
+    <% } %>
+  </p></div>
+  <% } else { %>
+  <div class="tw"><table>
+    <thead><tr>
+      <th>Request</th><th>Kind</th><th>Work line</th><th class="r">Cost impact</th>
+      <th>Effective from</th><th>State</th><th>Raised by</th><th></th>
+    </tr></thead>
+    <tbody>
+      <% rows.forEach(function(r){ %>
+      <tr>
+        <td><span class="mono"><%= r.bcr_no %></span>
+          <div class="dim" style="font-size:11px"><%= r.title %></div></td>
+        <td><%= r.type_label %></td>
+        <td><% if (r.wbs_code) { %><span class="mono"><%= r.wbs_code %></span>
+          <% } else { %><span class="dim">—</span><% } %></td>
+        <td class="r mono"><%= r.impact === 0 ? '—' : r.impact.toLocaleString('en-US') %></td>
+        <td class="mono"><%= r.effective_period || '—' %></td>
+        <td>
+          <% if (r.status === 'approved') { %><span class="chip ok">approved</span>
+          <% } else if (r.status === 'verified') { %><span class="chip wn">verified</span>
+          <% } else if (r.status === 'rejected') { %><span class="chip bd">rejected</span>
+          <% } else if (r.status === 'withdrawn') { %><span class="chip nt">withdrawn</span>
+          <% } else { %><span class="chip nt">draft</span><% } %>
+          <% if (r.stale) { %> <span class="chip wn" title="pending more than 3 days">waiting</span><% } %>
+        </td>
+        <td><%= r.initiated_by_name || '—' %></td>
+        <td class="r">
+          <%# The moves come from the SERVICE (ALLOWED), so a status the service would
+              refuse can never be offered as a button here. %>
+          <% r.allowed.forEach(function(move){ %>
+          <form method="post" action="/bcr/<%= r.id %>/<%= move %>" style="display:inline">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <% if (move === 'reject') { %>
+            <input type="text" name="note" placeholder="why" maxlength="200"
+                   style="width:110px;display:inline-block" required>
+            <% } %>
+            <button class="btn<% move === 'approve' ? ' pri' : '' %>" type="submit"><%= move %></button>
+          </form>
+          <% }); %>
+        </td>
+      </tr>
+      <% if (r.reason) { %>
+      <tr><td colspan="8" class="dim" style="border-top:none;padding-top:0">
+        <b>Why:</b> <%= r.reason %>
+        <% if (r.proposed) { %> · <%= r.proposed %> proposed month<%= r.proposed === 1 ? '' : 's' %>
+          <% if (r.resource_rows) { %> and <%= r.resource_rows %> resource row<%= r.resource_rows === 1 ? '' : 's' %><% } %>
+        <% } %>
+        <% if (r.decision_note) { %> · <b><%= r.status %>:</b> <%= r.decision_note %><% } %>
+      </td></tr>
+      <% } %>
+      <% }); %>
+    </tbody>
+  </table></div>
+  <% } %>
+</div>
+
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><path d="M7 10V7a5 5 0 1 1 10 0v3h1.5A1.5 1.5 0 0 1 20 11.5v9A1.5 1.5 0 0 1 18.5 22h-13A1.5 1.5 0 0 1 4 20.5v-9A1.5 1.5 0 0 1 5.5 10Zm2 0h6V7a3 3 0 0 0-6 0Zm3 5.2a1.8 1.8 0 0 1 .9 3.36V20h-1.8v-1.44a1.8 1.8 0 0 1 .9-3.36Z"/></symbol>
+</defs></svg>

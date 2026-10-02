@@ -1,0 +1,24 @@
+-- 017_bcr_resource_rows.sql — a change request carries the resource plan it moves, too.
+--
+-- WHY
+--
+-- Part 7.5 settled that the resource plan and the budget move in ONE transaction: the
+-- invariant is "Σ budget buckets = the account's resource plan", so a change that moves
+-- money and adjusts only the budget would be rolled back by its own post-condition.
+--
+-- That makes the resource rows part of the REQUEST, not a detail worked out at approval.
+-- They have to be stated when the request is raised, reviewed by Finance alongside the
+-- money, and applied untouched when the PM approves — otherwise the person approving
+-- would be approving a cost impact whose supporting plan does not exist yet, and the
+-- approval would fail (or, worse, succeed against a plan someone else edited in between).
+--
+-- `new_baseline_json` (the proposed budget months) already existed on `bcr_register`; this
+-- is its other half. Both are stored as JSON because a request is a PROPOSAL, not a
+-- position: nothing here is a baseline row until it is approved, and then part 7.5 writes
+-- real `cbs_plan` / `rbs_load` rows from it and the archive keeps the prior state.
+--
+-- No trigger and no constraint: an unapproved request may hold anything a human typed that
+-- passed the service checks, and a REJECTED one holds it forever as the record of what was
+-- asked for. Constraining it would make the register unable to preserve its own history.
+
+ALTER TABLE bcr_register ADD COLUMN rbs_rows_json TEXT;

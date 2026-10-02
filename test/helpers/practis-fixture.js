@@ -29,15 +29,29 @@ const NODE = process.execPath;
 
 // Roles a test commonly needs. Each is created with EXACTLY one role and
 // is_system_admin = 0, so the admin bypass in capabilities() cannot mask a result.
-const ROLES = ['cost_controller', 'viewer', 'project_admin'];
+//
+// `project_manager` is here because part 7.6 has a capability that ADMINS ARE
+// DELIBERATELY EXCLUDED FROM (`canApproveBaseline`), so tests have to be able to log in
+// as a PM, an admin-only user, and a PM-who-also-admins them, separately.
+const ROLES = ['cost_controller', 'viewer', 'project_admin', 'project_manager', 'finance',
+  'project_controller'];
 
 function sh(args, env) {
   return execFileSync(NODE, args, { cwd: ROOT, env: { ...process.env, ...env }, encoding: 'utf8' });
 }
 
-// Start a fixture. Returns { ORIGIN, dbPath, db, admin, asRole, load, refresh, post, stop }.
+// Start a fixture. Returns { ORIGIN, PORT, dbPath, db, admin, clients, users, pmAdmin,
+// adminOnly, load, refresh, post, stop }.
 //
-//   const fx = await startFixture({ port: 3915, prefix: 'practis-bs7-', roles: [...] });
+//   `clients`  role code → logged-in HTTP client (each user holds EXACTLY that one role)
+//   `users`    role code → user id (for service calls and SoD comparisons)
+//   `pmAdmin`  { id, client } — a system administrator who ALSO holds project_manager
+//   `adminOnly`{ id, client } — a system administrator with NO project_manager role
+//
+// The last two exist for part 7.6: `canApproveBaseline` is `hasExact`, so they must get
+// different answers, and asserting that needs both.
+//
+//   const fx = await startFixture({ port: 3918, prefix: 'practis-bc7-' });
 //   after(() => fx.stop());
 async function startFixture({ port, prefix = 'practis-fx-', roles = ROLES, adminEmail = 'e@example.com',
                               adminPassword = 'epw12345', seed = true } = {}) {
@@ -76,6 +90,7 @@ async function startFixture({ port, prefix = 'practis-fx-', roles = ROLES, admin
   const admin = await csrf.loggedIn(ORIGIN, adminEmail, adminPassword);
 
   const clients = new Map();
+  const users = new Map();
   if (roles.length) {
     const { asRole } = require('./authz');
     for (const code of roles) {
@@ -83,7 +98,35 @@ async function startFixture({ port, prefix = 'practis-fx-', roles = ROLES, admin
         email: `fx-${code}-${port}@example.test`,
       });
       clients.set(code, j.client);
+      // The user id matters for the service-level tests: `applyBaselineChange` and the
+      // BCR workflow take an actorId, and SoD is a comparison between two of them.
+      users.set(code, j.userId);
     }
+  }
+
+  // A user who holds `project_manager` AND is a system administrator, and one who is
+  // ONLY a system administrator. Part 7.6's `canApproveBaseline` is `hasExact`, so these
+  // two must produce DIFFERENT answers — that difference is the whole point of the
+  // capability, and it cannot be tested without both.
+  let pmAdmin = null;
+  let adminOnly = null;
+  if (roles.includes('project_manager')) {
+    const argon2 = require('argon2');
+    const Database2 = Database;
+    const d2 = new Database2(dbPath);
+    const hash = await argon2.hash('fx-admin-pw-12345');
+
+    const mk = (email) => d2.prepare('INSERT INTO users (email, full_name, password_hash, '
+      + 'is_system_admin) VALUES (?, ?, ?, 1)').run(email, `Fx ${email}`, hash).lastInsertRowid;
+    const adminId = mk(`fx-adminonly-${port}@example.test`);
+    const pmAdminId = mk(`fx-pmadmin-${port}@example.test`);
+    d2.prepare('INSERT INTO user_roles (user_id, role_code, project_id) VALUES (?, ?, NULL)')
+      .run(pmAdminId, 'project_manager');
+    d2.close();
+
+    const csrf = require('./csrf');
+    adminOnly = { id: adminId, client: await csrf.loggedIn(ORIGIN, `fx-adminonly-${port}@example.test`, 'fx-admin-pw-12345') };
+    pmAdmin = { id: pmAdminId, client: await csrf.loggedIn(ORIGIN, `fx-pmadmin-${port}@example.test`, 'fx-admin-pw-12345') };
   }
 
   // TRAP 2, in one place: reload every module under src/ so they share ONE connection.
@@ -110,7 +153,8 @@ async function startFixture({ port, prefix = 'practis-fx-', roles = ROLES, admin
     fs.rmSync(path.dirname(dbPath), { recursive: true, force: true });
   }
 
-  return { ORIGIN, PORT: port, dbPath, db, admin, clients, load, refresh, post, stop, proc };
+  return { ORIGIN, PORT: port, dbPath, db, admin, clients, users, pmAdmin, adminOnly,
+    load, refresh, post, stop, proc };
 }
 
 module.exports = { startFixture, ROLES, ROOT, NODE };

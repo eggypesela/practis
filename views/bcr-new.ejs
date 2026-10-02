@@ -1,0 +1,178 @@
+<%# Raise a change request (module 7 part 7.6; PRD §4.4 step 1).
+    "Project/Cost Controller initiates BCR (what, why, $/period impact, schedule impact)."
+
+    Two halves, and they are both required when money moves: the new BUDGET months, and the
+    RESOURCE PLAN that supports them. Part 7.5 enforces "Σ buckets = the account's resource
+    plan" in one transaction, so a change that adjusts only the money can never be approved.
+    Asking for both here is what makes that approval possible rather than a surprise refusal
+    days later.
+
+    Title and sub-title come from `page()` in routes/bcr.js. %>
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Not recorded.</b> <%= error %></p></div></div>
+<% } %>
+
+<div class="note">
+  <svg><use href="#i-info"/></svg>
+  <span>Recording this <b>changes nothing</b>. It is a proposal: Finance verifies it, then the
+    Project Manager approves it, and only then does the baseline move — from the effective month
+    <b>forward</b>. The old figures are archived, not overwritten, and months already reported are
+    never rewritten.</span>
+</div>
+
+<form method="post" action="/bcr">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+  <div class="card" style="margin-top:12px">
+    <div class="card-hd"><h2>What is changing</h2>
+      <span class="r">what, why, and how much</span></div>
+    <div class="fbody">
+      <div class="fgrid">
+        <label class="fld">Kind of change
+          <select name="change_type" required>
+            <% types.forEach(function(t){ %>
+            <option value="<%= t.code %>"><%= t.label %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label class="fld">Work line
+          <select name="wbs_node_id">
+            <option value="">— not applicable (budget only) —</option>
+            <% lines.forEach(function(l){ %>
+            <option value="<%= l.id %>"><%= l.wbs_code %> · <%= l.name %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label class="fld">Effective from (month)
+          <input type="month" name="effective_period" required>
+        </label>
+      </div>
+      <div class="fgrid">
+        <label class="fld">Title
+          <input type="text" name="title" maxlength="160" required
+                 placeholder="e.g. Client asked for an extra 400 m2 of cladding">
+        </label>
+        <label class="fld">Cost impact (IDR)
+          <input type="number" name="impact_cost" step="1" placeholder="0">
+        </label>
+        <label class="fld">Schedule impact (days)
+          <input type="number" name="impact_schedule_days" step="1" placeholder="0">
+        </label>
+      </div>
+      <div class="fgrid">
+        <label class="fld">Description
+          <input type="text" name="description" maxlength="2000"
+                 placeholder="what the change physically is">
+        </label>
+      </div>
+      <label class="fld">Reason
+        <input type="text" name="reason" maxlength="1000" required
+               placeholder="why it is needed — this is what explains the movement later">
+      </label>
+      <p class="dim">A cost impact other than zero <b>must</b> come with the resource plan below.
+        If the change only re-phases work without moving money, leave the impact at 0.</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <div class="card-hd"><h2>Resource plan the change carries</h2>
+      <span class="r">rate × quantity, per work line and resource</span></div>
+    <div class="fbody">
+      <div class="note">
+        <svg><use href="#i-info"/></svg>
+        <span>The budget and the resource plan are required to agree, because the budget is the
+          resource plan spread over months. Give the rows <b>after</b> the change: a new rate, new
+          quantities, or a zero to retire a resource from the line. These are stored on the request
+          and applied untouched at approval, so nobody edits them in between.</span>
+      </div>
+      <div class="tw"><table>
+        <thead><tr><th>Work line</th><th>Resource</th><th>Cost account</th>
+          <th class="r">Rate</th><th class="r">Qty</th><th>Unit</th></tr></thead>
+        <tbody>
+          <% [0,1,2,3,4,5,6,7].forEach(function(i){ %>
+          <tr>
+            <td>
+              <select name="r_node">
+                <option value="">—</option>
+                <% lines.forEach(function(l){ %>
+                <option value="<%= l.id %>"><%= l.wbs_code %></option>
+                <% }); %>
+              </select>
+            </td>
+            <td>
+              <select name="r_rbs_code">
+                <option value="">—</option>
+                <% resources.forEach(function(r){ %>
+                <option value="<%= r.code %>"><%= r.code %> · <%= r.name %></option>
+                <% }); %>
+              </select>
+            </td>
+            <td>
+              <select name="r_account">
+                <option value="">— none —</option>
+                <% accounts.forEach(function(a){ %>
+                <option value="<%= a.id %>"><%= a.code %></option>
+                <% }); %>
+              </select>
+            </td>
+            <td class="r"><input type="number" name="r_rate" min="0" step="1" placeholder="0"></td>
+            <td class="r"><input type="number" name="r_units" min="0" step="0.01" placeholder="0"></td>
+            <td><input type="text" name="r_unit_label" maxlength="24" placeholder="day"></td>
+          </tr>
+          <% }); %>
+        </tbody>
+      </table></div>
+      <p class="dim">Leave a row blank to skip it.</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:12px">
+    <div class="card-hd"><h2>New budget months</h2>
+      <span class="r">the proposed baseline, from the effective month forward</span></div>
+    <div class="fbody">
+      <div class="note">
+        <svg><use href="#i-info"/></svg>
+        <span>Enter the months this change sets, starting at or after the effective month. Each must
+          name the work line it belongs to. At approval these replace the current figures from that
+          month forward — everything before it is left exactly as reported.</span>
+      </div>
+      <div class="tw"><table>
+        <thead><tr><th>Month</th><th>Work line</th><th>Cost account</th>
+          <th class="r">Amount (IDR)</th></tr></thead>
+        <tbody>
+          <% [0,1,2,3,4,5,6,7].forEach(function(i){ %>
+          <tr>
+            <td><input type="month" name="month"></td>
+            <td>
+              <select name="node">
+                <option value="">—</option>
+                <% lines.forEach(function(l){ %>
+                <option value="<%= l.id %>"><%= l.wbs_code %></option>
+                <% }); %>
+              </select>
+            </td>
+            <td>
+              <select name="account">
+                <option value="">—</option>
+                <% accounts.forEach(function(a){ %>
+                <option value="<%= a.id %>"><%= a.code %> · <%= a.name %></option>
+                <% }); %>
+              </select>
+            </td>
+            <td class="r"><input type="number" name="amount" min="0" step="1" placeholder="0"></td>
+          </tr>
+          <% }); %>
+        </tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <div class="fend" style="margin-top:12px">
+    <a class="btn" href="/bcr">Cancel</a>
+    <button class="btn pri" type="submit">Record the request</button>
+  </div>
+</form>
+
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
+</defs></svg>

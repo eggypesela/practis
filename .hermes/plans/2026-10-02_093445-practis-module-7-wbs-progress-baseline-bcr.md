@@ -676,7 +676,69 @@ and the row counts unchanged.
 
 ---
 
-## Part 7.6 — Baseline freeze + BCR workflow
+## Part 7.6 — Baseline freeze + BCR workflow — ✅ DONE 2026-10-02
+
+**Delivered:** `db/migrations/017_bcr_resource_rows.sql`; `src/lib/bcr-service.js`;
+`src/routes/bcr.js`; `views/bcr.ejs`, `views/bcr-new.ejs`; sidebar **Change requests** link;
+`test/bcr.test.js` **BC7.1–BC7.13**, port **3918**. Suite 407 → **422**.
+
+`baseline-service.js` gained `validateProposalRows`; the shared harness
+`test/helpers/practis-fixture.js` now also returns `users` (role → user id), `pmAdmin` and
+`adminOnly`.
+
+**THE MODULE'S SoD TRAP, AND WHY IT IS ASSERTED THREE TIMES (BC7.2, BC7.2b, BC7.11).**
+PRD §4.2 step 4: *"Admin does NOT approve baselines."* Everywhere else in this app an
+Administrator passes every `has(...)` check BY DESIGN, so the obvious implementation
+(`canApproveBaseline = has('project_manager')`) silently grants it — and no other test in the
+suite would notice. The capability is `hasExact` (built in 7.4), and this part asserts it at
+the SERVICE and again over HTTP, because a route guard is one line a refactor can drop while
+the data keeps changing. **BC7.2b is the other half and is not optional:** the rule excludes
+the ADMIN ROLE, not the person, so a PM who also owns the install must still pass — without
+it, `canApproveBaseline = false` would satisfy BC7.2 and lock the owner out of their own
+install.
+
+**MIGRATION 017 — `bcr_register.rbs_rows_json`.** Part 7.5 settled that a money-moving change
+writes the resource plan and the budget in ONE transaction, which makes the resource rows part
+of the REQUEST rather than a detail worked out at approval. They are stored as JSON beside the
+existing `new_baseline_json`: a request is a PROPOSAL, not a position, and a rejected one
+keeps its figures forever as the record of what was asked for.
+
+**THE WORKFLOW IS A TABLE OF LEGAL MOVES, NOT A SET OF IFs.** `ALLOWED` maps each status to
+the moves it permits, and the same table drives the service checks AND the buttons the view
+renders — so a status the service would refuse can never be offered as a button. The CHECK
+constraint bounds the VALUES of `status`, not the moves between them: nothing in the schema
+stops `approved -> draft`, so the service polices it (BC7.6 walks all four moves on an
+approved request).
+
+**RULES IMPLEMENTED, EACH WITH ITS TEST:** the baseline does not move until approval, asserted
+against the PV curve (BC7.4); the initiator can neither verify nor approve their own request,
+and the refusals leave no audit row (BC7.5); a **rejected** request leaves the baseline
+byte-identical, compared as raw rows and as the PV a user sees (BC7.7) — the strongest
+negative in the module; a freeze over an empty baseline is refused, so the flag always means a
+budget exists (BC7.3); a request needs a frozen baseline, an effective month and a reason
+(BC7.8); a money-moving request must carry its resource plan at RAISE, not fail later at
+approval for a different person (BC7.9); a Viewer may read the register and not write to it
+(BC7.10).
+
+**TWO REAL BUGS THE TESTS CAUGHT:** `bcr-service.listFor` selected `u.name` — the column is
+`users.full_name`, so the register 500'd (found by BC7.10/BC7.13, which is why the read path
+has its own test rather than only the service tests). And the test file's own `auditCount`
+helper pinned `entity_type = 'bcr_register'` while the freeze writes its audit row against
+`projects` — a test that would have passed for the wrong reason.
+
+**Note on the seed:** the reconciled account is seeded in `before()`, not inside the first
+test that needs it, because the freeze refuses an empty baseline and a request needs a frozen
+project — almost every test in the file depends on that state. Seeding it in a test makes the
+whole file depend on that test's position in the list.
+
+**Verification:** BC7.1–BC7.13 green (15/15 incl. BC7.2b/BC7.7b); full suite 422/422; schema
+drift clean (30 triggers, 45 indexes); migrations 016/017 apply to a fresh database (v17).
+
+**Commit:** `feat(bcr): baseline freeze and the BCR change-control workflow`
+
+---
+
+## Part 7.6 — Baseline freeze + BCR workflow (original draft, superseded above)
 
 **Objective:** lock the baseline, and route every subsequent change through a BCR.
 

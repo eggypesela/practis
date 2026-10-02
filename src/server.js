@@ -53,6 +53,8 @@ app.use(require('./routes/master'));
 app.use(require('./routes/wbs'));
 app.use(require('./routes/rbs'));
 app.use(require('./routes/cbs'));
+// Baseline freeze + the BCR change-control workflow (part 7.6).
+app.use(require('./routes/bcr'));
 app.use(require('./routes/app'));
 
 // 404 + error handlers live in lib/error-handler.js so tests can reach them (they

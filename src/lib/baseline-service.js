@@ -352,7 +352,18 @@ const archivedBaseline = (bcrId) => {
   return JSON.parse(bcr.old_baseline_json);
 };
 
+// Validate a PROPOSED baseline without writing it.
+//
+// Used by part 7.6 when a change request is raised, so a request cannot be recorded in a
+// state that could never be approved: the same rules that `applyBaselineChange` will
+// apply later are applied now, and the operator hears about a bad month while they are
+// still looking at the form. It reuses `validateRows` on purpose — a second, slightly
+// different copy of these rules is exactly how a proposal would pass here and be refused
+// at approval, with the refusal arriving days later to a different person.
+const validateProposalRows = (projectId, effectivePeriod, rows) =>
+  validateRows(projectId, month(effectivePeriod), rows);
+
 module.exports = {
   BaselineError, applyBaselineChange, setProposedBaseline, proposedBaseline, archivedBaseline,
-  snapshot, writeResourcePlan,
+  snapshot, writeResourcePlan, validateProposalRows,
 };
