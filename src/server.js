@@ -47,6 +47,9 @@ app.use(require('./routes/admin'));
 app.use(require('./routes/api'));
 app.use(require('./routes/projects'));
 app.use(require('./routes/master'));
+// WBS tree (module 7 part 7.1) — project-scoped, so it mounts with the other
+// project screens rather than with the org-wide admin routes.
+app.use(require('./routes/wbs'));
 app.use(require('./routes/app'));
 
 // 404 + error handlers live in lib/error-handler.js so tests can reach them (they

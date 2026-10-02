@@ -44,9 +44,11 @@
         The WBS/RBS lists inside are gated to Administrator by the route. %>
     <a href="/master" class="<%= _active === 'Master data' ? 'on' : '' %>"><svg><use href="#i-file"/></svg><span class="lbl">Master data</span></a>
     <div class="grp caps" style="display:none">Project</div>
-    <%# Overview / WBS / CBS plan were dead href="#" links. Removed for the same reason
-        as Reports above — their routes do not exist yet (plan module 7). Removed, not
-        hidden, so the count of dead links stays at zero and a future test can assert it. %>
+    <%# Overview / CBS plan were dead href="#" links. Removed for the same reason
+        as Reports above — their routes do not exist yet. Overview belongs to the
+        reports module; CBS plan to module 7 part 7.4. Removed, not hidden, so the
+        count of dead links stays at zero and a future test can assert it. %>
+    <a href="/wbs" class="<%= _active === 'WBS' ? 'on' : '' %>"><svg><use href="#i-tree"/></svg><span class="lbl">WBS</span></a>
     <a href="/ledger" class="<%= _active === 'Ledger' ? 'on' : '' %>"><svg><use href="#i-book"/></svg><span class="lbl">Ledger</span></a>
     <a href="/import" class="<%= _active === 'Import' ? 'on' : '' %>"><svg><use href="#i-in"/></svg><span class="lbl">Import</span></a>
     <a href="/queue" class="<%= _active === 'Tagging queue' ? 'on' : '' %>"><svg><use href="#i-check"/></svg><span class="lbl">Tagging queue</span><% if (_untagged) { %><span class="pill"><%= _untagged %></span><% } %></a>

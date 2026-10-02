@@ -1,0 +1,159 @@
+<%# WBS tree (module 7 part 7.1; PRD §4.4, §5.1).
+    The tree includes SUPERSEDED versions on purpose. They are marked, not hidden:
+    a past version is where the progress of that period was reported, so a tree
+    that dropped it would make history unreadable — and the EVM view still reads
+    those rows. Each line is shown as "v2 (superseded by v3)" rather than dropped.
+    Columns come from the service; the view does no grouping of its own. %>
+<% if (typeof notice !== 'undefined' && notice) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b><%= notice %></b></div>
+<% } %>
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Not done.</b> <%= error %></p></div></div>
+<% } %>
+
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-tree"/></svg>Lines</div>
+    <div class="v"><%= counts.total %></div>
+    <div class="f">current versions</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-file"/></svg>All versions</div>
+    <div class="v"><%= counts.all %></div>
+    <div class="f">nothing is ever deleted</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Control accounts</div>
+    <div class="v"><%= lines.filter(function(l){ return l.is_control_account === 1; }).length %></div>
+    <div class="f">of <%= counts.total %> lines</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-chart"/></svg>Milestones ticked</div>
+    <div class="v"><%= lines.reduce(function(s,l){ return s + (l.ticked || 0); }, 0) %></div>
+    <div class="f">of <%= lines.reduce(function(s,l){ return s + (l.total || 0); }, 0) %> recorded</div></div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd">
+    <h2>Work breakdown</h2>
+    <span class="r"><%= counts.total %> lines</span>
+  </div>
+  <div class="tw"><table>
+    <thead><tr>
+      <th>Line</th><th>Dates</th><th>Milestones</th><th>Status</th><th class="r">Version</th>
+      <% if (canManage) { %><th class="r">Actions</th><% } %>
+    </tr></thead>
+    <tbody>
+      <% lines.forEach(function(l){ %>
+      <tr>
+        <td>
+          <span class="mono" style="color:var(--t3)"><%= l.wbs_code %></span>
+          <span style="display:inline-block; margin-left:<%= l.depth * 16 %>px">
+            <%= l.name %></span>
+          <% if (l.orphan) { %><span class="chip bd">no parent</span><% } %>
+          <% if (l.is_control_account === 1) { %><span class="chip nt">control</span><% } %>
+        </td>
+        <td class="mono"><%= l.start_date || '—' %> → <%= l.end_date || '—' %></td>
+        <td>
+          <%# Progress comes from the plain SUM of ticked milestone weights, which is
+              what the EVM view does. Weights are not shown here: part 7.2 owns them. %>
+          <% var pct = Math.min(100, l.ticked_weight || 0); %>
+          <span class="mono"><%= l.ticked || 0 %>/<%= l.total || 0 %></span>
+          <span class="chip <%= pct >= 100 ? 'ok' : (pct > 0 ? 'bl' : 'nt') %>"><%= pct %>%</span>
+        </td>
+        <td>
+          <span class="chip <%= l.status === 'completed' ? 'ok' : (l.status === 'de_scoped' ? 'bd' : 'nt') %>"><%= l.status.replace('_', ' ') %></span>
+        </td>
+        <td class="r mono">
+          v<%= l.version %>
+          <% if (l.superseded_by) { %><span class="chip wn">replaced</span><% } %>
+        </td>
+        <% if (canManage) { %>
+        <td class="r">
+          <form method="post" action="/wbs/lines/<%= l.id %>/status" style="display:inline">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <input type="hidden" name="status" value="<%= l.status === 'completed' ? 'active' : 'completed' %>">
+            <input type="hidden" name="reason" value="reported from the tree">
+            <button class="btn sm" type="submit"><%= l.status === 'completed' ? 'Reopen' : 'Mark complete' %></button>
+          </form>
+        </td>
+        <% } %>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table></div>
+</div>
+
+<% if (canManage) { %>
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Add a line</h2>
+    <span class="r">inside the contract only</span></div>
+  <div class="fbody">
+    <%# The contract-value field is present and visible ON PURPOSE. PRD §4.4 draws the
+        boundary at "same total contract value", so the person adding a line has to
+        state which side of it they are on. Leaving the field out would hide the rule
+        and let someone add unbudgeted work without noticing. %>
+    <div class="note">
+      <svg><use href="#i-info"/></svg>
+      <span>Work <b>already inside the contract</b> is re-planning and can be added here.
+        It is recorded in the change log with a zero contract-value change.
+        <b>New work the client has not agreed needs a BCR</b> — enter a non-zero
+        contract-value change and the system will refuse it.</span>
+    </div>
+    <form method="post" action="/wbs/lines">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="fgrid">
+        <label class="fld">WBS code
+          <select name="wbs_code" required>
+            <option value="">— from the company menu —</option>
+            <% masterCodes.forEach(function(c){ %>
+            <option value="<%= c.code %>"><%= c.code %> · <%= c.name %></option>
+            <% }); %>
+          </select>
+          <span class="dim">Only codes in the company WBS menu. An Administrator adds new ones under Master data.</span>
+        </label>
+        <label class="fld">Line name
+          <input type="text" name="name" maxlength="120" required placeholder="e.g. Additional rigging">
+        </label>
+        <label class="fld">Parent line
+          <select name="parent_id">
+            <option value="">— top level —</option>
+            <% lines.filter(function(l){ return !l.superseded_by; }).forEach(function(l){ %>
+            <option value="<%= l.id %>"><%= l.wbs_code %> · <%= l.name %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label class="fld">Contract value change (IDR)
+          <input type="number" name="contract_value_delta" value="0" step="1">
+          <span class="dim">Must be 0 for re-planning. Anything else needs a BCR.</span>
+        </label>
+        <label class="fld">Reason
+          <input type="text" name="reason" maxlength="200" placeholder="why this line is being added">
+        </label>
+      </div>
+      <div class="fend"><button class="btn pri" type="submit">Add line</button></div>
+    </form>
+  </div>
+</div>
+<% } %>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Change log</h2>
+    <span class="r">re-planning recorded on this project</span></div>
+  <div class="tw"><table>
+    <thead><tr><th>When</th><th>Action</th><th>Line</th><th>Reason</th>
+      <th class="r">Contract change</th><th>By</th></tr></thead>
+    <tbody>
+      <% if (!history.length) { %>
+      <tr><td colspan="6" style="color:var(--t3)">No re-planning recorded yet.</td></tr>
+      <% } %>
+      <% history.forEach(function(h){ %>
+      <tr>
+        <td class="mono"><%= h.at %></td>
+        <td><span class="chip nt"><%= h.action.replace('_', ' ') %></span></td>
+        <td><span class="mono"><%= h.wbs_code || '—' %></span> <%= h.wbs_name || '' %></td>
+        <td><%= h.reason || '—' %></td>
+        <td class="num"><%= h.contract_value_delta === 0 ? '0' : h.contract_value_delta %></td>
+        <td><%= h.actor_email || '—' %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table></div>
+</div>
+
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
+</defs></svg>

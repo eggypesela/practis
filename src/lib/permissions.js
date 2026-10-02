@@ -40,6 +40,13 @@ function capabilities(user) {
   const roles = rolesOf(user.id);
   const isAdmin = user.is_system_admin === 1;
   const has = (...codes) => isAdmin || codes.some((c) => roles.includes(c));
+  // Role membership ONLY — no Administrator bypass. This exists for the single
+  // place the PRD inverts the usual rule: PRD §4.2 step 4, "Admin does NOT
+  // approve baselines — Admin owns system/master data, not plan decisions." An
+  // Administrator holds every role by design, so `has('project_manager')` would
+  // pass it and the stated control would silently not exist. Used by
+  // canApproveBaseline; pinned by a test that logs in an admin-only user.
+  const hasExact = (...codes) => codes.some((c) => roles.includes(c));
   const canEnterExpense = has('project_admin', 'project_manager');
   const canCheckExpense = has('cost_controller', 'project_controller');
   const canReconcile = has('finance', 'cost_controller', 'project_controller');
@@ -97,6 +104,15 @@ function capabilities(user) {
   const canManageMaster = has('finance', 'cost_controller', 'project_admin');
   const canManageStructure = has('administrator');
 
+  // --- WBS tree (module 7 part 7.1, PRD §4.4/§5.1) --------------------------
+  // PRD §5.3/§4.1: the Project Controller owns the schedule, resources, progress
+  // and SPI; the PM owns the project. Both maintain the tree. Nothing here is
+  // admin-only — an Administrator passes `has(...)` regardless.
+  const canManageWbs = has('project_controller', 'project_manager');
+  // Deliberately NOT `has(...)`: see hasExact above. PRD §4.2 step 4 excludes the
+  // Administrator from baseline approval, so this flag is used by part 7.6.
+  const canApproveBaseline = hasExact('project_manager');
+
   return {
     roles,
     isAdmin,
@@ -142,6 +158,15 @@ function capabilities(user) {
     // --- Team register -----------------------------------------------------
     canManageTeams,
     canViewTeams: true,
+    // --- WBS tree (module 7 part 7.1) ---------------------------------------
+    canManageWbs,
+    // Baseline approval is the PM's and the Administrator is EXCLUDED (PRD §4.2
+    // step 4). Built in part 7.6; the flag exists here so the exclusion is stated
+    // in one place rather than rediscovered per route.
+    canApproveBaseline,
+    // The tree is readable by everyone signed in; the scope layer narrows which
+    // projects a user may open.
+    canViewWbs: true,
     // --- Master data (module 6 task 6.5) ------------------------------------
     canManageMaster,          // day-to-day reference data (COA, CBS, categories)
     canManageStructure,       // WBS/RBS shape + resource categories (PRD §8 "Ask first")

@@ -164,6 +164,11 @@ const _wbsOptions = db.prepare(`
   SELECT id, wbs_code, name, is_control_account FROM wbs_nodes
   WHERE project_id = ? AND status = 'active' ORDER BY sort_order, wbs_code`);
 
+// The company-standard WBS menu (module 7 part 7.1). A new line's code must come
+// from here — the tree copies the menu, it does not extend it (PRD §5.1).
+const _wbsMasterCodes = db.prepare(
+  'SELECT code, name, parent_code FROM wbs_code WHERE active = 1 ORDER BY code');
+
 const _untaggedLineById = db.prepare(`
   SELECT l.id, l.project_id, l.wbs_node_id, l.transaction_account_id,
          l.cost_checked, l.line_role, l.in_cost_basis
@@ -582,6 +587,7 @@ module.exports = {
   untaggedLines: (projectId) => _untaggedLines.all(projectId),
   cbsOptions: () => _cbsOptions.all(),
   wbsOptions: (projectId) => _wbsOptions.all(projectId),
+  wbsMasterCodes: () => _wbsMasterCodes.all(),
   untaggedLineById: (id) => _untaggedLineById.get(id),
   // audit 2026-09-30 task 0.6: these two were inline SQL in src/routes/app.js
   costCategoryOfAccount: (cbsId) => _costCategoryOfAccount.get(cbsId),
