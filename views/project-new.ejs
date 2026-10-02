@@ -5,6 +5,8 @@
 <div class="errb"><div class="errb-tx"><p><b>Not registered.</b> <%= error %></p></div></div>
 <% } %>
 
+<script type="application/json" id="terms-by-client" nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>"><%- JSON.stringify(typeof termsByClient !== 'undefined' ? termsByClient : {}) %></script>
+
 <% const v = (k) => (typeof form !== 'undefined' && form && form[k] != null) ? form[k] : ''; %>
 <% const bad = (k) => (typeof field !== 'undefined' && field === k) ? 'aria-invalid="true"' : ''; %>
 
@@ -22,12 +24,16 @@
              value="<%= v('name') %>" placeholder="What the project is called"></label>
 
     <label class="fld">Client <span class="dim">optional — the client register is a separate step</span>
-      <select name="client_id">
+      <select name="client_id" id="client_id">
         <option value="">— not set —</option>
         <% (typeof clients !== 'undefined' ? clients : []).forEach(function(c){ %>
         <option value="<%= c.id %>" <%= String(v('client_id')) === String(c.id) ? 'selected' : '' %>><%= c.code %> — <%= c.name %></option>
         <% }) %>
       </select></label>
+
+    <label class="fld">Payment terms <span class="dim">days — prefilled from the client, override if this project differs</span>
+      <input type="number" name="payment_terms_days" id="terms" min="1" step="1" inputmode="numeric" <%= bad('payment_terms_days') %>
+             value="<%= v('payment_terms_days') %>" placeholder="30"></label>
 
     <label class="fld">Industry <span class="dim">optional — set up by an Administrator</span>
       <select name="industry_type">
@@ -49,10 +55,6 @@
       <input type="number" name="contract_amount" min="0" step="1" inputmode="numeric" <%= bad('contract_amount') %>
              value="<%= v('contract_amount') %>" placeholder="0"></label>
 
-    <label class="fld">Payment terms <span class="dim">days — drives the aging report due date (PRD §5.2)</span>
-      <input type="number" name="payment_terms_days" min="1" step="1" inputmode="numeric" <%= bad('payment_terms_days') %>
-             value="<%= v('payment_terms_days') %>" placeholder="30"></label>
-
     <label class="fld">Start date
       <input type="date" name="start_date" value="<%= v('start_date') %>"></label>
 
@@ -68,6 +70,24 @@
   </div>
 </div>
 </form>
+<script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>">
+// Prefill payment terms from the chosen client. The project's own terms are an
+// override of the client default, so this only fires while the field is
+// untouched — an operator's typed value is never clobbered.
+(function () {
+  var map = {};
+  try { map = JSON.parse(document.getElementById('terms-by-client').textContent || '{}'); } catch (e) {}
+  var sel = document.getElementById('client_id');
+  var terms = document.getElementById('terms');
+  if (!sel || !terms) return;
+  sel.addEventListener('change', function () {
+    if (terms.dataset.touched === '1') return;
+    var v = map[sel.value];
+    terms.value = (v == null) ? '' : v;
+  });
+  terms.addEventListener('input', function () { terms.dataset.touched = '1'; });
+})();
+</script>
 <svg style="display:none" aria-hidden="true"><defs>
 <symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
 </defs></svg>

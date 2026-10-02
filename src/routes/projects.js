@@ -17,6 +17,7 @@ const q = require('../db/queries');
 const { projectsFor, capabilities } = require('../lib/permissions');
 const requirePage = require('../middleware/auth').requirePage;
 const svc = require('../lib/projects-service');
+const clientsSvc = require('../lib/clients-service');
 
 const IDR = new Intl.NumberFormat('id-ID');
 const fmt = (n) => IDR.format(n || 0);
@@ -118,8 +119,12 @@ router.get('/projects/new',
         locals: {
           form: {}, error: null, field: null,
           revenueMethods: svc.REVENUE_METHODS,
-          clients: q.clients ? q.clients() : [],
+          clients: q.clientsActive ? q.clientsActive() : [],
           industryTypes: q.industryTypes ? q.industryTypes() : [],
+          termsByClient: q.clientsActive ? q.clientsActive().reduce((m, c) => {
+            if (c.payment_terms_days != null) m[c.id] = c.payment_terms_days;
+            return m;
+          }, {}) : {},
         },
       });
   });
@@ -221,6 +226,133 @@ router.post('/projects/:id/approve',
       });
     }
     return res.redirect(`/projects?approved=${id}`);
+  });
+
+// ---- module 6 task 6.3: client register -------------------------------------
+//
+// Clients are NOT project-scoped: the same client serves many projects, so the
+// register is org-wide and this middleware ordering (requirePage only) is
+// deliberate — the client list must not be filtered by the current project.
+
+router.get('/clients', (req, res) => {
+  const caps = capabilities(req.user);
+  const rows = q.clientsAll().map((c) => {
+    const state = clientsSvc.approvalState('client', c.id);
+    return { ...c, approved: state.isApproved, approval: state.rows };
+  });
+
+  page(res, 'Clients', 'The client register · payment terms and points of contact',
+    'Portfolio / Clients', 'clients', {
+      active: 'Clients',
+      actions: caps.canManageClients
+        ? '<a class="btn pri" href="/clients/new"><svg><use href="#i-plus"/></svg>Register client</a>'
+        : '',
+      locals: {
+        rows, caps,
+        awaiting: rows.filter((r) => !r.approved).length,
+        inactive: rows.filter((r) => r.active !== 1).length,
+        saved: req.query.saved ? Number(req.query.saved) : null,
+        code: req.query.code || null,
+        error: null, errorClient: null, needsReason: false,
+      },
+    });
+});
+
+router.get('/clients/new',
+  requireCapability('canManageClients', 'Registering a client is a Finance, Project Manager, Project Controller or Project Admin task.'),
+  (req, res) => {
+    page(res, 'Register client', 'PRD §4.1 · the client register · payment terms feed project due dates',
+      'Portfolio / Clients / New', 'client-new', {
+        active: 'Clients',
+        locals: {
+          form: {}, error: null, field: null,
+          industryTypes: q.industryTypes(),
+        },
+      });
+  });
+
+router.post('/clients',
+  requireCapability('canManageClients', 'Registering a client is a Finance, Project Manager, Project Controller or Project Admin task.'),
+  (req, res) => {
+    const out = clientsSvc.createClient(req.body, req.user.id);
+    if (!out.ok) {
+      return res.status(out.status || 400).render('client-new', {
+        layout: 'layout-app', title: 'Register client',
+        subtitle: 'PRD §4.1 · the client was not registered',
+        crumb: 'Portfolio / Clients / New', active: 'Clients', actions: '',
+        projectName: res.locals.project?.name || 'No project',
+        form: req.body, error: out.message, field: out.field,
+        industryTypes: q.industryTypes(),
+      });
+    }
+    return res.redirect(`/clients?saved=${out.client.id}&code=${encodeURIComponent(out.client.code)}`);
+  });
+
+router.get('/clients/:id/edit',
+  requireCapability('canManageClients', 'Editing a client is a Finance, Project Manager, Project Controller or Project Admin task.'),
+  (req, res) => {
+    const client = q.clientById(Number(req.params.id));
+    if (!client) {
+      return res.status(404).render('404', {
+        layout: 'layout-app', title: 'Not found', subtitle: '', projectName: 'No project',
+      });
+    }
+    page(res, `Edit ${client.code}`, `${client.name} · registration details`,
+      `Portfolio / Clients / ${client.code}`, 'client-edit', {
+        active: 'Clients',
+        locals: {
+          client, form: client, error: null, field: null,
+          industryTypes: q.industryTypes(),
+          state: clientsSvc.approvalState('client', client.id),
+        },
+      });
+  });
+
+router.post('/clients/:id',
+  requireCapability('canManageClients', 'Editing a client is a Finance, Project Manager, Project Controller or Project Admin task.'),
+  (req, res) => {
+    const id = Number(req.params.id);
+    const out = clientsSvc.updateClient(id, req.body, req.user.id);
+    if (!out.ok) {
+      const client = q.clientById(id);
+      return res.status(out.status || 400).render('client-edit', {
+        layout: 'layout-app',
+        title: client ? `Edit ${client.code}` : 'Edit client',
+        subtitle: 'the change was not saved', crumb: 'Portfolio / Clients',
+        active: 'Clients', actions: '',
+        projectName: res.locals.project?.name || 'No project',
+        client: client || {}, form: req.body, error: out.message, field: out.field,
+        industryTypes: q.industryTypes(),
+        state: clientsSvc.approvalState('client', id),
+      });
+    }
+    return res.redirect(`/clients?updated=${id}`);
+  });
+
+router.post('/clients/:id/approve',
+  requireCapability('canApproveClients', 'Approving a client is a Project Manager task.'),
+  (req, res) => {
+    const id = Number(req.params.id);
+    const out = clientsSvc.approveClient(id, req.user.id, req.body.reason);
+    if (!out.ok) {
+      const client = q.clientById(id);
+      if (!client) return res.redirect('/clients');
+      const caps = capabilities(req.user);
+      return res.status(out.status || 400).render('clients', {
+        layout: 'layout-app', title: 'Clients',
+        subtitle: 'the approval was refused', crumb: 'Portfolio / Clients',
+        active: 'Clients', actions: '',
+        projectName: res.locals.project?.name || 'No project',
+        rows: q.clientsAll().map((c) => {
+          const st = clientsSvc.approvalState('client', c.id);
+          return { ...c, approved: st.isApproved, approval: st.rows };
+        }),
+        caps, awaiting: 0, inactive: 0,
+        saved: null, code: null,
+        error: out.message, errorClient: id, needsReason: out.field === 'reason',
+      });
+    }
+    return res.redirect(`/clients?approved=${id}`);
   });
 
 module.exports = router;

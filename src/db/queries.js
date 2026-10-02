@@ -57,9 +57,28 @@ const _notificationsFor = db.prepare(`
 // Administrator (PRD §4.1 step 1) and are EMPTY on a fresh install, so the form
 // renders them as optional selects rather than failing.
 const _clients = db.prepare(`
-  SELECT c.id, c.code, c.name, c.payment_terms_days FROM clients c
-  WHERE c.active = 1 ORDER BY c.name`);
+  SELECT c.*, i.name AS industry_name FROM clients c
+  LEFT JOIN industry_types i ON i.id = c.industry_id
+  ORDER BY c.name`);
+
 const _industryTypes = db.prepare(`SELECT * FROM industry_types ORDER BY name`);
+
+const _insertClient = db.prepare(`
+  INSERT INTO clients (code, name, industry_id, address, correspondence_person, email, phone, payment_terms_days, description, created_by, active)
+  VALUES (@code, @name, @industry_id, @address, @correspondence_person, @email, @phone, @payment_terms_days, @description, @created_by, 1)`);
+
+const _updateClient = db.prepare(`
+  UPDATE clients SET
+    name = @name,
+    industry_id = @industry_id,
+    address = @address,
+    correspondence_person = @correspondence_person,
+    email = @email,
+    phone = @phone,
+    payment_terms_days = @payment_terms_days,
+    description = @description,
+    active = @active
+  WHERE id = @id`);
 
 const _ledgerForProject = db.prepare(`
   SELECT v.*, r.id AS reversal_id, r.date AS reversal_date
@@ -550,6 +569,13 @@ module.exports = {
     `SELECT * FROM approvals WHERE entity_type = ? AND entity_id = ? AND step = ?`)
     .get(entityType, entityId, step),
   clients: () => _clients.all(),
+  // Active clients only — the client pickers on the project form and the client
+  // register both want the ones a user may actually choose.
+  clientsActive: () => _clients.all().filter((c) => c.active === 1),
+  clientsAll: () => _clients.all(),
+  clientById: (id) => db.prepare('SELECT * FROM clients WHERE id = ?').get(id),
+  insertClient: (row) => _insertClient.run(row),
+  updateClient: (row) => _updateClient.run(row),
   industryTypes: () => _industryTypes.all(),
   insertLedger: (row) => _insertLedger.run(row),
   insertLedgerAudit: (entityId, actorId, after) =>

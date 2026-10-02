@@ -328,18 +328,32 @@ test('PR2.17 editing a project is audited and cannot change its code', async () 
     { email: 'pr217-pm@example.test' });
   const p = byCode('PRJ-3011');
 
+  // NOTE: no `code` in this body, on purpose. The edit view renders the code
+  // read-only AND disabled, so a BROWSER DOES NOT SUBMIT IT. A test that posts a
+  // code would pass while every real edit through the UI failed — which is
+  // exactly what happened before this assertion was corrected.
   const res = await pm.client.post(`/projects/${p.id}`,
-    'name=Renamed+Bridge&revenue_method=poc&contract_amount=2000000&status=active&code=HACKED');
+    'name=Renamed+Bridge&revenue_method=poc&contract_amount=2000000&status=active');
   assert.strictEqual(res.status, 302);
 
   const after = byCode('PRJ-3011');
   assert.ok(after, 'the code is unchanged — it is the human key for this project');
-  assert.strictEqual(byCode('HACKED'), undefined);
   assert.strictEqual(after.name, 'Renamed Bridge');
   assert.strictEqual(after.revenue_method, 'poc');
 
   const trail = auditOf(p.id);
   assert.ok(trail.some((t) => t.action === 'update'), 'the edit is audited');
+});
+
+test('PR2.17b a submitted code is IGNORED on edit (the column is not updatable)', async () => {
+  // The other half of the same rule: a crafted POST cannot rename the key.
+  const { asRole } = require('./helpers/authz');
+  const pm = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'project_manager',
+    { email: 'pr217b-pm@example.test' });
+  const p = byCode('PRJ-3011');
+  await pm.client.post(`/projects/${p.id}`, 'name=Renamed+Bridge&revenue_method=poc&code=HACKED');
+  assert.strictEqual(byCode('HACKED'), undefined, 'a posted code never renames the project');
+  assert.ok(byCode('PRJ-3011'), 'and the original code still works');
 });
 
 // ---- PR2.18 the register surfaces approval state ----
@@ -440,3 +454,324 @@ test('PR1.7 the register counts what it shows (no whole-portfolio query leaking 
   assert.strictEqual(rows, 1, `exactly one project row for a one-project user (saw ${rows})`);
 });
 
+
+// ===========================================================================
+// PR3-series: the CLIENT register (module 6, plan task 6.3).
+//
+// WHAT THESE TESTS ARE ACTUALLY GUARDING
+// Two things, and the second is the one that matters.
+//
+// 1. The client register works: create, edit, validate, approve.
+//
+// 2. **The approval control behaves IDENTICALLY to the project register.** Task
+//    6.2 put the segregation-of-duties rule inside the project service; 6.3
+//    extracted it into `approvals-service.js` so both registers share ONE copy.
+//    The plan's own note for 6.5b says to keep "requester ≠ approver" in all
+//    cases — taken literally that deadlocks a one-person install, which is why
+//    the owner's decision (2026-10-01) is "self-approval allowed WITH a written
+//    reason". PR3.5/PR3.6 pin both halves for clients, exactly as PR2.13/PR2.14
+//    do for projects. If someone later "fixes" one register and not the other,
+//    one of these pairs fails.
+// ===========================================================================
+
+const clientCount = () => db.prepare('SELECT COUNT(*) n FROM clients').get().n;
+const clientByCode = (code) => db.prepare('SELECT * FROM clients WHERE code = ?').get(code);
+const clientApprovals = (id) => db.prepare(
+  `SELECT * FROM approvals WHERE entity_type='client' AND entity_id=? ORDER BY id`).all(id);
+const clientAudit = (id) => db.prepare(
+  `SELECT * FROM audit_log WHERE entity_type='client' AND entity_id=? ORDER BY id`).all(id);
+
+// `client.post()` takes a URL-encoded body STRING (see validForm above).
+const clientForm = (over = {}) => new URLSearchParams({
+  code: 'CL-3001', name: 'Test Client Bhd', payment_terms_days: '30',
+  email: 'ap@testclient.example', correspondence_person: 'A Person',
+  ...over,
+}).toString();
+
+test('PR3.1 a client can be registered; it starts NOT approved with the full chain recorded', async () => {
+  const { asRole } = require('./helpers/authz');
+  const actor = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'finance',
+    { email: 'pr31-finance@example.test' });
+
+  const before = clientCount();
+  const res = await actor.client.post('/clients', clientForm());
+  assert.strictEqual(res.status, 302, 'a successful registration redirects');
+
+  assert.strictEqual(clientCount(), before + 1);
+  const c = clientByCode('CL-3001');
+  assert.ok(c, 'the client exists');
+  assert.strictEqual(c.created_by, actor.userId, 'the creator is recorded — approval depends on it');
+  assert.strictEqual(c.payment_terms_days, 30);
+
+  const chain = clientApprovals(c.id);
+  assert.strictEqual(chain.length, 3, 'every RECORDED step exists from the moment of registration');
+  assert.ok(chain.every((r) => r.status === 'pending'), 'all start pending');
+  const svc = require('../src/lib/approvals-service');
+  assert.deepStrictEqual(svc.REQUIRED_STEPS.client, ['pm_approve'],
+    'decision 8A is LIGHT for clients too');
+});
+
+test('PR3.2 registering a client is audited and does not notify the actor', async () => {
+  const c = clientByCode('CL-3001');
+  const trail = clientAudit(c.id);
+  assert.strictEqual(trail.length, 1);
+  assert.strictEqual(trail[0].action, 'create');
+
+  const notes = db.prepare(
+    `SELECT * FROM notification_inbox WHERE entity_type='client' AND entity_id = ?`).all(c.id);
+  assert.ok(!notes.some((n) => n.user_id === c.created_by),
+    'the person who registered the client is not notified to approve it');
+});
+
+test('PR3.3 a duplicate client code is 409, not a 500', async () => {
+  const before = clientCount();
+  const res = await base.post('/clients', clientForm({ code: 'CL-3001' }));
+  assert.strictEqual(res.status, 409);
+  assert.match(await res.text(), /already in use/i);
+  assert.strictEqual(clientCount(), before);
+});
+
+test('PR3.4 payment terms must be a positive number of days when given', async () => {
+  // A term of 0 or a negative value is meaningless data: it would mean "due the
+  // day it was issued" or "already overdue when issued".
+  const before = clientCount();
+  for (const bad of ['0', '-5']) {
+    const res = await base.post('/clients', clientForm({ code: `CL-X${bad}`, payment_terms_days: bad }));
+    assert.strictEqual(res.status, 400, `terms=${bad} must be refused`);
+    assert.match(await res.text(), /positive number of days/i);
+  }
+  assert.strictEqual(clientCount(), before, 'nothing was written');
+});
+
+test('PR3.5 a malformed email is refused with a sentence', async () => {
+  const before = clientCount();
+  const res = await base.post('/clients', clientForm({ code: 'CL-3003', email: 'not-an-address' }));
+  assert.strictEqual(res.status, 400);
+  assert.match(await res.text(), /email address/i);
+  assert.strictEqual(clientCount(), before);
+});
+
+test('PR3.6 a Viewer cannot register a client (403 AND no row written)', async () => {
+  const { asRole } = require('./helpers/authz');
+  const viewer = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'viewer',
+    { email: 'pr36-viewer@example.test' });
+  const before = clientCount();
+  const res = await viewer.client.post('/clients', clientForm({ code: 'CL-3004' }));
+  assert.strictEqual(res.status, 403);
+  assert.strictEqual(clientCount(), before, '*** the row count is the real assertion ***');
+  assert.strictEqual(clientByCode('CL-3004'), undefined);
+});
+
+// ---- PR3.7 the shared SoD control, for clients ----
+
+test('PR3.7 the CREATOR cannot self-approve a client without a reason', async () => {
+  const { asRole } = require('./helpers/authz');
+  const pm = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'project_manager',
+    { email: 'pr37-pm@example.test' });
+  await pm.client.post('/clients', clientForm({ code: 'CL-3010' }));
+  const c = clientByCode('CL-3010');
+  assert.strictEqual(c.created_by, pm.userId);
+
+  const res = await pm.client.post(`/clients/${c.id}/approve`, 'reason=');
+  assert.strictEqual(res.status, 403, 'self-approval without a reason is refused');
+  assert.match(await res.text(), /written reason/i);
+
+  const row = db.prepare(
+    `SELECT * FROM approvals WHERE entity_type='client' AND entity_id=? AND step='pm_approve'`).get(c.id);
+  assert.strictEqual(row.status, 'pending', '*** the database still says pending ***');
+});
+
+test('PR3.8 the CREATOR CAN self-approve a client WITH a reason, and it is audited', async () => {
+  const { asRole } = require('./helpers/authz');
+  const pm = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'project_manager',
+    { email: 'pr38-pm@example.test' });
+  await pm.client.post('/clients', clientForm({ code: 'CL-3011' }));
+  const c = clientByCode('CL-3011');
+
+  const reason = 'Sole operator; confirmed the contract terms myself.';
+  const res = await pm.client.post(`/clients/${c.id}/approve`, `reason=${encodeURIComponent(reason)}`);
+  assert.strictEqual(res.status, 302);
+
+  const row = db.prepare(
+    `SELECT * FROM approvals WHERE entity_type='client' AND entity_id=? AND step='pm_approve'`).get(c.id);
+  assert.strictEqual(row.status, 'approved');
+  assert.strictEqual(row.comment, reason);
+
+  const trail = clientAudit(c.id);
+  const approve = trail.find((t) => t.action === 'approve');
+  const after = JSON.parse(approve.after_json);
+  assert.strictEqual(after.self_approved, true);
+  assert.strictEqual(after.reason, reason);
+});
+
+test('PR3.9 a DIFFERENT approver needs no reason', async () => {
+  const { asRole } = require('./helpers/authz');
+  const finance = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'finance',
+    { email: 'pr39-finance@example.test' });
+  await finance.client.post('/clients', clientForm({ code: 'CL-3012' }));
+  const c = clientByCode('CL-3012');
+
+  const pm = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'project_manager',
+    { email: 'pr39-approver@example.test' });
+  const res = await pm.client.post(`/clients/${c.id}/approve`, 'reason=');
+  assert.strictEqual(res.status, 302, 'a different person needs no justification');
+
+  const row = db.prepare(
+    `SELECT * FROM approvals WHERE entity_type='client' AND entity_id=? AND step='pm_approve'`).get(c.id);
+  assert.strictEqual(row.status, 'approved');
+  assert.strictEqual(row.actor_id, pm.userId);
+
+  const trail = clientAudit(c.id);
+  const after = JSON.parse(trail.find((t) => t.action === 'approve').after_json);
+  assert.strictEqual(after.self_approved, false);
+});
+
+test('PR3.10 approving twice is 409 and adds no second row', async () => {
+  const { asRole } = require('./helpers/authz');
+  const pm = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'project_manager',
+    { email: 'pr310-pm@example.test' });
+  const c = clientByCode('CL-3012');
+  const res = await pm.client.post(`/clients/${c.id}/approve`, 'reason=');
+  assert.strictEqual(res.status, 409);
+  const rows = db.prepare(
+    `SELECT * FROM approvals WHERE entity_type='client' AND entity_id=? AND step='pm_approve'`).all(c.id);
+  assert.strictEqual(rows.length, 1);
+});
+
+test('PR3.11 a Viewer cannot approve a client (403 and still pending)', async () => {
+  const { asRole } = require('./helpers/authz');
+  const viewer = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'viewer',
+    { email: 'pr311-viewer@example.test' });
+  const c = clientByCode('CL-3010');
+  const res = await viewer.client.post(`/clients/${c.id}/approve`,
+    `reason=${encodeURIComponent('a plausible looking reason')}`);
+  assert.strictEqual(res.status, 403);
+  const row = db.prepare(
+    `SELECT * FROM approvals WHERE entity_type='client' AND entity_id=? AND step='pm_approve'`).get(c.id);
+  assert.strictEqual(row.status, 'pending');
+});
+
+test('PR3.12 editing a client is audited and cannot change its code', async () => {
+  const { asRole } = require('./helpers/authz');
+  const pm = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'project_manager',
+    { email: 'pr312-pm@example.test' });
+  const c = clientByCode('CL-3011');
+
+  // No `code` in the body: the edit view renders it disabled, so a browser does
+  // not submit it (same trap as PR2.17).
+  const res = await pm.client.post(`/clients/${c.id}`,
+    'name=Renamed+Client&payment_terms_days=45&active=1');
+  assert.strictEqual(res.status, 302);
+
+  const after = clientByCode('CL-3011');
+  assert.ok(after, 'the code is unchanged — it is the human key for this client');
+  assert.strictEqual(after.name, 'Renamed Client');
+  assert.strictEqual(after.payment_terms_days, 45);
+  assert.ok(clientAudit(c.id).some((t) => t.action === 'update'));
+
+  // And a crafted code is ignored rather than honoured.
+  await pm.client.post(`/clients/${c.id}`, 'name=Renamed+Client&payment_terms_days=45&code=HACKED');
+  assert.strictEqual(clientByCode('HACKED'), undefined);
+  assert.ok(clientByCode('CL-3011'));
+});
+
+test('PR3.12b editing a client through the REAL UI shape (no code posted) succeeds', async () => {
+  // This is the regression guard for the bug PR2.17 masked: `validate()` required
+  // `code` on update, but the disabled input is not submitted by a browser, so
+  // every real edit failed with "A client code is required."
+  const { asRole } = require('./helpers/authz');
+  const pm = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'project_manager',
+    { email: 'pr312b-pm@example.test' });
+  await pm.client.post('/clients', clientForm({ code: 'CL-3013' }));
+  const c = clientByCode('CL-3013');
+
+  const res = await pm.client.post(`/clients/${c.id}`, 'name=Edited+Via+UI&payment_terms_days=15&active=1');
+  assert.strictEqual(res.status, 302, 'a real edit must not be refused for a missing code');
+  const after = clientByCode('CL-3013');
+  assert.strictEqual(after.name, 'Edited Via UI');
+  assert.strictEqual(after.payment_terms_days, 15);
+});
+
+test('PR3.13 a client can be deactivated rather than deleted (history stays readable)', async () => {
+  const { asRole } = require('./helpers/authz');
+  const pm = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'project_manager',
+    { email: 'pr313-pm@example.test' });
+  const c = clientByCode('CL-3011');
+
+  await pm.client.post(`/clients/${c.id}`, 'name=Renamed+Client&payment_terms_days=45&active=0');
+  const after = clientByCode('CL-3011');
+  assert.ok(after, 'the row still exists');
+  assert.strictEqual(after.active, 0, 'deactivated, not deleted');
+});
+
+// ---- PR3.14 the register screens ----
+
+test('PR3.14 GET /clients lists the register and the sidebar links to it', async () => {
+  const res = await base.get('/clients');
+  assert.strictEqual(res.status, 200);
+  const html = await res.text();
+  assert.match(html, /CL-3001/, 'registered clients are listed');
+  assert.match(html, /Test Client Bhd/);
+  assert.match(html, /Awaiting approval/i, 'the register surfaces the state it manages');
+});
+
+test('PR3.15 anonymous GET /clients is sent to /login, not rendered', async () => {
+  const res = await req('/clients');
+  assert.strictEqual(res.status, 302);
+  assert.match(res.headers.get('location') || '', /\/login/);
+});
+
+test('PR3.16 the client list is NOT filtered by the selected project', async () => {
+  // Clients are org-wide master data: one client serves many projects. If this
+  // list ever becomes project-scoped, a client registered under project A would
+  // vanish when the operator switches to project B.
+  const { asRole } = require('./helpers/authz');
+  const p2 = db.prepare(`SELECT id FROM projects WHERE code='PRJ-2027'`).get().id;
+  const scoped = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'project_manager',
+    { projectId: p2, email: 'pr316-scoped@example.test' });
+
+  const res = await scoped.client.get('/clients');
+  assert.strictEqual(res.status, 200);
+  const html = await res.text();
+  assert.match(html, /CL-3001/, 'every client is visible regardless of the project context');
+});
+
+// ---- PR3.17 the project form's client link ----
+
+test('PR3.17 a project can be registered against a client, and the client name is shown', async () => {
+  const { asRole } = require('./helpers/authz');
+  const pm = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'project_manager',
+    { email: 'pr317-pm@example.test' });
+  const c = clientByCode('CL-3001');
+
+  const res = await pm.client.post('/projects',
+    validForm({ code: 'PRJ-3100', client_id: String(c.id) }));
+  assert.strictEqual(res.status, 302);
+
+  const p = byCode('PRJ-3100');
+  assert.strictEqual(p.client_id, c.id, 'the project records the client');
+
+  const list = await base.get('/projects');
+  const html = await list.text();
+  assert.match(html, /Test Client Bhd/, 'the register shows the client name, not a blank or a raw id');
+});
+
+test('PR3.18 the project form offers the client terms as a default', async () => {
+  const { asRole } = require('./helpers/authz');
+  const pm = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'project_manager',
+    { email: 'pr318-pm@example.test' });
+  // Register a dedicated client rather than reusing another test's: PR3.13
+  // deactivates CL-3011, and the prefill correctly offers only ACTIVE clients —
+  // so borrowing it would make this test depend on execution order.
+  await pm.client.post('/clients', clientForm({ code: 'CL-3018', payment_terms_days: '45' }));
+  const c = clientByCode('CL-3018');
+  assert.strictEqual(c.payment_terms_days, 45);
+
+  const res = await pm.client.get('/projects/new');
+  assert.strictEqual(res.status, 200);
+  const html = await res.text();
+  // The prefill data ships as JSON next to the form; the field itself is filled
+  // in by the nonce'd script so an operator's typed value is never clobbered.
+  assert.match(html, /id="terms-by-client"/, 'the prefill source is present');
+  assert.match(html, new RegExp(`"${c.id}":45`), "the client's terms are offered as the default");
+});

@@ -1,0 +1,87 @@
+<%# Edit a registered client (module 6 task 6.3).
+    The CODE is read-only for the same reason as projects: it is the human key
+    other rows and imports are recognised by, so it is set once. %>
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Not saved.</b> <%= error %></p></div></div>
+<% } %>
+
+<% const v = (k) => (typeof form !== 'undefined' && form && form[k] != null) ? form[k] : ''; %>
+<% const bad = (k) => (typeof field !== 'undefined' && field === k) ? 'aria-invalid="true"' : ''; %>
+
+<div class="card" style="max-width:720px">
+  <div class="card-hd"><h2>Approval</h2>
+    <span class="r"><%= (typeof state !== 'undefined' && state.isApproved) ? 'approved' : 'awaiting approval' %></span></div>
+  <div class="tw"><table>
+    <thead><tr><th>Step</th><th>Applies to</th><th>Status</th><th>By</th><th>When</th><th>Comment</th></tr></thead>
+    <tbody>
+      <% ((typeof state !== 'undefined' && state.rows) ? state.rows : []).forEach(function(a){ %>
+      <tr>
+        <td class="mono"><%= a.step %></td>
+        <td><%= a.required_role || '—' %></td>
+        <td><span class="chip <%= a.status === 'approved' ? 'ok' : (a.status === 'rejected' ? 'bd' : 'nt') %>"><%= a.status %></span></td>
+        <td><%= a.actor_email || '—' %></td>
+        <td class="mono"><%= a.acted_at || '—' %></td>
+        <td><%= a.comment || '—' %></td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table></div>
+  <div class="fnote"><svg><use href="#i-info"/></svg><span>Under the light approval chain only
+    <b>pm_approve</b> is required for the record to count as approved. The other steps are recorded so the
+    full PRD chain can be switched on later without losing history.</span></div>
+</div>
+
+<form method="post" action="/clients/<%= client.id %>" style="margin-top:12px">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+<div class="card" style="max-width:720px">
+  <div class="card-hd"><h2><%= client.code %></h2><span class="r">registration details</span></div>
+  <div class="fbody">
+    <label class="fld">Client code <span class="dim">set at registration and not editable</span>
+      <input type="text" value="<%= client.code %>" readonly disabled></label>
+
+    <label class="fld">Client name
+      <input type="text" name="name" required <%= bad('name') %> value="<%= v('name') %>"></label>
+
+    <label class="fld">Industry <span class="dim">optional</span>
+      <select name="industry_id" <%= bad('industry_id') %>>
+        <option value="">— not set —</option>
+        <% (typeof industryTypes !== 'undefined' ? industryTypes : []).forEach(function(t){ %>
+        <option value="<%= t.id %>" <%= String(v('industry_id')) === String(t.id) ? 'selected' : '' %>><%= t.name %></option>
+        <% }) %>
+      </select></label>
+
+    <label class="fld">Payment terms <span class="dim">days</span>
+      <input type="number" name="payment_terms_days" min="1" step="1" inputmode="numeric" <%= bad('payment_terms_days') %>
+             value="<%= v('payment_terms_days') %>"></label>
+
+    <label class="fld">Correspondence person
+      <input type="text" name="correspondence_person" maxlength="200" value="<%= v('correspondence_person') %>"></label>
+
+    <label class="fld">Email
+      <input type="email" name="email" maxlength="200" <%= bad('email') %> value="<%= v('email') %>"></label>
+
+    <label class="fld">Phone
+      <input type="text" name="phone" maxlength="50" value="<%= v('phone') %>"></label>
+
+    <label class="fld">Address
+      <textarea name="address" rows="2" maxlength="500"><%= v('address') %></textarea></label>
+
+    <label class="fld">Description
+      <textarea name="description" rows="2" maxlength="1000"><%= v('description') %></textarea></label>
+
+    <label class="fld">Status
+      <select name="active">
+        <option value="1" <%= v('active') === 1 ? 'selected' : '' %>>active</option>
+        <option value="0" <%= v('active') === 0 ? 'selected' : '' %>>inactive</option>
+      </select></label>
+
+    <div class="fnote"><svg><use href="#i-info"/></svg><span>A client is deactivated rather than deleted —
+      projects and ledger lines already reference it, and history must stay readable.</span></div>
+
+    <button class="btn pri wide" type="submit"><svg><use href="#i-check"/></svg>Save changes</button>
+  </div>
+</div>
+</form>
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
+</defs></svg>

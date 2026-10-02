@@ -614,7 +614,69 @@ test('the project code must be unique', async () => { ... });  // UNIQUE(code) �
 
 ---
 
-#### Task 6.3 — Clients register (Finance verifies, Admin approves)
+#### Task 6.3 — Clients register (Finance verifies, Admin approves) — ✅ DONE 2026-10-01
+
+**Outcome.** `src/lib/clients-service.js`, `views/clients.ejs`, `views/client-new.ejs`,
+`views/client-edit.ejs`; routes in `src/routes/projects.js`; migration `012_client_provenance.sql`.
+Tests **PR3.1–PR3.18**. Suite floor **236 → 256**.
+
+**THE SHARED-CONTROL REFACTOR.** 6.2 had the segregation-of-duties rule inside
+`projects-service.js`. Copying it here would be how a control drifts, so it was extracted to
+`src/lib/approvals-service.js` — ONE implementation of the chain (`REQUIRED_STEPS`,
+`RECORDED_STEPS`), the SoD predicate, the notification fan-out and the approval transaction.
+Projects, clients and (6.4) suppliers all call it. The 6.2 tests still pass unchanged, which is the
+evidence the extraction was behaviour-preserving.
+
+**THE CONFLICT THIS TASK EXPOSED.** Plan 6.5b's table says clients are approved by "PM approves;
+Finance/Admin recorded if present", and then in the very next paragraph says to keep
+**"requester ≠ approver" enforced in all cases**. Both cannot hold: with one operator the same
+person creates and approves, so a strict rule approves nothing, ever. PRD §4.1's two-actor chain
+(Finance verifies → Admin approves) has the same defect for a solo install. Resolved the same way as
+6.2 — **self-approval with a written reason** — and applied to *every* register rather than
+per-register, so there is no register with an unusable chain.
+
+**TWO REAL BUGS FOUND (neither was visible from the plan):**
+
+1. **`clients` had no `created_by` column** — `projects` did. The SoD rule reads it, so the client
+   register could not evaluate the control at all. Migration **012** adds it to `clients` **and**
+   `suppliers`, deliberately in one migration so 6.4 does not need its own. It is nullable: existing
+   rows have no known creator and are NOT backfilled with a guess; a NULL creator means "allowed"
+   (nothing to be segregated from), which is the correct reading for a pre-provenance row.
+2. **Every edit through the real UI failed.** `validate()` required `code` on update, but the edit
+   views render the code `readonly disabled` — and a browser does not submit a disabled input. So
+   the service saw no code, refused with "A client code is required.", and the operator could not
+   edit anything. PR2.17 had passed only because the test posted `code=HACKED` explicitly: **the test
+   was validating a request shape no browser produces.** Fixed in both services; PR2.17 now posts no
+   code, PR2.17b proves a crafted code is ignored, PR3.12b is the regression guard.
+
+**THE PLAN'S PREMISE WAS WRONG, AND THE CODE WAS NOT BENT TO MATCH IT.** Plan 6.3 states
+`clients.payment_terms_days` is "the default that `v_aging` due dates depend on" and that a NULL
+"silently breaks the aging report". Checked against the real code:
+- `v_aging` buckets on **fixed 30/60/90/120-day** offsets from `invoice_date` and never reads
+  `payment_terms_days`.
+- PRD §5.2 DOES specify "Due date = ledger date + payment terms (from project register)" — but that
+  due-date column **does not exist yet**. It belongs to Module 8, where the aging report screen lives
+  (plan line 772 "Aging report — the `v_aging` view already buckets...").
+So the column is validated as the business term it is (positive whole days) without manufacturing a
+coupling that isn't in the code — and the misleading UI label "drives the aging report due date" was
+removed. **Module 8 must add the due-date column and surface it; that is the follow-up this task
+could not do.**
+
+**Clients are NOT project-scoped.** One client serves many projects, so the register reads
+`q.clientsAll()` and is deliberately not filtered by the current project (PR3.16 pins this). The
+same-client-many-projects fact is also why the register lives under Portfolio, not under a project.
+
+**Files (actual):**
+- Create: `src/lib/approvals-service.js`, `src/lib/clients-service.js`,
+  `views/clients.ejs`, `views/client-new.ejs`, `views/client-edit.ejs`,
+  `db/migrations/012_client_provenance.sql`
+- Modify: `src/routes/projects.js`, `src/db/queries.js`, `src/lib/projects-service.js`,
+  `views/partials/sidebar.ejs` (+ Clients nav), `views/project-new.ejs` (client terms prefill),
+  `db/schema.sql` (regenerated), `TEST_PLAN.md`
+
+---
+
+#### Task 6.3 — original plan text (kept for reference)
 
 **Objective:** PRD §4.1 "Client register" — create a client with payment terms and industry type.
 

@@ -67,6 +67,14 @@ function capabilities(user) {
   // Who may APPROVE it. Decision 8A (LIGHT): the PM approves. An Administrator
   // holds every role by design, so they pass `has(...)` without being listed.
   const canApproveProjects = has('project_manager');
+  // --- Client register (module 6 task 6.3, PRD §4.1) ------------------------
+  // PRD §4.1: "Finance verifies → Admin approves"; a Project Admin may also
+  // initiate. Registering master data is the same class of act as registering a
+  // project, so the same set of initiators applies.
+  const canManageClients = has('project_manager', 'project_controller', 'project_admin', 'finance');
+  // Decision 8A (LIGHT): the PM approves. See approvals-service.js for why the
+  // creator may approve their own record with a written reason.
+  const canApproveClients = has('project_manager');
   return {
     roles,
     isAdmin,
@@ -101,6 +109,10 @@ function capabilities(user) {
     // assignment, which the scope layer already does). Only the write actions
     // are gated, which is why this is a flat true rather than a role test.
     canViewProjects: true,
+    // --- Client register ---------------------------------------------------
+    canManageClients,
+    canApproveClients,
+    canViewClients: true,
   };
 }
 

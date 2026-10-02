@@ -215,7 +215,7 @@ CREATE TABLE clients (
   payment_terms_days  INTEGER,                  -- default due-date offset (R2-6)
   description         TEXT,
   active              INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1))
-);
+, created_by INTEGER REFERENCES users(id));
 CREATE TABLE cost_categories (
   id             INTEGER PRIMARY KEY,
   code           TEXT NOT NULL UNIQUE,
@@ -498,7 +498,7 @@ CREATE TABLE suppliers (
   active        INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
   approved_by   INTEGER REFERENCES users(id),
   approved_at   TEXT
-);
+, created_by INTEGER REFERENCES users(id));
 CREATE TABLE teams (
   id            INTEGER PRIMARY KEY,
   code          TEXT NOT NULL UNIQUE,

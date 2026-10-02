@@ -35,28 +35,16 @@
 
 const db = require('../db/db');
 const q = require('../db/queries');
+const approvals = require('./approvals-service');
 
 const REVENUE_METHODS = ['milestone', 'poc', 'time_based', 'on_billing'];
 
-// Which steps must be `approved` for the register to count the record approved.
-// LIGHT (decision 8A). The full PRD chain would be:
-//   ['finance_verify', 'pm_verify', 'admin_approve']
-const REQUIRED_STEPS = {
-  project: ['pm_approve'],
-  client: ['pm_approve'],
-  supplier: ['pm_approve'],
-};
-
-// Every step the register RECORDS, whether required or not. `required_role` is
-// advisory (who it is aimed at); the authority to act comes from capabilities.
-const RECORDED_STEPS = {
-  project: [
-    { step: 'finance_verify', required_role: 'finance' },
-    { step: 'pm_verify', required_role: 'project_manager' },
-    { step: 'admin_approve', required_role: 'administrator' },
-    { step: 'pm_approve', required_role: 'project_manager' },
-  ],
-};
+// The chain definition and the segregation-of-duties rule now live in
+// `approvals-service.js`, shared with the client and supplier registers so the
+// control cannot drift between them. Re-exported here because tests and routes
+// have always read them from this module.
+const REQUIRED_STEPS = approvals.REQUIRED_STEPS;
+const RECORDED_STEPS = approvals.RECORDED_STEPS;
 
 // ---------------------------------------------------------------------------
 // Validation. Returns { ok: true, row } or { ok: false, field, message }.
@@ -79,6 +67,10 @@ function validate(input, { isUpdate = false } = {}) {
     if (code.length > 40) return { ok: false, field: 'code', message: 'The project code is at most 40 characters.' };
     out.code = code;
   }
+  // On update the code is NOT taken from the form at all: the edit view renders
+  // it read-only and disabled, so a browser does not submit it, and accepting it
+  // would let anyone rename the human key other rows and imports match on. The
+  // route's UPDATE statement does not name the column either.
 
   const name = String(input.name || '').trim();
   if (!name) return { ok: false, field: 'name', message: 'A project name is required.' };
@@ -170,51 +162,19 @@ function clientNameFor(clientId) {
 }
 
 // ---------------------------------------------------------------------------
-// Segregation of duties (owner decision 2026-10-01)
-// Returns null when allowed, else the reason to show the user.
+// Approval — delegated to the shared chain module (see approvals-service.js).
 // ---------------------------------------------------------------------------
 
-function checkSelfApproval({ project, actorId, reason }) {
-  if (!project || project.created_by == null) return null;
-  if (project.created_by !== actorId) return null;          // different person — the normal case
-  if (String(reason || '').trim().length >= 10) return null; // own work, but justified on the record
-  return 'You created this project, so approving it needs a written reason (at least 10 characters) '
-       + 'for the audit trail.';
-}
+const approvalState = approvals.approvalState;
 
-// ---------------------------------------------------------------------------
-// Approval state
-// ---------------------------------------------------------------------------
+// Kept as a named export for backwards compatibility with existing callers and
+// tests; the rule itself lives in approvals-service.js.
+const checkSelfApproval = approvals.checkSelfApproval;
 
-function approvalState(entityType, entityId) {
-  const rows = q.approvalsFor(entityType, entityId);
-  const required = REQUIRED_STEPS[entityType] || [];
-  const approvedSteps = new Set(rows.filter((r) => r.status === 'approved').map((r) => r.step));
-  const isApproved = required.length > 0 && required.every((s) => approvedSteps.has(s));
-  return { rows, required, isApproved, approvedSteps };
-}
+const approverIds = (excludeUserId) => approvals.approverIds('project', excludeUserId);
 
-// Who should be told a decision is waiting. Role holders (global grants) plus
-// every active Administrator, de-duplicated; never the person who just acted.
-function approverIds(excludeUserId) {
-  const ids = new Set([...q.userIdsForRole('project_manager'), ...q.adminUserIds()]);
-  ids.delete(excludeUserId);
-  return [...ids];
-}
-
-function notifyPending(project, actorId, entityType) {
-  for (const uid of approverIds(actorId)) {
-    q.insertNotification({
-      user_id: uid,
-      project_id: project.id,
-      alert_type: 'approval_pending',
-      severity: 'info',
-      title: `Project ${project.code} needs approval`,
-      body: `${project.name} was registered and is waiting for approval.`,
-      entity_type: entityType,
-      entity_id: project.id,
-    });
-  }
+function notifyPending(project, actorId) {
+  approvals.notifyPending('project', project, actorId, project.id);
 }
 
 // ---------------------------------------------------------------------------
@@ -234,19 +194,12 @@ function createProject(input, actorId) {
     const info = q.insertProject({ ...v.row, created_by: actorId });
     const id = info.lastInsertRowid;
 
-    // Record EVERY step up front, all pending. The chain is visible from the
-    // moment of registration, and which steps are REQUIRED is data (above), not
-    // a decision baked in here.
-    for (const s of RECORDED_STEPS.project) {
-      q.insertApproval({
-        entity_type: 'project', entity_id: id, step: s.step,
-        required_role: s.required_role, status: 'pending', actor_id: null, comment: null,
-      });
-    }
+    // Record EVERY step up front, all pending (shared chain module).
+    approvals.seedChain('project', id);
 
     const created = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
     q.audit('project', id, 'create', actorId, null, created);
-    notifyPending(created, actorId, 'project');
+    notifyPending(created, actorId);
     return created;
   });
 
@@ -274,33 +227,15 @@ function updateProject(id, input, actorId) {
 }
 
 // Approve. `reason` is only required when the actor created the project.
+// Everything else — the required step, the SoD rule, the audit shape — is the
+// shared implementation, so this register cannot drift from the others.
 function approveProject(id, actorId, reason) {
-  const project = q.projectById(id);
-  if (!project) return { ok: false, status: 404, field: 'id', message: 'That project does not exist.' };
-
-  const state = approvalState('project', id);
-  if (state.isApproved) {
-    return { ok: false, status: 409, field: 'approval', message: `${project.code} is already approved.` };
-  }
-
-  const sod = checkSelfApproval({ project, actorId, reason });
-  if (sod) return { ok: false, status: 403, field: 'reason', message: sod };
-
-  const run = db.transaction(() => {
-    const step = REQUIRED_STEPS.project[0];   // 'pm_approve' under the LIGHT chain
-    q.setApprovalStatus('approved', actorId, String(reason || '').trim() || null, 'project', id, step);
-    const after = db.prepare('SELECT * FROM projects WHERE id = ?').get(id);
-    // The approval IS an audit event; the self-approval reason rides in `after`
-    // so the trail answers "why was this allowed?" without a second query.
-    q.audit('project', id, 'approve', actorId, null, {
-      step, approved_at: new Date().toISOString(),
-      self_approved: project.created_by === actorId,
-      reason: String(reason || '').trim() || null,
-    });
-    return after;
+  const out = approvals.approveRecord({
+    entityType: 'project', id, actorId, reason,
+    fetchRecord: (rid) => q.projectById(rid),
   });
-
-  return { ok: true, project: run() };
+  if (!out.ok) return out;
+  return { ok: true, project: out.record };
 }
 
 module.exports = {

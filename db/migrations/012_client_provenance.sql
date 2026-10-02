@@ -1,0 +1,52 @@
+-- 012_client_provenance.sql
+--
+-- Adds `created_by` to `clients` and `suppliers`, the master-data registers whose
+-- approval chains need to know who created the record.
+--
+-- WHY THIS IS NEEDED
+-- ------------------
+-- Every register in module 6 has an approval chain with a segregation-of-duties
+-- rule: approving a record YOU created requires a written reason, recorded in the
+-- audit trail (owner decision 2026-10-01 — a blanket "approver ≠ requester" rule
+-- deadlocks a one-person install). That rule reads `created_by`.
+--
+-- `projects` has had `created_by` since 001. `clients` and `suppliers` did NOT,
+-- so the client register could record the approval but not who created the
+-- record, and the SoD rule could not be evaluated at all.
+--
+-- WHY NOT DERIVE IT FROM `approvals`
+-- ----------------------------------
+-- The simplest alternative is to read the initiator from the chain's first row.
+-- That is worse: the chain is mutable (a step can be re-pointed), and the fact
+-- being recorded here is "who created this row", which belongs on the row. It
+-- also keeps `checkSelfApproval` identical across all three registers — one
+-- predicate, one column, no per-register special cases.
+--
+-- NULLABLE ON PURPOSE
+-- -------------------
+-- Existing rows have no known creator and are not backfilled with a guess. A
+-- NULL `created_by` makes `checkSelfApproval` return "allowed" (there is no
+-- creator to be segregated from), which is the correct reading for a row that
+-- predates provenance tracking.
+--
+-- SAFE TO RE-RUN: guarded by a column-existence check.
+
+-- ---------------------------------------------------------------------------
+-- clients
+-- ---------------------------------------------------------------------------
+-- SQLite has no "ADD COLUMN IF NOT EXISTS"; the runner applies each migration
+-- once (tracked by user_version), so a plain ALTER is correct here.
+ALTER TABLE clients ADD COLUMN created_by INTEGER REFERENCES users(id);
+
+-- ---------------------------------------------------------------------------
+-- suppliers
+-- ---------------------------------------------------------------------------
+-- Added now rather than in task 6.4 so the two master-data registers stay in
+-- step; 6.4 builds the supplier screens on top of this.
+ALTER TABLE suppliers ADD COLUMN created_by INTEGER REFERENCES users(id);
+
+-- ---------------------------------------------------------------------------
+-- Indexes: the approval path looks a record up by id and reads created_by, so no
+-- new index is warranted. Audit reads go through audit_log, which is already
+-- indexed on (entity_type, entity_id).
+-- ---------------------------------------------------------------------------

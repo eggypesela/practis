@@ -32,7 +32,7 @@ A duplicate ID makes traceability meaningless: "C1.1 failed" named three differe
 | `FX` | **Real-ledger fixture** regression (§8.3) | `fixture.test.js` | 3908 |
 | `BOLA` | **Cross-project isolation** (scope, §0 task 0.9) | `bola.test.js` | 3902 (gate off) + 3903 (gate on) |
 | `FP` | **Frozen periods** (§0 task 0.10, TECH-SPEC §8.4) | `periods.test.js` | 3910 |
-| `PR` | **Portfolio register** (Module 6 tasks 6.1 + 6.2, §10 step 3) | `projects.test.js` | 3904 |
+| `PR` | **Portfolio register** (Module 6 tasks 6.1–6.3, §10 step 3) | `projects.test.js` | 3904 |
 
 **Known legacy collisions to re-map when touched:** `advances.test.js` reuses `A1`,`E1`,`C1`,`S1`,
 `R1`,`Z1`; `csrf.test.js` reuses `C1`,`S1`,`C2`,`C3`; `correct.test.js` reuses `C1`–`C4`;
@@ -465,6 +465,67 @@ halves, so the control can never silently degrade to either "impossible" or "rub
   `Received type function`; the fix is `await res.text()`. This looked like a page-content failure.
 - **`asRole()` generates one email per role**, so two tests using the same role in the same DB collide
   on `UNIQUE constraint failed: users.email` unless each passes a distinct `email` option.
+
+---
+
+## 12e. PR3 — Client register — ✅ IMPLEMENTED 2026-10-01
+
+The client register (PRD §4.1 "Client register"), sharing the approval chain with the project register.
+
+| ID | Assertion |
+|---|---|
+| PR3.1 | a client can be registered; starts NOT approved; the full chain is recorded |
+| PR3.2 | the create is audited; the actor is not notified to approve their own record |
+| PR3.3 | a duplicate code is 409, not a 500 |
+| PR3.4 | payment terms must be positive when given (0 and negatives refused) |
+| PR3.5 | a malformed email is refused with a sentence |
+| PR3.6 | a Viewer cannot register (403 **and** row count unchanged) |
+| PR3.7 | **the creator cannot self-approve without a reason** (DB still `pending`) |
+| PR3.8 | **the creator CAN self-approve with a reason** — on the approval AND the audit trail |
+| PR3.9 | a **different** approver needs no reason, `self_approved: false` |
+| PR3.10 | approving twice is 409 and adds no second row |
+| PR3.11 | a Viewer cannot approve (403 and still pending) |
+| PR3.12 | an edit is audited; a posted code is **ignored**, not honoured |
+| PR3.12b | an edit in the REAL UI shape (disabled code not submitted) succeeds |
+| PR3.13 | a client is deactivated, never deleted (history stays readable) |
+| PR3.14 | the register lists clients and surfaces approval state |
+| PR3.15 | anonymous `/clients` redirects to `/login` |
+| PR3.16 | the client list is **not** filtered by the selected project (org-wide master data) |
+| PR3.17 | a project registers against a client and the register shows the client NAME |
+| PR3.18 | the project form offers the client's payment terms as a default |
+
+**The control is now shared, not copied.** Task 6.2 put the segregation-of-duties rule inside
+`projects-service.js`; 6.3 extracted it to `src/lib/approvals-service.js` so projects, clients and
+(6.4) suppliers all enforce ONE copy. PR3.7/PR3.8 mirror PR2.13/PR2.14 deliberately: if someone
+"fixes" one register's rule and not the other's, one of the pairs fails.
+
+**Plan 6.5b says "keep requester ≠ approver in all cases" — that is not implementable here.** Taken
+literally it deadlocks a one-person install: the same operator creates and approves everything, and
+nothing would ever be approved. The owner's decision (2026-10-01) is "self-approval allowed with a
+written reason, recorded in the audit trail", applied uniformly.
+
+**The plan's stated basis for this task was factually wrong, and the code was not changed to match it.**
+Plan 6.3 says `clients.payment_terms_days` is what `v_aging` due dates depend on, and that a NULL
+"silently breaks the aging report". In the real code:
+- `v_aging` buckets on **fixed 30/60/90/120-day** offsets from `invoice_date` (PRD §5.2) and never
+  reads `payment_terms_days`.
+- PRD §5.2 does specify "Due date = ledger date + payment terms" — a due-date column that **does not
+  exist yet**. Wiring it belongs to Module 8, where the aging report screen lives (plan line 772).
+So the column is validated as the business term it is (positive days) without inventing a coupling
+that isn't there. The misleading UI label "drives the aging report due date" was removed.
+
+**Two real bugs found by building this, both fixed:**
+
+1. **`clients` had no `created_by` column** (projects did). The SoD rule reads it, so the client
+   register could not evaluate the control at all. Migration **012** adds it to `clients` **and**
+   `suppliers`, so 6.4 does not need a second migration.
+2. **Every edit through the real UI failed.** `validate()` required `code` on update, but the edit
+   views render the code `readonly disabled` — a browser does not submit a disabled input. PR2.17
+   passed only because the test posted `code=HACKED` explicitly. Fixed in both services; PR2.17 now
+   posts no code, PR2.17b proves a crafted code is ignored, and PR3.12b is the regression guard.
+
+**Test-harness lesson:** a test that posts fields a browser would not post can pass while the real UI
+is broken. When a field is disabled on purpose, the test must mirror the browser.
 
 ---
 
