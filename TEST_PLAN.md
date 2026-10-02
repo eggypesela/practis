@@ -544,12 +544,15 @@ green one):**
   **A test that accuses the code is not automatically right — check whether the data is legitimately
   public before "fixing" the app.**
 
-**Identity leak (separate, still open):** the repo-local git identity was
-`Regina Citra Pesela <[redacted]>` — not the `40174390+eggypesela@users.noreply.github.com`
-noreply alias the history rewrite used. So the **five commits after `eaf8def` (7c9cef3, 0f2c851,
-efc40b7, 241a4fb) published the personal address on the PUBLIC repo**, undoing that part of the
-rewrite. `git config user.email` is now the noreply alias for this repo. The already-pushed commits
-still carry it.
+**Identity leak (FIXED 2026-10-02):** the repo-local git identity was set to the personal Gmail
+address rather than the `…@users.noreply.github.com` noreply alias the history rewrite used, so the
+five commits after `eaf8def` (7c9cef3, 0f2c851, efc40b7, 241a4fb) republished it on the PUBLIC repo,
+undoing that part of the rewrite. `git config user.email` is now the noreply alias for this repo, and
+the already-pushed commits were rewritten so no commit metadata carries the address.
+
+**A first draft of this note repeated the address verbatim**, which published it a second way — inside
+a blob, where an email rewrite alone would not have reached it. It has been redacted and the blob
+scrubbed. **Never write the PII you are reporting into the artefact that reports it.**
 
 ---
 
