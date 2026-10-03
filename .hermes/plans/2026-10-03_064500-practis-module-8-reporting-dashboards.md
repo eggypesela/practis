@@ -307,39 +307,55 @@ in this module, disagree with the ordering, not with this.
 
 ---
 
-## Part 8.2 — Due dates: `payment_terms_days` becomes real — *migration 021*
+## Part 8.2 — Due dates: `payment_terms_days` becomes real — *migration 021* — ✅ BUILT 2026-10-03
+
+**Status: implemented, 7/7 AG8 tests green, migration 021, suite floor raised.**
+**CORRECTED DURING THE BUILD — read this first: the paragraph below originally said "aging then ages
+from `due_date`". That was WRONG and would have been a regression.** The buckets stay on the
+**invoice** date (TECH-SPEC §13, PRD §5.2, `db/validate.py` and RG8.6 all pin them there); re-pointing
+them at `due_date` would have silently re-labelled 30/60/90/120 as *days past due* and moved every
+aged figure — RG8.6 would have failed, correctly. `due_date` and `overdue_days` are **added beside**
+the buckets. AG8.6 proves the two are independent by constructing a row where they disagree.
 
 **The gap.** F3. PRD §5.2: due date = ledger date + payment terms from the project register.
 
-**The rule (recommended default, decision D3 below):** project `payment_terms_days` → else the
+**The rule (decision D3, answered A):** project `payment_terms_days` → else the
 client's `payment_terms_days` → else a **system default of 30 days** held in `app_settings` under a
 new key `default_payment_terms_days`. The fallback chain is exposed, not hidden: the register says
-which one applied, because "30 days" that is really "nobody set this" is a different fact from
-"30 days, our terms".
+which one applied (`terms_source`), because "30 days" that is really "nobody set this" is a different
+fact from "30 days, our terms". **Measured:** `app_settings` carries *no business settings at all*
+after `seed-master.js` (only the argon2 tuning keys and `csrf_secret`), so migration 021 seeds the
+row with `INSERT OR IGNORE` **before** the view that reads it — otherwise the view would return NULL
+terms on every real installation and no screen could show or change the value.
 
-**Implementation.** A new view `v_receivable_due` (or `due_date` added to `v_receivable`) computing
-`date(invoice_date, '+' || terms || ' days')` and carrying `terms_days`, `terms_source`
-(`project`|`client`|`default`). Aging then ages from **`due_date`**, and `overdue_days` becomes
-`julianday('now') - julianday(due_date)` clamped at 0 — so a not-yet-due invoice has 0 overdue days
-rather than a negative, and the buckets mean "days overdue", which is what a collection list needs.
-Keep `days_aged` (from invoice date) alongside it: the two answer different questions and Finance
-uses both.
+**Implementation.** NEW view `v_receivable_due` — column-for-column a superset of `v_receivable`,
+plus `terms_days`, `terms_source` (`project`|`client`|`default`) and `due_date`
+(`date(invoice_date, '+' || terms || ' days')`, SQLite's own arithmetic — no new dependency).
+`v_aging` is recreated from it and **keeps its exact contract** (invoice-date buckets, datable +
+still-outstanding only), gaining `terms_days`, `terms_source`, `due_date` and `overdue_days`.
+`overdue_days = max(0, julianday('now') - julianday(due_date))` — **clamped at 0**, because a
+not-yet-due invoice reported as "-12 days overdue" would sort ahead of genuinely overdue invoices.
+`days_aged` (invoice date) is kept alongside it: the two answer different questions and Finance uses
+both. An unknown default is reported as unknown (`terms_days` NULL → `due_date` NULL), never
+invented as 30 — the rule migration 018 set for SPI/CPI.
 
 Note `date(x, '+30 days')` is SQLite's own date arithmetic — no new dependency, and it is
 deterministic given the row.
 
-**Files:** NEW `db/migrations/021_receivable_due_date.sql`; `db/schema.sql`; NEW
-`test/aging.test.js` (AG8.1–AG8.5, port **3922**); `TEST_PLAN.md`; plan.
+**Files:** NEW `db/migrations/021_receivable_due_date.sql`; `db/schema.sql` (regenerated); NEW
+`test/aging.test.js` (AG8.1–AG8.7, port **3922**); `TEST_PLAN.md` (§12m); this plan.
 
-**Tests:**
+**Tests (each expectation computed by hand in a comment) — 7/7 green:**
 
-| ID | Assertion |
-|---|---|
-| AG8.1 | project terms win over client terms |
-| AG8.2 | with no project terms, the **client's** terms are used and `terms_source = 'client'` |
-| AG8.3 | with neither, the default applies and `terms_source = 'default'` — and the default is **read from `app_settings`**, not hard-coded |
-| AG8.4 | `due_date = invoice_date + terms` exactly, on a hand-computed date |
-| AG8.5 | an invoice **inside** its terms has `overdue_days = 0`, not a negative — and lands in the `current` bucket |
+| ID | Assertion | Expected |
+|---|---|---|
+| AG8.1 | the default is **read from `app_settings`**, not baked into the view | set 30 → due 2026-03-31; changed to 45 → due **2026-04-15**; `terms_source='default'` |
+| AG8.2 | with no terms anywhere the due date is **NULL**, never an invented 30 | `terms_days` NULL, `due_date` NULL; restoring 30 → 2026-04-09 |
+| AG8.3 | a project with no terms inherits the **client's**, and says so | 60 days → due **2026-04-02**, `terms_source='client'` |
+| AG8.4 | the **project's** terms win over the client's (R2-6) | 15 days → due **2026-03-16**, `terms_source='project'` |
+| AG8.5 | an invoice **inside** its terms has `overdue_days = 0`, not a negative | 10 days old, 90-day terms → overdue **0**, `days_aged` 10.x, bucket `1_30` |
+| AG8.6 | the 30/60/90/120 buckets still measure from the **INVOICE** date | 75 days old / 60-day terms → bucket **`61_90`**, overdue **15**; the five boundaries re-pinned |
+| AG8.7 | undatable rows stay out of aging but reachable on the register; settled rows keep their due date | blank date → absent from `v_aging`, present in the no-date to-do; paid in full → out of `v_aging` |
 
 ---
 

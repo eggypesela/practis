@@ -848,6 +848,61 @@ became *readable* after the fix is further evidence the old filter was wrong rat
 
 ---
 
+## 12m. AG8 — Due dates: `payment_terms_days` becomes real — ✅ IMPLEMENTED 2026-10-03
+
+PRD §5.2 and R2-6 promise *"due date = ledger date + payment terms (from project register)"*. Before
+migration 021 nothing in the product computed one: `v_aging` bucketed on fixed 30/60/90/120 offsets
+from the **invoice** date, and the two stored `payment_terms_days` columns (`projects`, `clients`)
+were read by nothing — `src/lib/clients-service.js` says so in its own header. Terms without a due
+date cannot answer the question a collection call needs: *how long past its terms is this?*
+
+**Decision D3 (owner, 2026-10-03):** project terms → client terms → system default in
+`app_settings.default_payment_terms_days` (30 days). The chain is **exposed, not hidden**:
+`terms_source` names which link applied, because "30 days" that is really "nobody set this" is a
+different fact from "30 days, our terms".
+
+**Migration 021** seeds that setting (`INSERT OR IGNORE`, before the view that reads it — measured,
+`app_settings` held **no business settings at all** on a seeded database, only the argon2 tuning keys
+and `csrf_secret`, so a view reading a missing key would return NULL terms on every real
+installation). It adds `v_receivable_due` and extends `v_aging` with `terms_days`, `terms_source`,
+`due_date` and `overdue_days`.
+
+### The trap this part did NOT walk into — and it was measured, not theorised
+
+The part's own plan originally said *"aging then ages from `due_date`"*. **That would have been a
+regression.** TECH-SPEC §13 pins the ageing contract for this phase beside "billed ≠ received"; PRD
+§5.2 defines the buckets as offsets from the **invoice** date; `db/validate.py` and RG8.6
+(`test/reporting.test.js`, committed as `2fe33f8`) pin the five boundaries there. Re-pointing the
+buckets at `due_date` would have silently re-labelled 30/60/90/120 as *days past due* and moved every
+aged figure in the product — **RG8.6 would have failed, correctly.** So the buckets stay on the
+invoice date and `due_date` / `overdue_days` are **added beside** them. Both are real and answer
+different questions: `days_aged` prioritises the collections list, `overdue_days` justifies the call.
+AG8.6 proves they are independent by **constructing a row where they disagree** (75 days old, 60-day
+terms → bucket `61_90`, `overdue_days` 15), rather than asserting it in prose.
+
+`overdue_days` is **clamped at 0**: not-yet-due is 0 overdue, never negative — a negative would sort
+ahead of genuinely overdue invoices and invent a priority Finance would act on. An unknown default is
+reported as unknown (`terms_days` NULL → `due_date` NULL), never invented as 30 — the same rule
+migration 018 applied to SPI/CPI.
+
+| ID | Assertion | Expected |
+|---|---|---|
+| AG8.1 | the default is **read from `app_settings`**, not baked into the view | setting 30 → due 2026-03-31; changed to 45 → due **2026-04-15**; `terms_source='default'` |
+| AG8.2 | with no terms anywhere the due date is **NULL**, never an invented 30 | `terms_days` NULL, `due_date` NULL; restoring 30 → 2026-04-09 |
+| AG8.3 | a project with no terms inherits the **client's**, and says so | 60 days → due **2026-04-02**, `terms_source='client'` |
+| AG8.4 | the **project's** terms win over the client's (R2-6: "overrides client default") | 15 days → due **2026-03-16**, `terms_source='project'` |
+| AG8.5 | an invoice inside its terms has `overdue_days = 0`, not a negative | 10 days old, 90-day terms → overdue **0**, `days_aged` 10.x, bucket `1_30` |
+| AG8.6 | the 30/60/90/120 buckets still measure from the **invoice** date | 75 days old / 60-day terms → bucket **`61_90`**, overdue **15**; five boundaries re-pinned |
+| AG8.7 | undatable rows stay out of aging but reachable on the register; settled rows keep their due date | blank date → absent from `v_aging`, present in the no-date to-do; paid in full → out of `v_aging` |
+
+**Gates:** `dump-schema.js --check` clean (43 tables, 45 indexes, 30 triggers, **10 views**) ✅;
+`python3 db/validate.py` **ALL CHECKS PASS** ✅; `test/aging.test.js` **7/7** (port 3922) ✅.
+
+**No figure moved.** Migration 021 is view-only plus one setting row; `v_aging`'s existing contract
+(invoice-date buckets, datable + still-outstanding only) is byte-for-byte what migration 020 left.
+
+---
+
 ## 13. Workflow coverage vs PRD §4
 
 The product workflow, step by step, and whether a test exists. **Empty rows are the real answer to

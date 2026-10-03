@@ -12,7 +12,7 @@
 -- DDL is copied verbatim out of sqlite_master. To change it, write a migration and
 -- re-run the generator — never edit this file directly.
 --
--- Composition: 43 tables, 45 indexes, 30 triggers, 9 views.
+-- Composition: 43 tables, 45 indexes, 30 triggers, 10 views.
 
 -- TABLES (43)
 CREATE TABLE acceptance_register (
@@ -983,25 +983,24 @@ BEGIN
   SELECT RAISE(ABORT, 'A resource-load row must not be given a version lower than the current one.');
 END;
 
--- VIEWS (9)
+-- VIEWS (10)
 CREATE VIEW v_aging AS
-SELECT r.project_id, r.document_no, r.partner_id, r.invoice_date, r.outstanding_amount,
-       CASE WHEN r.retainage_amount > 0 THEN 1 ELSE 0 END AS has_retainage,
-       julianday('now') - julianday(r.invoice_date) AS days_aged,
-       CASE
-         WHEN r.invoice_date IS NULL OR r.invoice_date = '' THEN 'no_date'
-         WHEN julianday('now') <= julianday(r.invoice_date) THEN 'current'
-         WHEN julianday('now') - julianday(r.invoice_date) <= 30 THEN '1_30'
-         WHEN julianday('now') - julianday(r.invoice_date) <= 60 THEN '31_60'
-         WHEN julianday('now') - julianday(r.invoice_date) <= 90 THEN '61_90'
-         WHEN julianday('now') - julianday(r.invoice_date) <= 120 THEN '91_120'
-         ELSE '120_plus'
-       END AS aging_bucket
-FROM v_receivable r
+SELECT
+  r.project_id, r.document_no, r.partner_id, r.invoice_date, r.outstanding_amount,
+  CASE WHEN r.retainage_amount > 0 THEN 1 ELSE 0 END AS has_retainage,
+  r.days_aged,
+  r.aging_bucket,
+  r.terms_days,
+  r.terms_source,
+  r.due_date,
+  -- Days PAST DUE, clamped at 0: not-yet-due is 0 overdue, never negative. NaN cannot occur here —
+  -- `due_date` is only non-NULL when the invoice date and the terms are both known.
+  CASE
+    WHEN r.due_date IS NULL THEN NULL
+    ELSE MAX(0, CAST(julianday('now') - julianday(r.due_date) AS INTEGER))
+  END AS overdue_days
+FROM v_receivable_due r
 WHERE r.outstanding_amount <> 0
-  -- An undatable row is NOT an aged row: it has to be fixed, not chased. Filtering is also
-  -- necessary for correctness, not just tidiness — see the note above; julianday('') is NULL,
-  -- so a blank date would otherwise sort and total as if it had an age.
   AND r.invoice_date IS NOT NULL AND r.invoice_date <> '';
 CREATE VIEW v_cbs_actual AS
 SELECT project_id, transaction_account_id, period_month, SUM(amount) AS actual_amount
@@ -1225,6 +1224,67 @@ WHERE r.project_id IS NOT NULL
           AND (c.type IN ('Income', 'Receivable') OR c.line_role = 'receivable')))
   )
 GROUP BY r.project_id, r.document_no, r.partner_type, r.partner_id;
+CREATE VIEW v_receivable_due AS
+SELECT
+  r.project_id,
+  r.document_no,
+  r.partner_type,
+  r.partner_id,
+  r.first_date,
+  r.period_month,
+  r.billed_amount,
+  r.paid_amount,
+  r.retainage_amount,
+  r.net_amount,
+  r.outstanding_amount,
+  r.invoice_date,
+  r.last_activity_date,
+  r.line_count,
+  -- How long the money has been outstanding, and the priority bucket the PRD defines on it.
+  -- UNCHANGED from v_aging: 30/60/90/120 offsets from the INVOICE date.
+  julianday('now') - julianday(r.invoice_date) AS days_aged,
+  CASE
+    WHEN julianday('now') <= julianday(r.invoice_date) THEN 'current'
+    WHEN julianday('now') - julianday(r.invoice_date) <= 30 THEN '1_30'
+    WHEN julianday('now') - julianday(r.invoice_date) <= 60 THEN '31_60'
+    WHEN julianday('now') - julianday(r.invoice_date) <= 90 THEN '61_90'
+    WHEN julianday('now') - julianday(r.invoice_date) <= 120 THEN '91_120'
+    ELSE '120_plus'
+  END AS aging_bucket,
+  -- The terms actually applied, and where they came from (decision D3).
+  COALESCE(
+    p.payment_terms_days,
+    cl.payment_terms_days,
+    (SELECT CAST(s.value AS INTEGER) FROM app_settings s
+      WHERE s.key = 'default_payment_terms_days')
+  ) AS terms_days,
+  CASE
+    WHEN p.payment_terms_days IS NOT NULL THEN 'project'
+    WHEN cl.payment_terms_days IS NOT NULL THEN 'client'
+    ELSE 'default'
+  END AS terms_source,
+  -- The due date itself: ledger date + the terms above. SQLite's own date arithmetic — no new
+  -- dependency, deterministic given the row. NULL when either half is unknown.
+  CASE
+    WHEN NULLIF(r.invoice_date, '') IS NOT NULL
+     AND COALESCE(
+           p.payment_terms_days,
+           cl.payment_terms_days,
+           (SELECT CAST(s.value AS INTEGER) FROM app_settings s
+             WHERE s.key = 'default_payment_terms_days')
+         ) IS NOT NULL
+    THEN date(
+           r.invoice_date,
+           '+' || COALESCE(
+                    p.payment_terms_days,
+                    cl.payment_terms_days,
+                    (SELECT CAST(s.value AS INTEGER) FROM app_settings s
+                      WHERE s.key = 'default_payment_terms_days')
+                  ) || ' days')
+  END AS due_date
+FROM v_receivable r
+LEFT JOIN projects p  ON p.id  = r.project_id
+LEFT JOIN clients  cl ON cl.id = p.client_id;
 CREATE VIEW v_untagged_queue AS
 SELECT id, project_id, document_no, date, effective_date, amount, description, source
 FROM accounting_ledger
