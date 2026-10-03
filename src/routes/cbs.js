@@ -12,6 +12,7 @@ const express = require('express');
 const router = express.Router();
 
 const svc = require('../lib/cbs-service');
+const forecast = require('../lib/forecast-service');
 const q = require('../db/queries');
 const { capabilities } = require('../lib/permissions');
 const { requirePage } = require('../middleware/auth');
@@ -19,6 +20,10 @@ const { projectContext } = require('../middleware/scope');
 
 router.use(['/cbs'], requirePage);
 router.use(['/cbs'], projectContext);
+// The forecast report lives on this router because it is the same subject as the baseline —
+// the plan in money per month — but it is a REPORT, so it takes the reporting guard too.
+router.use(['/reports/forecast'], requirePage);
+router.use(['/reports/forecast'], projectContext);
 
 function requireCapability(flag, message) {
   return (req, res, next) => {
@@ -66,6 +71,70 @@ function fail(res, err, back = '/cbs') {
 
 // Setting the budget is the Cost Controller's job (PRD §4.4), and the PM may do it too.
 const guard = requireCapability('canManageCbs', 'Setting the budget is the Cost Controller’s job.');
+
+// The forecast is written by the same two roles (PRD §4.4 step 1 names the Cost Controller
+// for c_cbs_forecast), so it gets its own flag but the same membership.
+const forecastGuard = requireCapability('canManageForecast',
+  'The cost forecast is the Cost Controller’s to enter.');
+
+// The forecast and variance report (module 8 part 8.4). Read-only apart from the two POSTs
+// below, and it changes no baseline row — a forecast never touches the approved plan.
+router.get('/reports/forecast', (req, res) => {
+  const project = projectOf(res);
+  const caps = capabilities(req.user);
+  const sys = forecast.eac(project.id);
+
+  return page(res, 'Cost forecast',
+    `${project.name} · what the project is likely to finally cost, and the human forecast beside it`,
+    `${project.name} / Cost forecast`, 'forecast', {
+      active: 'Forecast',
+      sys,
+      totals: forecast.totals(project.id),
+      rows: forecast.months(project.id),
+      accounts: q.transactionAccounts(),
+      canManage: !!caps.canManageForecast,
+      notice: typeof req.query.msg === 'string' ? req.query.msg.slice(0, 220) : null,
+      error: typeof req.query.err === 'string' ? req.query.err.slice(0, 220) : null,
+    });
+});
+
+// Record the Cost Controller's own figure for one account-month.
+router.post('/reports/forecast', forecastGuard, (req, res) => {
+  const project = projectOf(res);
+  try {
+    const out = forecast.setOverride({
+      projectId: project.id,
+      accountId: Number(req.body.transaction_account_id),
+      periodMonth: str(req.body.period_month),
+      amount: str(req.body.amount),
+      actorId: req.user.id,
+      note: str(req.body.note) || null,
+    });
+    const fmt = (n) => Number(n).toLocaleString('en-US');
+    return res.redirect('/reports/forecast?msg=' + msg(
+      `Forecast for ${out.account.code} ${out.account.name} in ${out.period_month} is now `
+      + `${fmt(out.amount)}. The approved plan is unchanged.`));
+  } catch (err) { return fail(res, err, '/reports/forecast'); }
+});
+
+// Hand one month back to the approved plan. The earlier human figure stays readable in the
+// history; it is superseded, not deleted.
+router.post('/reports/forecast/clear', forecastGuard, (req, res) => {
+  const project = projectOf(res);
+  try {
+    const out = forecast.clearOverride({
+      projectId: project.id,
+      accountId: Number(req.body.transaction_account_id),
+      periodMonth: str(req.body.period_month),
+      actorId: req.user.id,
+    });
+    const fmt = (n) => Number(n).toLocaleString('en-US');
+    return res.redirect('/reports/forecast?msg=' + msg(
+      `${out.account.code} ${out.account.name} for ${out.period_month} is back on the approved `
+      + `plan at ${fmt(out.amount)}. Your earlier figure is still in the history.`));
+  } catch (err) { return fail(res, err, '/reports/forecast'); }
+});
+
 
 // GET /cbs — the baseline, and every account reconciled against its resource plan.
 router.get('/cbs', (req, res) => {

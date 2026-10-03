@@ -423,33 +423,52 @@ none (dev DB unchanged — `user_version 12`, 9 ledger rows, 4 users). Full writ
 
 ---
 
-## Part 8.4 — Forecast / EAC
+## Part 8.4 — Forecast / EAC — ✅ BUILT 2026-10-03
+
+**Status: implemented, 8/8 FC8 tests green, no schema change needed.**
 
 **PRD §4.4 step 1:** *"Project Controller updates `c_wbs_forecast`; Cost Controller updates
 `c_cbs_forecast` (**auto EAC from CPI** + manual override)."* The `cbs_plan.plan_type` CHECK already
-admits `'forecast'`, and BL7.14 already proves a forecast row is **not** PV (it is invisible to
-`v_evm_period`). The door exists; nothing walks through it.
+admitted `'forecast'`, `is_manual_override` already existed, and BL7.14 already proves a forecast row
+is **not** PV. The door existed; nothing walked through it.
 
-**The rule.** `EAC = BAC / CPI`, seeded from the latest cumulative CPI (`v_evm_period.cpi_cum`,
-migration 019), with `ETC = EAC − AC`. Then the Cost Controller may **override per month**, and an
-override is marked `is_manual_override = 1` (the column exists) so the screen can show "system
-said X, a human said Y" instead of silently replacing one with the other. **A forecast never
-touches the baseline** — that is what BCRs are for, and Module 7 built them.
+**The rule.** `EAC = BAC / CPI` from the latest cumulative CPI (`v_evm_period.cpi_cum`, migration
+019), `ETC = EAC − AC`, `VAC = BAC − EAC`. The Cost Controller may then **override per month**, and
+the override is marked `is_manual_override = 1` so the screen shows "the system works out X; a human
+forecast Y" instead of silently replacing one with the other. **A forecast never touches the
+baseline** — that is what BCRs are for, and Module 7 built them.
 
 **Honesty rule, same as 018/019:** with no CPI there is **no** auto-EAC. The screen shows a blank
-with the reason ("no earned value measured yet"), never `EAC = BAC` by accident and never a
-division by zero.
+with the reason, never `EAC = BAC` by accident and never a division by zero. The reason
+**distinguishes the two blanks** ("no progress has been measured" vs "no cost has been booked"),
+because the reader's next action differs.
 
-**Files:** NEW `src/lib/forecast-service.js`; `src/lib/cbs-service.js` (a forecast read/write path
-that mirrors the baseline one but is deliberately **not** the same function — the baseline path
-enforces the Σ = RBS invariant, which does not apply to a forecast); `views/cbs.ejs` (a forecast
-tab/section); NEW `test/forecast.test.js` (FC8.1–FC8.7, port **3924**); `TEST_PLAN.md`; plan.
+**Grain — decided from the code, and recorded here:** the override is one figure per
+(account, month) with `wbs_node_id IS NULL`. The baseline is per (account, work line, month), but
+015's trigger constrains only `plan_type='baseline'`, so a coarser override needs no schema change
+and the screen offers one box per account-month rather than a grid. Re-forecasting **supersedes by
+version** (the 014 rule); handing a month back writes `is_manual_override = 0` rather than deleting,
+so the human's earlier judgement stays readable.
 
-**Tests:** auto-EAC = BAC ÷ CPI hand-computed; no CPI → **no** EAC and a stated reason; a manual
-override is recorded **and** flagged, and the system value is still recoverable; **a forecast row
-does not change PV, EV, AC, SPI or CPI** (re-assert BL7.14 from the other side); a forecast cannot
-be written without the right capability (403 **with the row count unchanged**); writing a forecast
-does **not** modify `cbs_plan` rows where `plan_type='baseline'` (row-count and checksum both).
+**Files:** NEW `src/lib/forecast-service.js`; `src/lib/permissions.js` (+`canViewForecast`,
++`canManageForecast`); `src/routes/cbs.js` (the report lives on the baseline router — same subject —
+but takes the reporting guard); NEW `views/forecast.ejs`; `views/reports-index.ejs`;
+`views/partials/sidebar.ejs` (highlight only); NEW `test/forecast.test.js` (FC8.1–FC8.7, port
+**3924**); `TEST_PLAN.md`; plan.
+
+**A real defect the tests caught, recorded not smoothed over:** the first `latestCumulative()` took
+the newest row with a `cpi_cum`, which — because 019 **carries cumulative columns forward across the
+whole month grid** — labelled the estimate **"as at 2026-12"** when nothing had been measured past
+March. Fixed to the latest month whose cumulative figures were actually moved by data (`ev <> 0 OR
+ac <> 0`); PV is excluded because it moves by being *planned*, not observed.
+
+**Tests:** auto-EAC = BAC ÷ CPI hand-computed against independent table reads; no CPI → **no** EAC
+and a stated reason that names the cause; the two blank reasons proved **different** in one test; a
+manual override is recorded **and** flagged, its superseded version still readable, and hand-back
+restores the plan without deleting history; bad months/amounts/accounts refused with the row count
+unchanged; **a forecast row does not change PV, EV, AC, SPI or CPI** (fingerprint + row count, read
+before and after — re-asserting BL7.14 from the other side); a Viewer gets 403 **with the row count
+unchanged**; the page prints its own basis (`BAC ÷ CPI`).
 
 ---
 

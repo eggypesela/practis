@@ -1,0 +1,177 @@
+<%# Cost forecast / EAC (module 8 part 8.4; PRD §4.4 step 1).
+    "What will this project finally cost?"
+
+    TWO numbers, never merged:
+
+      * the SYSTEM estimate — BAC / CPI, worked out from how much cost has earned. Nobody
+        types it: it moves by itself as reality arrives.
+      * the HUMAN forecast — what the Cost Controller believes, month by month, from the
+        cbs_plan rows flagged is_manual_override = 1.
+
+    The rule the whole page is built on: when there is no cost performance to project from,
+    the system estimate is BLANK and says why. It is never quietly set to BAC, which would
+    present a project that has never been measured as perfectly on budget.
+
+    All figures are integer rupiah. Title and sub-title come from page() in routes/cbs.js. %>
+<% const fmt = (n) => Number(n || 0).toLocaleString('en-US'); %>
+<% if (typeof notice !== 'undefined' && notice) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b><%= notice %></b></div>
+<% } %>
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Not done.</b> <%= error %></p></div></div>
+<% } %>
+
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-book"/></svg>Approved budget (BAC)</div>
+    <div class="v mono"><%= fmt(sys.bac) %></div>
+    <div class="f">IDR — the approved plan, unchanged by anything on this page</div></div>
+
+  <% if (sys.eac !== null) { %>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-chart"/></svg>System estimate (EAC)</div>
+    <div class="v mono"><%= fmt(sys.eac) %></div>
+    <div class="f">BAC ÷ CPI
+      (<%= sys.cpi_cum.toFixed(4) %> as at <%= sys.cpi_month %>), rounded to the rupiah</div></div>
+  <% } else { %>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-chart"/></svg>System estimate (EAC)</div>
+    <div class="v" style="color:var(--mut)">Not measured</div>
+    <div class="f">No cost performance to project from — nothing has been invented to fill the gap</div></div>
+  <% } %>
+
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-users"/></svg>Your forecast</div>
+    <div class="v mono"><%= fmt(totals.human_forecast) %></div>
+    <div class="f"><%= totals.overrides %> month<%= totals.overrides === 1 ? '' : 's' %> you have
+      set yourself<%= totals.overrides === 0 ? ' — this is the plan' : '' %></div></div>
+
+  <% if (sys.vac !== null) { %>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Variance at completion</div>
+    <div class="v mono" style="color:<%= sys.over < 0 || sys.vac < 0 ? 'var(--bad)' : 'inherit' %>">
+      <%= sys.vac < 0 ? '−' : '' %><%= fmt(Math.abs(sys.vac)) %></div>
+    <div class="f"><%= sys.vac >= 0
+      ? 'Expected to finish UNDER the approved budget'
+      : 'Expected to finish OVER the approved budget' %></div></div>
+  <% } else { %>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Variance at completion</div>
+    <div class="v" style="color:var(--mut)">Not measured</div>
+    <div class="f">Needs an estimate to compare the approved budget against</div></div>
+  <% } %>
+</div>
+
+<div class="note" style="margin-top:12px">
+  <svg><use href="#i-info"/></svg>
+  <span><b>The estimate and your forecast are two different answers, so both are shown.</b>
+    The <b>system estimate</b> is arithmetic: approved budget ÷ cost performance so far
+    (<%= sys.eac !== null ? sys.cpi_cum.toFixed(4) + ' as at ' + sys.cpi_month : 'not available yet' %>).
+    Your <b>forecast</b> is a judgement. Setting one never overwrites the other, and neither
+    changes the approved plan — a change to the plan goes through a change request.</span>
+</div>
+
+<% if (sys.reason) { %>
+<div class="errb" style="margin-top:12px"><div class="errb-tx">
+  <p><b>Why the system estimate is blank.</b> <%= sys.reason %></p>
+  <p class="dim" style="margin-top:6px">Recorded so far — cost booked (AC):
+    <b><%= fmt(sys.ac_cum) %></b> · value earned (EV): <b><%= fmt(sys.ev_cum) %></b>.
+    An index needs both to be non-zero; a blank here means "not measured yet", not "on budget".</p>
+</div></div>
+<% } %>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd">
+    <h2>Month by month</h2>
+    <span class="r">approved plan · your forecast · the difference</span>
+  </div>
+  <% if (!rows.length) { %>
+  <div class="fbody"><p class="dim">No month has a budget bucket yet. Spread the cost baseline
+    first — the forecast is worked out against it.</p></div>
+  <% } else { %>
+  <div class="tw"><table>
+    <thead><tr>
+      <th>Month</th><th>Cost account</th>
+      <th style="text-align:right">Approved plan</th>
+      <th style="text-align:right">Your forecast</th>
+      <th style="text-align:right">Difference</th>
+      <th>Basis</th>
+      <% if (canManage) { %><th></th><% } %>
+    </tr></thead>
+    <tbody>
+    <% rows.forEach(function(r) { %>
+      <tr>
+        <td class="mono"><%= r.period_month %></td>
+        <td><%= r.account_code %> · <%= r.account_name %></td>
+        <td class="mono" style="text-align:right"><%= fmt(r.baseline) %></td>
+        <td class="mono" style="text-align:right"><%= fmt(r.forecast) %></td>
+        <td class="mono" style="text-align:right;color:<%= r.delta === 0 ? 'inherit' : (r.delta > 0 ? 'var(--bad)' : 'var(--ok)') %>">
+          <%= r.delta > 0 ? '+' : (r.delta < 0 ? '−' : '') %><%= fmt(Math.abs(r.delta)) %></td>
+        <td>
+          <% if (r.is_override) { %>
+            <span class="chip">your figure</span>
+            <% if (r.note) { %><span class="dim"> <%= r.note %></span><% } %>
+          <% } else { %>
+            <span class="dim">approved plan</span>
+          <% } %>
+        </td>
+        <% if (canManage) { %>
+        <td>
+          <% if (r.is_override) { %>
+          <form method="post" action="/reports/forecast/clear" style="display:inline">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <input type="hidden" name="transaction_account_id" value="<%= r.account_id %>">
+            <input type="hidden" name="period_month" value="<%= r.period_month %>">
+            <button class="btn" type="submit">Hand back to the plan</button>
+          </form>
+          <% } %>
+        </td>
+        <% } %>
+      </tr>
+    <% }); %>
+    </tbody>
+    <tfoot><tr>
+      <th colspan="2">Total</th>
+      <th class="mono" style="text-align:right"><%= fmt(totals.baseline) %></th>
+      <th class="mono" style="text-align:right"><%= fmt(totals.human_forecast) %></th>
+      <th class="mono" style="text-align:right"><%= totals.human_forecast - totals.baseline > 0 ? '+' : (totals.human_forecast - totals.baseline < 0 ? '−' : '') %><%= fmt(Math.abs(totals.human_forecast - totals.baseline)) %></th>
+      <th colspan="<%= canManage ? 2 : 1 %>"></th>
+    </tr></tfoot>
+  </table></div>
+  <% } %>
+</div>
+
+<% if (canManage) { %>
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Enter your own figure for a month</h2>
+    <span class="r">one cost account · one month</span></div>
+  <div class="fbody">
+    <div class="note">
+      <svg><use href="#i-info"/></svg>
+      <span>Use this when you know something the arithmetic does not — a price rise you have
+        already agreed, a scope you can see coming. Your figure replaces the plan <b>for that
+        month only</b>, and the row above marks it as yours. Entering a figure never changes the
+        approved plan, and you can hand the month back to the plan at any time; your earlier
+        figure stays in the history.</span>
+    </div>
+    <form method="post" action="/reports/forecast">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="fgrid">
+        <label class="fld">Cost account
+          <select name="transaction_account_id" required>
+            <% accounts.forEach(function(a){ %>
+            <option value="<%= a.id %>"><%= a.code %> · <%= a.name %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label class="fld">Month
+          <input type="month" name="period_month" required>
+        </label>
+        <label class="fld">Your forecast (IDR)
+          <input type="number" name="amount" min="0" step="1" placeholder="0" required>
+        </label>
+        <label class="fld">Why
+          <input type="text" name="note" maxlength="160" placeholder="the reason for your figure">
+        </label>
+      </div>
+      <p class="dim">Whole rupiah, no decimals and no minus sign. Entering a figure for a month
+        that already has one replaces it and keeps the old one readable in the history.</p>
+      <div class="fend"><button class="btn pri" type="submit">Save the forecast</button></div>
+    </form>
+  </div>
+</div>
+<% } %>

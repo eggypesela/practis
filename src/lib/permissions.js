@@ -134,6 +134,19 @@ function capabilities(user) {
   // exactly that reason). A Viewer gets a 403 with a reason, not a silently shorter list.
   const canViewReceivable = has('finance', 'cost_controller');
 
+  // --- Forecast / EAC (module 8 part 8.4, PRD §4.4 step 1) ---------------------
+  // PRD §4.4 step 1: "Project Controller updates c_wbs_forecast; Cost Controller updates
+  // c_cbs_forecast (auto EAC from CPI + manual override)". So the WRITE follows the cost
+  // baseline's own rule (cost controller or project manager) rather than inventing a
+  // fourth answer for the same column.
+  const canManageForecast = has('cost_controller', 'project_manager');
+  // READING the forecast is NOT restricted the way writing it is. PRD §5.4 gives the
+  // project dashboard — "S-curves, EVM trend, cashflow actual vs forecast" — to the PM and
+  // the Controller, and an exec/Viewer portfolio view reads the same figures, so a read
+  // gate as tight as the write gate would lock those readers out of a figure the PRD hands
+  // them. The WRITE guard is the boundary here, not the read.
+  const canViewForecast = true;
+
   return {
     roles,
     isAdmin,
@@ -187,6 +200,10 @@ function capabilities(user) {
     canApproveBaseline,
     // --- Cost baseline (module 7 part 7.4) ---------------------------------
     canManageCbs,
+    // --- Forecast / EAC (module 8 part 8.4) --------------------------------
+    canViewForecast,
+    canManageForecast,
+
     // --- Baseline change requests (module 7 part 7.6) ----------------------
     canInitiateBcr,
     // --- Receivable reporting (module 8 part 8.3) ---------------------------

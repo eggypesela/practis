@@ -1016,6 +1016,58 @@ its own), so they cannot trip the guard before their `before()` runs.
 
 ---
 
+## 12o. FC8 — Forecast / EAC — ✅ IMPLEMENTED 2026-10-03
+
+PRD §4.4 step 1: *"Project Controller updates `c_wbs_forecast`; Cost Controller updates
+`c_cbs_forecast` (**auto EAC from CPI** + manual override)."* Two things were missing: nothing
+computed EAC, and nothing wrote a forecast row.
+
+**Two numbers, deliberately not merged.** The **system estimate** (`eac()`) is arithmetic —
+`EAC = BAC / CPI`, `ETC = EAC − AC`, `VAC = BAC − EAC`. The **human forecast** is a `cbs_plan` row
+with `plan_type='forecast'` and `is_manual_override=1`. The screen shows both; setting one never
+replaces the other, which is why `is_manual_override` is a column rather than the write path
+overwriting `amount`.
+
+**The honesty rule, carried into the UI.** With no cost performance there is **no** estimate:
+`eac`, `etc`, `vac` and `over` are all `null`, and a `reason` sentence explains it. It is never
+`EAC = BAC` — that would present a project nobody has measured as perfectly on budget. The reason
+**distinguishes the two different blanks** ("no progress has been measured" vs "no cost has been
+booked") because the reader's next action differs.
+
+**Grain, decided from the data.** The override is one figure per (cost account, month), stored with
+`wbs_node_id IS NULL`. The baseline is per (account, work line, month), but `cbs_plan` permits a
+NULL work line for every plan type **except** `baseline` (015's trigger constrains only baseline),
+so the override can be coarser without a schema change, and the screen offers one box per
+account-month instead of a grid.
+
+**Tests (FC8.1–FC8.7, port 3924):** blank-not-BAC with a real budget and no measurement · the
+arithmetic hand-computed against independent table reads (BAC 1,000,000, EV 500,000, AC 200,000 →
+CPI 2.5 → EAC 400,000, ETC 200,000, VAC 600,000 positive-means-under) · the two blank reasons
+proved different in one test · an override flagged, its previous version still readable, hand-back
+writes `is_manual_override=0` rather than deleting · bad months/amounts refused with no row written ·
+**no baseline row and no EVM figure moves** (fingerprint + row count, and PV/EV/AC/SPI/CPI read
+before and after) · the report renders for the Cost Controller, 403s a Viewer **with the row count
+unchanged**, and prints its own basis (`BAC ÷ CPI`) on the page.
+
+### 12o.1 A real defect FC8.2 caught — the estimate was dated by the calendar, not by measurement
+
+`latestCumulative()` first read *"the newest `v_evm_period` row with a non-null `cpi_cum`"*. That is
+wrong because **019 carries the cumulative columns forward**: a project with a March–December
+baseline measured only to March has a non-null `cpi_cum` in every month to December, all holding the
+March value. The screen therefore read **"as at 2026-12"** — telling a reader the project had been
+measured through December when nothing had been measured after March. Wrong in the dangerous
+direction for a book of record.
+
+Fixed to the latest month where the cumulative figures were **actually moved by data** — `ev <> 0
+OR ac <> 0` (earned value or actual cost; PV moves by being *planned*, not observed). FC8.2's
+`cpi_month === '2026-03'` assertion is the regression test, and its comment records why.
+
+**Gates:** `dump-schema.js --check` clean ✅ (no schema change — `plan_type='forecast'` and
+`is_manual_override` already existed); `python3 db/validate.py` ALL CHECKS PASS ✅;
+`test/forecast.test.js` **8/8** ✅; full suite **471 → 479** ✅.
+
+---
+
 ## 13. Workflow coverage vs PRD §4
 
 The product workflow, step by step, and whether a test exists. **Empty rows are the real answer to
