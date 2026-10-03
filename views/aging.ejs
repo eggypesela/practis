@@ -1,0 +1,127 @@
+<%# Receivables aging — Finance's collection priority list (module 8 part 8.3).
+    PRD §5.2: "Aging report view (30/60/90/120+ day buckets), sortable by amount — Finance's
+    collection priority list." PRD §5.4 names the same report. Screen map: Reports | Aging.
+
+    READ THIS BEFORE EDITING. Three measured defects shape this page:
+
+    1. The tiles and the table are built from ONE result set in the route (`bucketTiles`
+       rolls the same `q.receivableAging` rows up), so a bucket tile can never disagree with
+       the rows beneath it.
+
+    2. The "cannot be dated" group is NOT a bucket and is NOT at the bottom of the chase
+       order. `v_aging` deliberately EXCLUDES undatable claims (migration 020) because the
+       old CASE fell through to '120_plus' and reported an undated invoice as the most
+       overdue item on the list. They are a data-quality to-do, so they get their own
+       labelled card that says "fix the data", not a red urgency chip.
+
+    3. Retainage is its own tile (PRD §5.2: "retainage held separately (never buried in
+       regular AR)"), read from the register rather than from the aging list, so a claim
+       that has been settled but is still retained keeps its figure.
+
+    Title and sub-title come from `page()` in routes/reporting.js. %>
+<% if (typeof project === 'undefined' || !project) { %>
+<div class="card"><div class="fbody">
+  <p class="dim">No project is in scope for your account, so there is nothing to age.</p>
+</div></div>
+<% } else { %>
+
+<% const overdueRows = rows.filter(function(r){ return (r.overdue_days || 0) > 0; }); %>
+
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-book"/></svg>Outstanding</div>
+    <div class="v mono"><%= fmt(rows.reduce(function(a,r){ return a + (r.outstanding_amount||0); }, 0)) %></div>
+    <div class="f"><%= rows.length %> open claim<%= rows.length === 1 ? '' : 's' %> — money we are owed</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Past its terms</div>
+    <div class="v mono"><%= fmt(overdueRows.reduce(function(a,r){ return a + (r.outstanding_amount||0); }, 0)) %></div>
+    <div class="f"><%= overdueRows.length %> claim<%= overdueRows.length === 1 ? '' : 's' %> over the due date — chase these</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-cash"/></svg>Retainage held</div>
+    <div class="v mono"><%= fmt(retainage) %></div>
+    <div class="f">Held back, not yet collectable — kept out of the totals above</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-file"/></svg>Cannot be dated</div>
+    <div class="v"><%= noDate.length %></div>
+    <div class="f"><%= noDate.length ? 'No invoice date — these cannot be aged' : 'Every claim has a date' %></div></div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd">
+    <h2>Collection priority</h2>
+    <span class="r">
+      Sort:
+      <% Object.keys(sortLabels).forEach(function(k, i){ %><%= i ? ' · ' : '' %><a href="/reports/aging?sort=<%= k %>" class="<%= sort === k ? 'on' : '' %>"><%= sortLabels[k] %></a><% }); %>
+    </span>
+  </div>
+  <% if (!rows.length) { %>
+  <div class="fbody"><p class="dim">Nothing is outstanding on this project. Every claim has been
+    settled, so there is no collection list to work.</p></div>
+  <% } else { %>
+  <div class="tw"><table>
+    <thead><tr>
+      <th>Document</th><th>Invoice date</th><th>Due</th><th>Terms</th>
+      <th class="r">Age</th><th class="r">Overdue</th><th class="r">Outstanding</th>
+    </tr></thead>
+    <tbody>
+      <% rows.forEach(function(r){ %>
+      <tr>
+        <td><span class="mono"><%= r.document_no %></span>
+          <% if (r.has_retainage) { %><span class="chip nt">retainage held</span><% } %></td>
+        <td class="mono"><%= r.invoice_date %></td>
+        <td class="mono">
+          <% if (r.due_date) { %><%= r.due_date %>
+            <% if (r.terms_source) { %><span class="dim">(<%= r.terms_source %>, <%= r.terms_days %>d)</span><% } %>
+          <% } else { %><span class="dim">—</span><% } %>
+        </td>
+        <td class="mono"><%= r.terms_days == null ? '—' : r.terms_days + 'd' %></td>
+        <td class="r mono"><%= r.days_aged == null ? '—' : Math.floor(r.days_aged) %></td>
+        <td class="r mono"><%= r.overdue_days == null ? '—' : r.overdue_days %></td>
+        <td class="r mono"><%= fmt(r.outstanding_amount) %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table></div>
+  <% } %>
+</div>
+
+<div class="grid" style="grid-template-columns:repeat(6,minmax(0,1fr));margin-top:12px">
+  <% tiles.forEach(function(t){ %>
+  <div class="card kpi">
+    <div class="lbl"><%= t.label %></div>
+    <div class="v mono sm"><%= fmt(t.total) %></div>
+    <div class="f"><%= t.n %> claim<%= t.n === 1 ? '' : 's' %><%= t.note ? ' · ' + t.note : '' %></div>
+  </div>
+  <% }); %>
+</div>
+
+<% if (noDate.length) { %>
+<div class="card" style="margin-top:12px">
+  <div class="card-hd">
+    <h2>Cannot be dated — fix the data</h2>
+    <span class="r">Not aged, and never counted as overdue</span>
+  </div>
+  <div class="fbody" style="padding-bottom:0">
+    <p class="dim">These claims have money outstanding but no invoice date, so there is no age to
+      report. They are held out of the buckets above on purpose — an undated invoice is not the
+      most overdue item on the list, it is a record that needs a date. Enter the date on the entry
+      screen and each one drops into its real bucket.</p>
+  </div>
+  <div class="tw"><table>
+    <thead><tr>
+      <th>Document</th><th class="r">Billed</th><th class="r">Paid</th>
+      <th class="r">Retainage</th><th class="r">Outstanding</th><th>Terms</th>
+    </tr></thead>
+    <tbody>
+      <% noDate.forEach(function(r){ %>
+      <tr>
+        <td><span class="mono"><%= r.document_no %></span></td>
+        <td class="r mono"><%= fmt(r.billed_amount) %></td>
+        <td class="r mono"><%= fmt(r.paid_amount) %></td>
+        <td class="r mono"><%= fmt(r.retainage_amount) %></td>
+        <td class="r mono"><%= fmt(r.outstanding_amount) %></td>
+        <td class="mono"><%= r.terms_days == null ? '—' : r.terms_days + 'd (' + r.terms_source + ')' %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table></div>
+</div>
+<% } %>
+
+<% } %>

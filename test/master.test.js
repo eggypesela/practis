@@ -53,6 +53,18 @@ before(async () => {
   admin = await require('./helpers/csrf').loggedIn(ORIGIN, 'e@example.com', 'epw12345');
   db = new (require('better-sqlite3'))(dbPath);
 
+  // MA5.1 and the dataset registry reach the app IN-PROCESS: `keys9()` requires
+  // `src/lib/master-service.js` from THIS process, and that binds `src/db/db.js` to whatever
+  // `PRACTIS_DB` says — or to `data/practis.db`, the DEV database, when it is unset. This file
+  // hands PRACTIS_DB only to the CHILD server, so before this line the in-process require was
+  // silently reading and writing the dev database.
+  //
+  // It went unnoticed until module 8 migration 021 added a column to `v_aging`: a test process
+  // then prepared a statement against a dev database still on v20 and failed with
+  // "no such column: terms_days". The stale read was always wrong; only the shared-run made the
+  // consequence visible. Binding the parent process here is the fix.
+  process.env.PRACTIS_DB = dbPath;
+
   const { asRole } = require('./helpers/authz');
   finance = await asRole(require('better-sqlite3'), dbPath, ORIGIN, 'finance',
     { email: 'ma5-fin@example.test' });

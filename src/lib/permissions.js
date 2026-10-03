@@ -122,6 +122,18 @@ function capabilities(user) {
   // stops them approving their own, not this flag.
   const canInitiateBcr = has('project_controller', 'cost_controller', 'project_manager');
 
+  // --- Reporting: the receivable registers (module 8 part 8.3, PRD §5.2/§5.4) -----
+  // PRD §5.2 calls the aging report "Finance's collection priority list" and the screen
+  // map (TECH-SPEC §10) tags `Reports | Aging` as a Finance screen. The Cost Controller
+  // is included because they own the money side of the project alongside Finance — the
+  // same pairing `canReconcile` uses.
+  //
+  // NOT `canViewReceivable: true`. These views expose what the company is OWED and who
+  // owes it, customer by customer: that is Finance's book, not a general project figure
+  // like a budget or a WBS tree (both of which ARE readable by everyone signed in for
+  // exactly that reason). A Viewer gets a 403 with a reason, not a silently shorter list.
+  const canViewReceivable = has('finance', 'cost_controller');
+
   return {
     roles,
     isAdmin,
@@ -177,6 +189,8 @@ function capabilities(user) {
     canManageCbs,
     // --- Baseline change requests (module 7 part 7.6) ----------------------
     canInitiateBcr,
+    // --- Receivable reporting (module 8 part 8.3) ---------------------------
+    canViewReceivable,
     // The tree is readable by everyone signed in; the scope layer narrows which
     // projects a user may open.
     canViewWbs: true,

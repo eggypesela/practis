@@ -359,34 +359,67 @@ deterministic given the row.
 
 ---
 
-## Part 8.3 — Aging report screen — `/reports/aging`
+## Part 8.3 — Aging report screen — `/reports/aging` — ✅ BUILT 2026-10-03
+
+**Status: implemented, 9/9 RP8 tests green, sidebar Reports group restored in the same commit.**
 
 **PRD §5.4:** *"Aging report (receivables): 30/60/90/120+ buckets"*, and §5.2: *"sortable by
 amount — Finance's collection priority list"*. Screen map row: `Reports | Aging | receivable
 priorities`.
 
-**Page:** `GET /reports/aging`, capability `canViewReceivable` (new flag = Finance, Cost
-Controller). Buckets from `v_aging`, **grouped and totalled**, each bucket a `.kpi` tile with the
-count and total, the table sortable by amount (server-side `?sort=amount|due`), and the
-`no_date` group shown **as its own to-do row, labelled** — not folded into 120+ (that was F2).
-**Retainage is shown separately** (PRD §5.2: *"retainage held separately (never buried in regular
-AR)"*), which is what `has_retainage` in the view is for.
-**Honest empty state:** with no receivables the page says so in the title area, not with a table of
-zeros.
-Page furniture per house style: title + muted sub-title + full-width.
+**Built as planned, with two structural corrections found while writing it:**
 
-**Files:** NEW `src/routes/reporting.js`; NEW `views/aging.ejs`; NEW `views/partials/` if a bucket
-tile is worth extracting (probably not); `src/lib/permissions.js` (+`canViewReceivable`,
-`canViewPortfolio`); `src/server.js` (mount); `views/partials/sidebar.ejs` (**restore the Reports
-group** — the five dead links were removed in task 6.6 and MS6.7/MS6.8 now assert *every* sidebar
-link resolves, so the link and the route must land in the same commit); NEW
-`test/aging.test.js`… **no** — 8.2 already owns that filename. Use NEW `test/reporting-screen.test.js`
-(AG8.6–AG8.12, port **3923**).
+* **The sidebar link points at `/reports` (an index), not at `/reports/aging`.** MS6.7/MS6.8 assert
+  the sidebar carries no dead link and that every href resolves, so the link had to land with a
+  route. A report LIST absorbs the module's later reports (forecast, variance, portfolio) without
+  re-pointing the link. New **MS6.10** pins that the restored link and its route landed together.
+* **Nothing else in the product renders `v_aging` yet** (measured: no `FROM v_aging` anywhere in
+  `src/`, `views/` or `test/` before this part), so the aging view could be extended with
+  `terms_days` / `due_date` / `overdue_days` in 8.2 without a compatibility shim. It is now read
+  through `db/queries.js` — configured views are not queried inline in a route.
 
-**Tests:** the four authorization cases for the route (anonymous blocked · no-CSRF irrelevant on GET ·
-**wrong role → 403 with the DB row count unchanged** · correct role 200); every bucket renders and
-totals equal the sum of its rows; `no_date` is visibly separate; retainage is its own figure; a
-sidebar link resolves to this route (MS6.8's contract) and is not `href="#"`.
+**Page:** `GET /reports` (index) and `GET /reports/aging`, capability **`canViewReceivable`** — a NEW
+flag = **Finance + Cost Controller**, deliberately *not* the flat `true` the WBS/budget/ledger screens
+use. Those expose a project's own plan; these registers expose what the company is owed and by which
+customer. A Viewer gets a rendered **403 with the reason**.
+
+Buckets from `v_aging`, **grouped and totalled**, each bucket a `.kpi` tile with the count and total;
+the table sortable server-side by amount / most-overdue / due-soonest; the **"cannot be dated" group
+shown as its own labelled to-do**, never folded into 120+ (that was F2) and never counted in the
+overdue totals; **retainage its own tile and its own column** (PRD §5.2: *"retainage held separately
+(never buried in regular AR)"*), read from the register so a settled-but-still-retained claim keeps
+its figure. **Honest empty state:** with nothing outstanding the page says so in words, not with a
+table of zeros. Page furniture per house style: title + muted sub-title + full-width.
+
+**Tiles and table come from ONE result set** (`bucketTiles()` rolls up the same rows the table
+prints), so a tile cannot disagree with the rows under it — and RP8.4 recomputes the tile totals
+**from the table HTML** to prove it. `?sort=` is a **whitelist**: three prepared statements with
+literal `ORDER BY` in `db/queries.js`; an unknown key falls back to the PRD default instead of
+throwing, and RP8.7 drives `sort=outstanding_amount;DROP` and requires a 200.
+
+**Files:** NEW `src/routes/reporting.js`; NEW `views/aging.ejs`, `views/reports-index.ejs`; MOD
+`src/db/queries.js`, `src/lib/permissions.js` (`canViewReceivable`), `src/server.js`,
+`views/partials/sidebar.ejs` (Reports restored), `test/wbs-defaults.test.js` (MS6.10); NEW
+`test/reporting-screen.test.js` (RP8.1–RP8.9, port **3923**); `TEST_PLAN.md` (§12n).
+
+**Tests:** RP8.1 authorization (Viewer refused with the reason, DB row count unchanged, both routes) ·
+RP8.2 anonymous → `/login` · RP8.3 the corrected register renders (real claim, amount, project name) ·
+RP8.4 **tile ↔ table agreement recomputed from the HTML** · RP8.5 undatable = labelled to-do, never
+overdue · RP8.6 retainage separate (200M claim, 60M held → 140M outstanding) · RP8.7 sort works and
+an unknown sort cannot reach SQL · RP8.8 due date **and its source** on screen · RP8.9 the restored
+link resolves for a role that may open it.
+
+**A latent defect this part's suite run exposed (and fixed here).** The full-suite run for 8.3 came
+back `SUITE_EXIT=1` with four red tests — I8.4, MA5.1, PR2.1, PR3.1, all
+`SqliteError: no such column: terms_days`. They were **not** caused by migration 021: `import.test.js`,
+`projects.test.js` and `master.test.js` require app modules **in-process** but handed `PRACTIS_DB`
+only to the child server, so `src/db/db.js` fell back to `data/practis.db` — the **DEV database**.
+They had been reading (and could have been writing) real development data all along; migration 021
+adding a column to `v_aging` only made the consequence visible. Fixed by setting
+`process.env.PRACTIS_DB = dbPath` in each `before()`, plus a **guard in `src/db/db.js`** that throws
+when a `node --test` child process reaches it with no database chosen. Measured harm on this box:
+none (dev DB unchanged — `user_version 12`, 9 ledger rows, 4 users). Full write-up: `TEST_PLAN.md`
+§12n.1.
 
 ---
 

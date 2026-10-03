@@ -238,3 +238,22 @@ test('MS6.9 the sidebar offers Master data (Finance needs it, and cannot see Adm
     new URLSearchParams({ code: 'X', name: 'nope' }).toString());
   assert.strictEqual(post.status, 403, 'writing WBS structure is still Administrator-only');
 });
+
+test('MS6.10 the sidebar Reports link returns WITH its route (module 8 part 8.3)', async () => {
+  // The other half of MS6.7/MS6.8. Those two assert the sidebar carries NO dead link; this
+  // one asserts the link that was deliberately removed in task 6.6 came back in the SAME
+  // commit as the route it names. A link pointing at an unbuilt route is the exact defect
+  // MS6.8 guards against, so the two must land together — and this pins that they did.
+  const res = await admin.get('/');
+  const html = await res.text();
+  const nav = html.slice(html.indexOf('<nav'));
+  const sidebar = nav.slice(0, nav.indexOf('</nav>'));
+  assert.ok(sidebar.includes('href="/reports"'), 'the sidebar advertises the reports index');
+
+  const index = await admin.get('/reports');
+  assert.strictEqual(index.status, 200, 'and the index exists (MS6.8 asserts this too)');
+  const body = await index.text();
+  assert.ok(body.includes('/reports/aging'), 'the index links to the aging report');
+  const aging = await admin.get('/reports/aging');
+  assert.strictEqual(aging.status, 200, 'which exists');
+});

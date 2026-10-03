@@ -1,0 +1,41 @@
+<%# Reports index (module 8 part 8.3).
+    The sidebar's Reports group points HERE rather than at a single report, so adding the
+    module's later reports (forecast, variance, portfolio) does not require re-pointing the
+    link — and the sidebar-contract test (MS6.8) keeps working because the route it names
+    already exists.
+
+    One report exists today: Receivables aging. It is listed first because PRD §5.2 calls it
+    "Finance's collection priority list" — the screen Finance opens every morning.
+
+    Title and sub-title come from `page()` in routes/reporting.js. %>
+<% if (typeof project === 'undefined' || !project) { %>
+<div class="card"><div class="fbody">
+  <p class="dim">No project is in scope for your account, so there are no reports to show.</p>
+</div></div>
+<% } else { %>
+
+<div class="card">
+  <div class="card-hd"><h2>Available reports</h2>
+    <span class="r"><%= total %> claim<%= total === 1 ? '' : 's' %> outstanding</span></div>
+  <div class="tw"><table>
+    <thead><tr><th>Report</th><th>What it answers</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><a href="/reports/aging"><b>Receivables aging</b></a></td>
+        <td>Who owes us money, how late it is, and which invoices are past their terms.</td>
+      </tr>
+    </tbody>
+  </table></div>
+</div>
+
+<div class="grid" style="grid-template-columns:repeat(6,minmax(0,1fr));margin-top:12px">
+  <% tiles.forEach(function(t){ %>
+  <div class="card kpi">
+    <div class="lbl"><%= t.label %></div>
+    <div class="v mono sm"><%= fmt(t.total) %></div>
+    <div class="f"><%= t.n %> claim<%= t.n === 1 ? '' : 's' %></div>
+  </div>
+  <% }); %>
+</div>
+
+<% } %>

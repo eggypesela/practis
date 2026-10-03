@@ -55,6 +55,9 @@ app.use(require('./routes/rbs'));
 app.use(require('./routes/cbs'));
 // Baseline freeze + the BCR change-control workflow (part 7.6).
 app.use(require('./routes/bcr'));
+// Receivable / aging reports (module 8 part 8.3). Project-scoped like the WBS/CBS
+// screens, and it is where the sidebar's restored "Reports" link lands.
+app.use(require('./routes/reporting'));
 app.use(require('./routes/app'));
 
 // 404 + error handlers live in lib/error-handler.js so tests can reach them (they

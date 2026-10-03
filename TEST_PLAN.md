@@ -903,6 +903,119 @@ migration 018 applied to SPI/CPI.
 
 ---
 
+## 12n. RP8 — The receivables aging screen — `/reports` + `/reports/aging` — ✅ IMPLEMENTED 2026-10-03
+
+PRD §5.2: *"Aging report view (30/60/90/120+ day buckets), sortable by amount — Finance's collection
+priority list."* PRD §5.4 names the same report; screen map (TECH-SPEC §10) has `Reports | Aging |
+receivable priorities`. This part is **the first thing in the product that renders the registers
+parts 8.1 and 8.2 fixed** — which is why those two had to land first.
+
+**Three measured defects shaped the screen, not the other way round:**
+
+1. **The register it renders was inverted** before migration 020 (it showed the one document that is
+   *not* a receivable and hid every real claim). The screen had to be built on the corrected view or
+   it would have shipped the lie to Finance's morning screen.
+2. **An undatable claim is a data-quality TO-DO, not an urgency.** `v_aging` deliberately excludes
+   those rows (migration 020) so the old `CASE` cannot call an undated invoice `120_plus`. The screen
+   therefore gives them their own **labelled group** that says "fix the data" — visible and
+   actionable, never mixed into the chase list and never counted in the overdue totals.
+3. **Retainage is its own figure** (PRD §5.2: *"retainage held separately (never buried in regular
+   AR)"*), read from the **register** rather than from the aging list, so a claim that has been
+   settled but is still retained keeps its figure.
+
+**Two things the screen is structurally careful about:**
+
+* **The tiles and the table are rendered from ONE result set.** `bucketTiles()` in
+  `routes/reporting.js` rolls up the same `q.receivableAging` rows the table prints. A tile computed
+  from a second query will eventually disagree with the rows beneath it, and a dashboard that
+  contradicts itself is worse than one with no tiles. RP8.4 recomputes the tile totals from the
+  **table HTML** and requires them to match.
+* **`?sort=` is a WHITELIST, never a passthrough.** Three separate prepared statements live in
+  `db/queries.js` with literal `ORDER BY` clauses; the route only chooses between them, and an
+  unknown key falls back to the PRD default rather than throwing. RP8.7 drives `sort=outstanding_amount;DROP`
+  and requires a 200 with the list intact.
+
+**Authorization — deliberately narrower than the WBS/budget screens.** New capability
+`canViewReceivable` = **Finance + Cost Controller**, *not* the flat `true` that `canViewWbs`,
+`canViewCbs` and `canViewProjects` use. Those expose a project's own plan and tree; these registers
+expose **what the company is owed and by which customer**, which is Finance's book. A Viewer gets a
+**rendered 403 carrying the reason**, not a silently shorter list.
+
+| ID | Assertion | Expected |
+|---|---|---|
+| RP8.1 | a **Viewer** is refused both register routes, **with the reason**, and the DB is unchanged | 403 ×2, body matches *"Finance and Cost Control"*, ledger row count identical |
+| RP8.2 | an anonymous request is sent to the login page | 302 → `/login` on both routes |
+| RP8.3 | the screen renders a real claim posted through the **entry path** | `RP8-INV-1` present, `100.000.000` rendered, the project's own name in the sub-title |
+| RP8.4 | **every bucket tile agrees with the rows the table renders** | tile totals recomputed from the table HTML = **100,000,000**; all six buckets rendered including the empty ones |
+| RP8.5 | an undatable claim is a **labelled to-do group**, never counted as overdue | shown once (in the to-do group only), never in the chase table, totals unchanged |
+| RP8.6 | retainage is **held separately** (PRD §5.2) | Rp 200,000,000 claim with 60,000,000 retained → retainage **60.000.000**, outstanding **140.000.000**, row marked |
+| RP8.7 | the sort works and an **unknown sort cannot reach SQL** | largest-first leads with the 140,000,000 claim; `sort=…;DROP` → **200**, not 500 |
+| RP8.8 | the due date **and its source** reach the screen (decision D3) | `default, 30d` named beside the date; 2026-03-10 + 30 → **2026-04-09** |
+| RP8.9 | the restored Reports link resolves **for a role that may open it** | Finance sees the link and gets **200** with the real register |
+
+**The sidebar's Reports link returns here, in the same commit as the route.** MS6.7/MS6.8
+(`wbs-defaults.test.js`) assert the sidebar carries no dead link and that *every* href resolves;
+task 6.6 had removed five dead links including Reports. So the link and its route land together, and
+**MS6.10** (new, same file) pins that they did. The link points at the report **index** (`/reports`),
+not directly at the aging report, so the module's later reports do not require re-pointing it.
+
+**Files:** NEW `src/routes/reporting.js`; NEW `views/aging.ejs`, `views/reports-index.ejs`; MOD
+`src/db/queries.js` (4 statements + the sort whitelist), `src/lib/permissions.js` (`canViewReceivable`),
+`src/server.js` (mount), `views/partials/sidebar.ejs`, `test/wbs-defaults.test.js` (MS6.10);
+NEW `test/reporting-screen.test.js` (RP8.1–RP8.9, port **3923**).
+
+**Gates:** `dump-schema.js --check` clean ✅ (this part changes no schema); `python3 db/validate.py`
+ALL CHECKS PASS ✅; `test/reporting-screen.test.js` **9/9** ✅; full suite **461 → 471** ✅.
+
+### 12n.1 A latent test defect that migration 021 exposed — four test files read the DEV database
+
+**Found by the full-suite run for 8.3, which failed with `SUITE_EXIT=1` and four red tests:
+I8.4, MA5.1, PR2.1, PR3.1 — all `SqliteError: no such column: terms_days` at `queries.js:593`
+(migration 021's new `v_aging` columns).**
+
+The failures were not caused by migration 021. They were **pre-existing and always wrong**, exposed
+on coincidence. `import.test.js`, `projects.test.js` and `master.test.js` require app modules
+**in-process** (`import-service`, `projects-service`, `approvals-service`, `master-service`, and
+`src/server` itself for I8.4's route-table walk). `src/db/db.js` binds its connection to
+`process.env.PRACTIS_DB` **or falls back to `data/practis.db` — the DEV database** — and those files
+handed `PRACTIS_DB` **only to the child server process**, never to the test process. So every
+in-process require opened the dev database:
+
+* it read whatever schema and data the dev database happened to have;
+* it could **write** to the dev database (`applyBaselineChange`, audit rows, …);
+* it went unnoticed while the dev database was a schema-version match for the temp one — which it
+  was until migration 021 added `terms_days`/`terms_source`/`due_date`/`overdue_days` to `v_aging`.
+
+Full-suite runs had simply **never executed the in-process paths** since before any Module 7/8
+migration, so the stale read was invisible. The four files now set `process.env.PRACTIS_DB = dbPath`
+in their `before()`, and the parent-panel false positive (`fixture.test.js`, `wbs.test.js` — their
+`require('../src/…')` sits inside a comment) was checked and needs no change.
+
+**Measured harm: none on this box.** The dev database is `user_version 12`, 9 ledger rows, 4 users,
+project `JC-2026` — exactly as before, so no test run ever committed a write to it here.
+
+**The class is now loud, not silent** — the guard below in `src/db/db.js`. On a dev machine the dev
+database is perfectly openable, so without a guard the mistake produces plausible numbers instead of
+an error, which is the worst failure mode for a book of record:
+
+```js
+if (!process.env.PRACTIS_DB && process.env.NODE_TEST_CONTEXT) {
+  throw new Error("db.js: PRACTIS_DB is unset in a test process, so this would open the DEV database …");
+}
+```
+
+`NODE_TEST_CONTEXT` is set by `node --test` in each test child process (measured: `child-v8`), so the
+guard cannot fire for `node src/server.js` on the VPS, for `migrate.js`, or for any ordinary script —
+only for a test process that has not chosen a database.
+
+**Audit of the whole suite:** scanned every `test/*.test.js` for an in-process `require('../src/…')`;
+9 files do it, 5 of them (`admin`, `cbs`, `csrf`, `progress`, `rbs`) already set `PRACTIS_DB` in the
+parent, 1 (`fixture`) is safe by construction, and `admin`/`fixture`'s **top-level** requires
+(`src/lib/policy`, `src/lib/csv`) were checked to **not** reach `db.js` (neither has a `require` of
+its own), so they cannot trip the guard before their `before()` runs.
+
+---
+
 ## 13. Workflow coverage vs PRD §4
 
 The product workflow, step by step, and whether a test exists. **Empty rows are the real answer to

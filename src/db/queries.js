@@ -574,6 +574,50 @@ const _reconciliationAll = db.prepare(`
   LEFT JOIN projects p ON p.id = r.project_id
   ORDER BY r.period_month DESC, r.lpb_no`);
 
+// ---------------------------------------------------------------------------
+// Receivable reporting (module 8 part 8.3; migration 021's register views)
+//
+// Read through these statements so the ORDER BY cannot be a passthrough: each
+// sort is a SEPARATE prepared statement with a literal ORDER BY, never a string
+// spliced into one. A `?sort=` parameter must not be able to reach SQL at all.
+//
+// `v_aging` is the collection list (datable, still-outstanding), so the sort
+// variants only ever apply to it. `v_receivable_due` is the full register, which
+// is what the no-date to-do list has to read — an undatable row is deliberately
+// absent from `v_aging` (migration 020), so it can only be found here.
+// ---------------------------------------------------------------------------
+
+const _v_agingCols = `project_id, document_no, partner_id, invoice_date, outstanding_amount,
+  has_retainage, days_aged, aging_bucket, terms_days, terms_source, due_date, overdue_days`;
+
+const _agingByAmount = db.prepare(`SELECT ${_v_agingCols} FROM v_aging
+  WHERE project_id = ? ORDER BY outstanding_amount DESC, invoice_date ASC`);
+const _agingByOverdue = db.prepare(`SELECT ${_v_agingCols} FROM v_aging
+  WHERE project_id = ? ORDER BY overdue_days DESC, outstanding_amount DESC`);
+const _agingByDue = db.prepare(`SELECT ${_v_agingCols} FROM v_aging
+  WHERE project_id = ? ORDER BY due_date ASC, outstanding_amount DESC`);
+
+// A row that cannot be dated is a data-quality to-do, not a chase. It is a claim with
+// money outstanding whose invoice date is absent or blank, and it is visible ONLY here
+// (migration 020 removed it from `v_aging` precisely so it could not be reported as
+// "120+ days overdue" — the defect part 8.1 fixed).
+const _receivablesWithoutDate = db.prepare(`SELECT document_no, partner_id, outstanding_amount,
+    billed_amount, paid_amount, retainage_amount, terms_days, terms_source
+  FROM v_receivable_due
+  WHERE project_id = ? AND outstanding_amount <> 0
+    AND (invoice_date IS NULL OR invoice_date = '')
+  ORDER BY outstanding_amount DESC`);
+
+// Retainage held, per project: PRD §5.2 keeps it "separately (never buried in regular AR)".
+// Read from the register, not from aging, so a settled-but-still-retained claim is included.
+const _retainageHeld = db.prepare(`SELECT COALESCE(SUM(retainage_amount), 0) AS s
+  FROM v_receivable_due WHERE project_id = ? AND retainage_amount > 0`);
+
+// The five-bucket totals in one pass, so the page's tiles and the table cannot disagree.
+const _agingBuckets = db.prepare(`SELECT aging_bucket, COUNT(*) AS n,
+    COALESCE(SUM(outstanding_amount), 0) AS total
+  FROM v_aging WHERE project_id = ? GROUP BY aging_bucket`);
+
 module.exports = {
   projects: () => _projects.all(),
   projectById: (id) => _projectById.get(id),
@@ -742,4 +786,18 @@ module.exports = {
   lpbStalled: (projectId) => _lpbStalled.all(projectId),
   reconciliation: (projectId) => _reconciliation.all(projectId),
   reconciliationAll: () => _reconciliationAll.all(),
+
+  // ---- receivable reporting (module 8 part 8.3) ----
+  // The sort KEY is whitelisted HERE rather than in the route, so the only strings that can
+  // ever reach SQL are these three literals. An unknown key falls back to the PRD's default
+  // ("sortable by amount") instead of throwing.
+  receivableAging: (projectId, sort) => {
+    const stmt = sort === 'overdue' ? _agingByOverdue
+      : sort === 'due' ? _agingByDue
+        : _agingByAmount;
+    return stmt.all(projectId);
+  },
+  receivablesWithoutDate: (projectId) => _receivablesWithoutDate.all(projectId),
+  retainageHeld: (projectId) => _retainageHeld.get(projectId).s,
+  receivableBuckets: (projectId) => _agingBuckets.all(projectId),
 };

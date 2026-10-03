@@ -68,6 +68,16 @@ before(async () => {
   cookie = `practis_sid=${cli.j.c['practis_sid']}`;
   base = cli;
   db = new (require('better-sqlite3'))(dbPath);
+
+  // PR2.x and PR3.x reach the app IN-PROCESS from THIS process — `require('../src/lib/
+  // projects-service')` and `require('../src/lib/approvals-service')`. `src/db/db.js` binds to
+  // whatever `PRACTIS_DB` says, and the CHILD server is the only thing that got it above, so
+  // before this line those requires were opening `data/practis.db`, the DEV database.
+  //
+  // Found in module 8: migration 021 added a column to `v_aging`, and a test process preparing a
+  // statement against a dev database still on v20 failed with "no such column: terms_days". The
+  // dev-database read was always wrong; the schema change only made it visible.
+  process.env.PRACTIS_DB = dbPath;
 });
 
 after(() => {

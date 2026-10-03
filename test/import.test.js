@@ -69,6 +69,18 @@ before(async () => {
   cookie = `practis_sid=${cli.j.c['practis_sid']}`;
   csrf = cli.token();
   db = new (require('better-sqlite3'))(dbPath);
+
+  // I8.4 and the import-service tests reach the app IN-PROCESS from THIS process (`db` below,
+  // `require('../src/lib/import-service')`, `require('../src/server')`). `src/db/db.js` binds to
+  // whatever `PRACTIS_DB` says, and the CHILD server is the only thing that got it above — so
+  // before this line every in-process require was opening `data/practis.db`, the DEV database.
+  //
+  // It surfaced in module 8: migration 021 added a column to `v_aging`, and a test process
+  // preparing a statement against a dev database still on v20 failed with
+  // "no such column: terms_days". The dev-database read was always wrong; the schema change only
+  // made the consequence visible. (I8.4 is the one that hits it, because it requires the whole
+  // app in-process to walk the route table.)
+  process.env.PRACTIS_DB = dbPath;
 });
 
 after(() => {

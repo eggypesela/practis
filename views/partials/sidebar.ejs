@@ -18,9 +18,15 @@
     <a href="/projects" class="<%= _active === 'Projects' ? 'on' : '' %>"><svg><use href="#i-folder"/></svg><span class="lbl">Projects</span></a>
     <a href="/clients" class="<%= _active === 'Clients' ? 'on' : '' %>"><svg><use href="#i-users"/></svg><span class="lbl">Clients</span></a>
     <a href="/suppliers" class="<%= _active === 'Suppliers' ? 'on' : '' %>"><svg><use href="#i-in"/></svg><span class="lbl">Suppliers</span></a>
-    <%# "Reports" was a dead href="#" here. Removed rather than left linking nowhere:
-        a link that goes nowhere reads as "this feature is broken", not "not built yet".
-        It returns when the reports module does (plan module 8/9). %>
+    <%# "Reports" was a dead href="#" here until module 8 part 8.3 built the route it
+        names. The link and the route land in the SAME commit, because MS6.8 asserts every
+        sidebar href resolves — a link added ahead of its route would fail that test, which
+        is exactly what that test is for. It points at the report INDEX, not at the aging
+        report, so the module's later reports do not require re-pointing it.
+        Who may open it is `canViewReceivable` (Finance + Cost Controller); the sidebar
+        shows it to everyone because the sidebar is not a permission system — the route
+        answers 403 with a reason. %>
+    <a href="/reports" class="<%= _active === 'Aging' ? 'on' : '' %>"><svg><use href="#i-chart"/></svg><span class="lbl">Reports</span></a>
     <div class="pctx">
       <span class="pc-lbl caps">Project</span>
       <% const _list = (typeof projects !== 'undefined' && projects) ? projects : []; %>
