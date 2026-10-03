@@ -742,6 +742,10 @@ through the real services, on a real migrated database.
 | EV7.5 | **no row anywhere** claims an index it cannot compute; and real measurements are not blanked |
 | EV7.6 | `cost_variance` is still **AC − EV** — the deliberate non-change is pinned |
 | EV7.7 | every baseline month is reported **once**, in order — no month dropped by the FULL OUTER JOINs |
+| EV7.8 | **`pv_cum`/`ev_cum`/`ac_cum` accumulate**, and every per-period figure is **untouched** by 019 |
+| EV7.9 | **`spi_cum`/`cpi_cum` = EV_cum ÷ PV_cum / AC_cum**; same honesty rule (NULL, never 0) |
+| EV7.10 | a month with **no activity carries the running totals forward** (the trend line never breaks) |
+| EV7.11 | no cumulative index ever **contradicts its own numerator and denominator** (property check) |
 
 **Two real defects were measured and closed by migration 018.** Migration 018 is the one
 production change 7.8 needed, and the plan predicted it would need none — so the anomaly is
@@ -765,11 +769,24 @@ figure moved**, and `validate.py`'s existing "EVM Feb values present" assertion 
 **Deliberately NOT changed:** `cost_variance`. Nothing reads it and its sign convention is a
 separate decision, so it is pinned as-is (EV7.6) rather than quietly "fixed".
 
-**Honest scope limit, recorded:** this view is **per period** — `pv` is the month's bucket and
-`ev` is the month's earned value, so `spi`/`cpi` here are **period indexes**. Standard EVM also
-reports **cumulative** indexes, and those are **not derivable** from this view (you cannot add
-monthly indexes). A cumulative column belongs with the dashboards and trend reports that need it
-— Module 8, which owns "EV, forecast, variance, dashboards". Flagged there, not invented here.
+**Honest scope limit, now CLOSED by migration 019.** This view's per-period `spi`/`cpi` answer
+*"how did this month go?"*. Standard EVM also reports **cumulative** indexes — *"is the project
+ahead or behind?"* — and those were **not derivable** from the per-period columns (you cannot add
+monthly indexes). That was flagged to the owner as a decision rather than silently fixed, and the
+answer was to add them: **migration 019** adds `pv_cum`, `ev_cum`, `ac_cum`, `spi_cum`, `cpi_cum`,
+**additively** — no per-period column changes (proved by EV7.8). The reason it is a migration and
+not Module 8 dashboard arithmetic is the rule this module has been bitten by three times: a number
+must be computed where it is produced, not by each reader.
+
+**The trap that bit 019's first draft, worth remembering:** a window function emits a row only for
+its own input rows, so `SUM(ev) OVER (…)` over the `ev` CTE left the running total NULL in every
+month that had no progress — producing *"reading, blank, blank, blank"*, i.e. the per-period problem
+again with the blanks moved. The fix is an explicit **month grid** (the union of the months in
+`pv`, `ev` and `ac`), so every month has a cumulative row and an idle month carries the total
+forward. EV7.10 pins it.
+
+**Still per-period and deliberately so:** `spi`/`cpi` themselves. They answer a real question
+("which month slipped?") and removing them to force one scale would lose information.
 
 ---
 
@@ -783,7 +800,7 @@ The product workflow, step by step, and whether a test exists. **Empty rows are 
 | 4.1 | Initialisation: create project, assign roles **per project**, COA/WBS/CBS setup, team, client/supplier, approval chain | ❌ **no tests, no UI** (skipped §10 step 3; Module 6) |
 | 4.2 | Planning: WBS tree, milestones + weights, RBS load, CBS budget, **baseline**, **freeze**, **de-scope** | ✅ **complete** — WBS tree (WB7.1–WB7.10), milestones + per-period % complete (MP7.1–MP7.15), RBS load (RB7.1–RB7.17), **CBS budget + the Σ = RBS invariant (BL7.1–BL7.18)**, **baseline change: prospective + atomic (BS7.1–BS7.13)**, **baseline freeze + BCR workflow (BC7.1–BC7.13)**, **de-scope: history intact (DS7.1–DS7.13)** |
 | 4.3 | Execution: progress ticks → EV · actual cost from ledger + checked lines · revenue recognition · billed vs received | ⚠️ **partial** — actual cost ✅ (CA2.2, XO1.9); progress ticks ✅ (MP7.x); revenue, billed≠received ❌ |
-| 4.4 | Monitoring: EVM SPI/CPI, forecast, variance, **de-scope/BCR**, aging, dashboards | ⚠️ **partial** — **EVM SPI/CPI ✅ (EV7.1–EV7.7 — the module gate: `v_evm_period` returns real, honest indexes; migration 018 stopped a 0 being reported where no index exists)**, BCR change control ✅ (BC7.1–BC7.13, incl. the SoD rule that an Administrator does not approve baselines); de-scope ✅ (DS7.1–DS7.13, prospective only — past months byte-identical); forecast, variance, aging, dashboards ❌ (Module 8) |
+| 4.4 | Monitoring: EVM SPI/CPI, forecast, variance, **de-scope/BCR**, aging, dashboards | ⚠️ **partial** — **EVM SPI/CPI ✅ (EV7.1–EV7.11 — the module gate: `v_evm_period` returns real, honest indexes, per-period AND cumulative; migrations 018 + 019)**, BCR change control ✅ (BC7.1–BC7.13, incl. the SoD rule that an Administrator does not approve baselines); de-scope ✅ (DS7.1–DS7.13, prospective only — past months byte-identical); forecast, variance, aging, dashboards ❌ (Module 8) |
 | 4.5 | Closing (3-step): close, final reconciliation, archive, **hide from live dashboards** | ❌ no tests (Module 8) |
 
 ### TECH-SPEC §8.4 required invariants — coverage

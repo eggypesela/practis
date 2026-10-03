@@ -253,8 +253,6 @@ test('EV7.6 cost_variance is still AC minus EV — migration 018 did not touch i
   assert.strictEqual(row.cost_variance, 200000 - 500000, '-300,000 on these numbers');
 });
 
-// ---- 8.7 the curve has no gaps and no duplicates ---------------------------
-
 test('EV7.7 every month of the baseline is reported once, with no month dropped', () => {
   const rows = fx.db.prepare(`SELECT period_month FROM v_evm_period
     WHERE project_id = ? ORDER BY period_month`).all(PROJECT);
@@ -263,4 +261,96 @@ test('EV7.7 every month of the baseline is reported once, with no month dropped'
   // pv/ev/ac. Every baseline month must survive, and none may appear twice.
   assert.deepStrictEqual(months, MONTHS, 'the ten baseline months, in order, once each');
   assert.strictEqual(new Set(months).size, months.length, 'no month is reported twice');
+});
+
+// ---- 8.8 the running-total indexes (migration 019) --------------------------
+
+test('EV7.8 the running totals accumulate, and every per-period figure is untouched', () => {
+  // By hand, from what the tests above built: PV is 100,000 a month from 2026-03 through 2026-12;
+  // EV is 500,000 earned in March, nothing after; AC is 200,000 in March (two 100,000 costs) and
+  // 40,000 in December.
+  const expected = {
+    '2026-03': { pv_cum: 100000, ev_cum: 500000, ac_cum: 200000 },
+    '2026-04': { pv_cum: 200000, ev_cum: 500000, ac_cum: 200000 },
+    '2026-05': { pv_cum: 300000, ev_cum: 500000, ac_cum: 200000 },
+    '2026-12': { pv_cum: 1000000, ev_cum: 500000, ac_cum: 240000 },
+  };
+  for (const [month, want] of Object.entries(expected)) {
+    const r = evm(PROJECT, month);
+    assert.strictEqual(r.pv_cum, want.pv_cum, `${month} pv_cum`);
+    assert.strictEqual(r.ev_cum, want.ev_cum, `${month} ev_cum — earned value carries forward`);
+    assert.strictEqual(r.ac_cum, want.ac_cum, `${month} ac_cum`);
+  }
+
+  // And the per-period columns are EXACTLY what they were before migration 019. This is the
+  // assertion that makes 019 safe to ship: it adds columns and moves nothing.
+  const mar = evm(PROJECT, MONTH);
+  assert.strictEqual(mar.pv, 100000, 'per-period pv unchanged');
+  assert.strictEqual(mar.ev, 500000, 'per-period ev unchanged');
+  assert.strictEqual(mar.ac, 200000, 'per-period ac unchanged');
+  assert.strictEqual(mar.spi, 5, 'per-period spi unchanged (500,000 / 100,000)');
+  assert.strictEqual(mar.cpi, 2.5, 'per-period cpi unchanged (500,000 / 200,000)');
+});
+
+test('EV7.9 the cumulative indexes are EV_cum/PV_cum and EV_cum/AC_cum', () => {
+  // 2026-04, by hand: pv_cum = 200,000, ev_cum = 500,000, ac_cum = 200,000.
+  //   spi_cum = 500,000 / 200,000 = 2.5      cpi_cum = 500,000 / 200,000 = 2.5
+  // This is the number the per-period view could NOT give: April earned nothing, so its per-period
+  // SPI is NULL (verified in EV7.7's month below), and a dashboard reading only that would show a
+  // blank for a project that is plainly well ahead of plan.
+  const apr = evm(PROJECT, '2026-04');
+  assert.strictEqual(apr.spi, null, 'April alone earned nothing — no per-period index');
+  assert.strictEqual(apr.spi_cum, 2.5, 'but the running total reads 500,000 / 200,000');
+  assert.strictEqual(apr.cpi_cum, 2.5, 'and 500,000 / 200,000');
+  // March: pv_cum = 100,000 => 500,000 / 100,000 = 5 — where the two scales agree, because it is
+  // the project's first measured month and there is no history yet to differ from.
+  assert.strictEqual(evm(PROJECT, MONTH).spi_cum, 5, 'first measured month: the two scales agree');
+
+  // The cumulative indexes obey the same honesty rule as the per-period ones (migration 018):
+  // NULL exactly where there is nothing to divide, never a false 0.
+  const offenders = fx.db.prepare(`SELECT project_id, period_month, pv_cum, ev_cum, ac_cum, spi_cum, cpi_cum
+    FROM v_evm_period
+    WHERE (spi_cum IS NOT NULL AND (COALESCE(ev_cum,0) = 0 OR COALESCE(pv_cum,0) = 0))
+       OR (cpi_cum IS NOT NULL AND (COALESCE(ev_cum,0) = 0 OR COALESCE(ac_cum,0) = 0))`).all();
+  assert.deepStrictEqual(offenders, [], 'no cumulative index without a cumulative earned value');
+});
+
+test('EV7.10 a month with no activity still carries the running totals forward', () => {
+  // June, July and August: no progress reported and no cost booked in any of them, so the
+  // per-period figures are all 0. The running totals must still be readable — this is the trap the
+  // first draft of migration 019 fell into, where a window function over only the months that HAVE
+  // data left the cumulative columns NULL and the trend line read "reading, blank, blank, blank".
+  //
+  // The schedule index FALLS across these months, which is the correct behaviour and worth stating:
+  // the earned value is frozen at 500,000 while the plan keeps advancing, so the project slides
+  // from 5x ahead to slightly behind. Hand-computed:
+  //   Jun: pv_cum 400,000 → 500,000/400,000 = 1.25
+  //   Jul: pv_cum 500,000 → 500,000/500,000 = 1.0
+  //   Aug: pv_cum 600,000 → 500,000/600,000 = 0.8333
+  const expected = { '2026-06': 1.25, '2026-07': 1, '2026-08': 0.8333 };
+  for (const [month, spiCum] of Object.entries(expected)) {
+    const r = evm(PROJECT, month);
+    assert.strictEqual(r.ev, 0, `${month} earned nothing of its own`);
+    assert.strictEqual(r.ac, 0, `${month} spent nothing of its own`);
+    assert.strictEqual(r.ev_cum, 500000, `${month} carries the 500,000 forward`);
+    assert.strictEqual(r.ac_cum, 200000, `${month} carries the 200,000 forward`);
+    assert.strictEqual(r.spi_cum, spiCum, `${month} still has a schedule reading`);
+  }
+});
+
+test('EV7.11 the cumulative index never contradicts its own numerator and denominator', () => {
+  // A property check across every row, not a list of cases: wherever the cumulative index is
+  // reported it must equal the rounded ratio of its own columns, and be blank exactly when it
+  // cannot be computed. Catches a join that pairs a numerator with the wrong month's denominator.
+  const bad = fx.db.prepare(`SELECT project_id, period_month, pv_cum, ev_cum, ac_cum, spi_cum, cpi_cum
+    FROM v_evm_period
+    WHERE (spi_cum IS NOT NULL AND ABS(spi_cum - ROUND(ev_cum / pv_cum, 4)) > 0.0001)
+       OR (cpi_cum IS NOT NULL AND ABS(cpi_cum - ROUND(ev_cum / ac_cum, 4)) > 0.0001)
+       OR (spi_cum IS NOT NULL) <> (COALESCE(ev_cum,0) <> 0 AND COALESCE(pv_cum,0) <> 0)
+       OR (cpi_cum IS NOT NULL) <> (COALESCE(ev_cum,0) <> 0 AND COALESCE(ac_cum,0) <> 0)`).all();
+  assert.deepStrictEqual(bad, [], 'every cumulative index matches its own columns');
+
+  // And the scale really is cumulative: the last baseline month's pv_cum is the whole budget.
+  const dec = evm(PROJECT, '2026-12');
+  assert.strictEqual(dec.pv_cum, BAC, 'December pv_cum is the entire baseline (1,000,000)');
 });

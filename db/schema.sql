@@ -1070,24 +1070,50 @@ ac AS (
   SELECT project_id, period_month, SUM(actual_amount) AS ac
   FROM v_cbs_actual
   GROUP BY project_id, period_month
+),
+-- The project's month grid: EVERY month that appears in any of the three sources, not just the
+-- months that happen to have a row in one of them. This is what makes the running totals below
+-- continuous — without it, a month that earned nothing has no cumulative row and the curve breaks.
+months AS (
+  SELECT project_id, period_month FROM pv
+  UNION
+  SELECT project_id, period_month FROM ev
+  UNION
+  SELECT project_id, period_month FROM ac
+),
+-- One row per project per month, with the three per-period figures filled in (0 where that source
+-- has nothing for the month — the same COALESCE the previous view used).
+tot AS (
+  SELECT m.project_id, m.period_month,
+         COALESCE(pv.pv, 0) AS pv,
+         COALESCE(ev.ev, 0) AS ev,
+         COALESCE(ac.ac, 0) AS ac
+  FROM months m
+  LEFT JOIN pv ON pv.project_id = m.project_id AND pv.period_month = m.period_month
+  LEFT JOIN ev ON ev.project_id = m.project_id AND ev.period_month = m.period_month
+  LEFT JOIN ac ON ac.project_id = m.project_id AND ac.period_month = m.period_month
+),
+-- The running totals. Every month in the grid has one, because every month is in `tot`.
+cum AS (
+  SELECT project_id, period_month, pv, ev, ac,
+         SUM(pv) OVER w AS pv_cum,
+         SUM(ev) OVER w AS ev_cum,
+         SUM(ac) OVER w AS ac_cum
+  FROM tot
+  WINDOW w AS (PARTITION BY project_id ORDER BY period_month)
 )
-SELECT COALESCE(pv.project_id, ev.project_id, ac.project_id) AS project_id,
-       COALESCE(pv.period_month, ev.period_month, ac.period_month) AS period_month,
-       COALESCE(pv.pv, 0)  AS pv,
-       COALESCE(ev.ev, 0)  AS ev,
-       COALESCE(ac.ac, 0)  AS ac,
+SELECT project_id, period_month, pv, ev, ac,
        -- NULL unless there is something to divide: an index needs a denominator AND a
        -- non-zero numerator. With no measured progress there is no earned value, so
-       -- neither index exists — blank, never 0.
-       CASE WHEN COALESCE(ev.ev,0) <> 0 AND COALESCE(pv.pv,0) <> 0
-            THEN ROUND(COALESCE(ev.ev,0) / pv.pv, 4) END AS spi,
-       CASE WHEN COALESCE(ev.ev,0) <> 0 AND COALESCE(ac.ac,0) <> 0
-            THEN ROUND(COALESCE(ev.ev,0) / ac.ac, 4) END AS cpi,
-       COALESCE(ac.ac,0) - COALESCE(ev.ev,0) AS cost_variance
-FROM pv
-FULL OUTER JOIN ev ON ev.project_id = pv.project_id AND ev.period_month = pv.period_month
-FULL OUTER JOIN ac ON ac.project_id = COALESCE(pv.project_id, ev.project_id)
-                  AND ac.period_month = COALESCE(pv.period_month, ev.period_month);
+       -- neither index exists — blank, never 0. (Migration 018's rule.)
+       CASE WHEN ev <> 0 AND pv <> 0 THEN ROUND(ev / pv, 4) END AS spi,
+       CASE WHEN ev <> 0 AND ac <> 0 THEN ROUND(ev / ac, 4) END AS cpi,
+       ac - ev AS cost_variance,
+       -- The running totals, and the indexes they support. Same rule at both scales.
+       pv_cum, ev_cum, ac_cum,
+       CASE WHEN ev_cum <> 0 AND pv_cum <> 0 THEN ROUND(ev_cum / pv_cum, 4) END AS spi_cum,
+       CASE WHEN ev_cum <> 0 AND ac_cum <> 0 THEN ROUND(ev_cum / ac_cum, 4) END AS cpi_cum
+FROM cum;
 CREATE VIEW v_ledger_period AS
 SELECT l.*,
        COALESCE(l.effective_date, l.date)                    AS effective_period_date,

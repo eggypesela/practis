@@ -1032,8 +1032,52 @@ binding spec; the build must not deviate without a new decision.
 Note on decision 1: the PRD's three steps stay **recorded** in the approval chain exactly as decision
 8A does for the registers — only the *required* set is narrowed. Widening it later is a data change.
 
+---
+
+## Part 7.9 — Cumulative SPI/CPI: the second scale — ✅ DONE 2026-10-03
+
+**Not in the original 8-part plan.** It was opened as a follow-on because part 7.8's acceptance test
+measured a real limitation and the owner was asked to decide it rather than have it fixed silently.
+
+**The question put to the owner.** `v_evm_period.spi`/`.cpi` are PER PERIOD: `pv` is one month's
+bucket and `ev` is the value earned *in* that month. Measured on a fixture (1,000,000 over ten
+months, 50% ticked in month 1), reading the column down a year gives **"5.0, blank, blank, blank"** —
+because months 4–12 earned nothing of their own, so their per-period index is NULL. That is honest,
+but it is not a health reading. The PRD's KPI is cumulative (§5.1 line 211). **Owner answered A: add
+the cumulative columns now, keep the per-period ones.**
+
+**Files:** `db/migrations/019_evm_cumulative_indexes.sql` (NEW — pure view swap, no table, no
+trigger), `db/schema.sql` (regenerated), `test/evm.test.js` (+EV7.8–EV7.11), `TEST_PLAN.md`.
+
+**What it adds, additively:** `pv_cum`, `ev_cum`, `ac_cum`, `spi_cum = ev_cum/pv_cum`,
+`cpi_cum = ev_cum/ac_cum`. **No per-period column changes** — proved by EV7.8, and verified
+independently on the seeded database (5 rows before and after, **0 per-period fields moved**).
+
+**The trap that bit the first draft.** A window function emits a row only for its own input rows.
+`SUM(ev) OVER (PARTITION BY project_id ORDER BY period_month)` over the `ev` CTE therefore left
+`ev_cum` NULL in every month that had no progress — reproducing the very problem this part exists to
+fix, with the blanks moved one column over. Measured: `Jan NULL · Feb 180,000,000 · Mar NULL · Apr
+NULL · May NULL`. **Fix:** an explicit month grid (the UNION of the months in `pv`, `ev` and `ac`), so
+every month has a cumulative row and an idle month carries the total forward. EV7.10 pins it.
+
+**Why the cumulative columns are computed from the base tables, not summed from the per-period
+output.** `ac` per period comes from `v_cbs_actual`, which deliberately EXCLUDES cost that cannot be
+attributed to a CBS account ("unattributable cost is not cost"). A later period can attribute an
+earlier month's cost; summing the per-period column would miss it, because the month it belongs to is
+in the past. Same source, one place. *(Designed for; not demonstrable on the seed data, which has no
+such re-attribution — stated as intent, not measured.)*
+
+**Both scales keep the honesty rule** from 018: NULL when there is no earned value, never a false 0.
+
+**Verification:** `node --test test/evm.test.js` → **11/11**; full suite **442 → 446**; schema drift
+clean; `python3 db/validate.py` → ALL CHECKS PASS (Feb still `spi = 1.5`).
+**Commit:** `feat(evm): cumulative SPI and CPI alongside the per-period indexes`
+
+---
+
 ## 7. Immediate next action
 
-Start **Part 7.1**. Write `test/wbs.test.js` WB7.1 (the tree renders), watch it fail, then build
-`src/routes/wbs.js` + `src/lib/wbs-service.js` until it passes — then WB7.2/WB7.3, the
-contract-value rule, which is the part the PRD calls the contract.
+**Module 7 is COMPLETE (parts 7.1–7.9, 9 commits, all pushed).** Next is **Module 8** — reporting:
+forecast, variance, aging, dashboards, period freeze + report generation. Read
+`docs/TECH-SPEC.md` §10 for the order before starting, and write a fresh plan for the module; do not
+extend this one.
