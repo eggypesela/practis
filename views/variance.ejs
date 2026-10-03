@@ -1,0 +1,142 @@
+<%# Variance (module 8 part 8.5; PRD §5.4 "EVM trend", TECH-SPEC §10 step 7 "variance").
+    "Are we ahead or behind, and by how much?" — in rupiah, beside the ratio the dashboard shows.
+
+    THE SIGN IS PRINTED, NOT ASSUMED. Two different "cost variances" exist in this product and
+    they point in OPPOSITE directions:
+
+      v_evm_period.cv   = EV - AC   positive = UNDER budget   (standard EVM)
+      v_evm_period.cost_variance = AC - EV   positive = OVER budget   (pinned by EV7.6)
+
+    A page that showed the wrong one under the label "cost variance" would invert every verdict,
+    silently. So this screen renders `cv` — the standard one — under the name "Cost variance
+    (CV)", and never renders `cost_variance` at all. The convention is stated in words above the
+    table, from `v.sign`, rather than left to the reader's memory of the textbook.
+
+    Title and sub-title come from `page()` in routes/cbs.js. %>
+<% const fmt = (n) => Number(n || 0).toLocaleString('en-US'); %>
+<% const signOf = (n) => (n > 0 ? '+' : (n < 0 ? '\u2212' : '')) + fmt(Math.abs(n)); %>
+<% const toneOf = (n, goodWhenPositive) => {
+     if (n === 0) return 'inherit';
+     return (n > 0) === !!goodWhenPositive ? 'var(--ok)' : 'var(--bad)';
+   }; %>
+
+<div class="grid k4">
+  <% if (v.at) { %>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-tree"/></svg>Schedule variance (SV)</div>
+    <div class="v mono" style="color:<%= toneOf(v.at.sv_cum, true) %>"><%= signOf(v.at.sv_cum) %></div>
+    <div class="f">Earned − planned, to date<%= v.at.sv_pct === null ? ''
+      : ' · ' + (v.at.sv_pct > 0 ? '+' : '') + v.at.sv_pct + '% of the plan' %>
+      <%= v.at.sv_cum > 0 ? '— ahead of schedule' : (v.at.sv_cum < 0 ? '— behind schedule' : '— on plan') %></div></div>
+
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-chart"/></svg>Cost variance (CV)</div>
+    <div class="v mono" style="color:<%= toneOf(v.at.cv_cum, true) %>"><%= signOf(v.at.cv_cum) %></div>
+    <div class="f">Earned − actual, to date<%= v.at.cv_pct === null ? ''
+      : ' · ' + (v.at.cv_pct > 0 ? '+' : '') + v.at.cv_pct + '% of spend' %>
+      <%= v.at.cv_cum > 0 ? '— under budget' : (v.at.cv_cum < 0 ? '— over budget' : '— on budget') %></div></div>
+
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-book"/></svg>Approved budget (BAC)</div>
+    <div class="v mono"><%= fmt(v.bac) %></div>
+    <div class="f">IDR — the plan, unchanged</div></div>
+
+  <% if (v.vac !== null) { %>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Variance at completion</div>
+    <div class="v mono" style="color:<%= toneOf(v.vac, true) %>"><%= signOf(v.vac) %></div>
+    <div class="f">Budget − estimate<%= v.eac_month ? ', estimated from ' + v.eac_month : '' %>
+      <%= v.vac > 0 ? '— expected to finish under budget'
+          : (v.vac < 0 ? '— expected to finish over budget' : '— expected to finish on budget') %></div></div>
+  <% } else { %>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Variance at completion</div>
+    <div class="v" style="color:var(--mut)">Not measured</div>
+    <div class="f">Needs an estimate to compare the approved budget against</div></div>
+  <% } %>
+  <% } else { %>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-info"/></svg>Nothing measured yet</div>
+    <div class="v" style="color:var(--mut)">—</div>
+    <div class="f">No month has progress recorded or cost booked, so there is nothing to compare
+      against the plan. The figures below appear once the project has been measured.</div></div>
+  <% } %>
+</div>
+
+<div class="note" style="margin-top:12px">
+  <svg><use href="#i-info"/></svg>
+  <span><b>How to read the signs.</b>
+    <%= v.sign.sv %>. <%= v.sign.cv %>.
+    <%= v.sign.vac %>. Variance is money: a positive schedule variance means the work done is
+    worth more than the work planned by that date. Percentages use the figure the variance is
+    measured against — the plan for SV, what has been spent for CV — and are blank when there is
+    nothing to divide rather than shown as 0%.
+    <b>This page reports variance in the standard EVM convention only (EV − PV and EV − AC).</b>
+    The ledger-side <i>cost variance</i> held on the same records for the ledger screens is
+    <%= v.sign.cost_variance %>; it is not shown here, because two figures with one name and
+    opposite signs on a single page is how a sign gets inverted in a reader's head.</span>
+</div>
+
+<% if (v.reason) { %>
+<div class="errb" style="margin-top:12px"><div class="errb-tx">
+  <p><b>Why variance at completion is blank.</b> <%= v.reason %></p>
+</div></div>
+<% } %>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd">
+    <h2>Month by month</h2>
+    <span class="r">SV and CV are the month; the totals below are running totals</span>
+  </div>
+  <% if (!v.months.length) { %>
+  <div class="fbody"><p class="dim">No month has anything recorded against it yet. Record progress
+    and book cost, and the trend appears here.</p></div>
+  <% } else { %>
+  <div class="tw"><table>
+    <thead><tr>
+      <th>Month</th>
+      <th style="text-align:right">Planned (PV)</th>
+      <th style="text-align:right">Earned (EV)</th>
+      <th style="text-align:right">Actual (AC)</th>
+      <th style="text-align:right">SV</th>
+      <th style="text-align:right">CV</th>
+      <th style="text-align:right">SPI</th>
+      <th style="text-align:right">CPI</th>
+    </tr></thead>
+    <tbody>
+    <% v.months.forEach(function(r) { %>
+      <tr>
+        <td class="mono"><%= r.period_month %></td>
+        <td class="mono" style="text-align:right"><%= fmt(r.pv) %></td>
+        <td class="mono" style="text-align:right"><%= fmt(r.ev) %></td>
+        <td class="mono" style="text-align:right"><%= fmt(r.ac) %></td>
+        <td class="mono" style="text-align:right;color:<%= toneOf(r.sv, true) %>"><%= signOf(r.sv) %></td>
+        <td class="mono" style="text-align:right;color:<%= toneOf(r.cv, true) %>"><%= signOf(r.cv) %></td>
+        <td class="mono" style="text-align:right"><%= r.spi === null ? '—' : r.spi.toFixed(2) %></td>
+        <td class="mono" style="text-align:right"><%= r.cpi === null ? '—' : r.cpi.toFixed(2) %></td>
+      </tr>
+    <% }); %>
+    </tbody>
+    <% const last = v.months[v.months.length - 1]; %>
+    <tfoot><tr>
+      <th colspan="4">Running total<%= v.at && v.at.period_month === last.period_month
+        ? '' : ' at ' + last.period_month %></th>
+      <th class="mono" style="text-align:right;color:<%= toneOf(last.sv_cum, true) %>"><%= signOf(last.sv_cum) %></th>
+      <th class="mono" style="text-align:right;color:<%= toneOf(last.cv_cum, true) %>"><%= signOf(last.cv_cum) %></th>
+      <th class="mono" style="text-align:right"><%= last.spi_cum === null ? '—' : last.spi_cum.toFixed(2) %></th>
+      <th class="mono" style="text-align:right"><%= last.cpi_cum === null ? '—' : last.cpi_cum.toFixed(2) %></th>
+    </tr></tfoot>
+  </table></div>
+  <% } %>
+</div>
+
+<div class="card" style="margin-top:12px"><div class="fbody">
+  <% if (v.omitted > 0) { %>
+  <p class="dim" style="margin:0 0 8px"><b><%= v.omitted %> month<%= v.omitted === 1 ? '' : 's' %>
+    with nothing recorded <%= v.omitted === 1 ? 'is' : 'are' %> hidden here.</b>
+    Their variance is arithmetically zero, which would draw a flat line that looks like steady
+    performance rather than an absence of measurement.
+    <% if (showAll) { %>All months are shown because you asked for them.
+    <% } else { %><a href="/reports/variance?all=1">Show every month</a> to see the whole calendar.<% } %></p>
+  <% } else if (showAll) { %>
+  <p class="dim" style="margin:0 0 8px">Showing every month on the calendar, including any with
+    nothing recorded. <a href="/reports/variance">Hide the empty ones</a>.</p>
+  <% } %>
+  <p class="dim" style="margin:0">Schedule and cost variance are worked out once, in the database
+    (migration 022), and read by every screen that shows them — so two screens cannot disagree
+    about the same project. The approved plan is never changed by anything on this page.</p>
+</div></div>

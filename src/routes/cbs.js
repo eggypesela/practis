@@ -24,6 +24,8 @@ router.use(['/cbs'], projectContext);
 // the plan in money per month — but it is a REPORT, so it takes the reporting guard too.
 router.use(['/reports/forecast'], requirePage);
 router.use(['/reports/forecast'], projectContext);
+router.use(['/reports/variance'], requirePage);
+router.use(['/reports/variance'], projectContext);
 
 function requireCapability(flag, message) {
   return (req, res, next) => {
@@ -77,9 +79,26 @@ const guard = requireCapability('canManageCbs', 'Setting the budget is the Cost 
 const forecastGuard = requireCapability('canManageForecast',
   'The cost forecast is the Cost Controller’s to enter.');
 
-// The forecast and variance report (module 8 part 8.4). Read-only apart from the two POSTs
-// below, and it changes no baseline row — a forecast never touches the approved plan.
-router.get('/reports/forecast', (req, res) => {
+// Reading the reports is NOT the same boundary as writing them. The forecast WRITE is restricted
+// (PRD §4.4 step 1 gives it to the Cost Controller), but both report PAGES are readable by anyone
+// who may read the project's money, which `canViewForecast` is (it is `true` on purpose — PRD §5.4
+// hands the project dashboard's "SFL-curves, EVM trend, cashflow actual vs forecast" to readers the
+// write gate would lock out). The pair is deliberate: a tight write guard, an open read gate.
+//
+// The `guard` below exists so the decision is EXPRESSED rather than implied — a page on this router
+// with no guard is a page nobody decided about. It reads the same flag the sidebar does.
+const reportGuard = requireCapability('canViewForecast',
+  'The cost reports are for the project team.');
+
+// The forecast and variance report (module 8 parts 8.4, 8.5). Read-only apart from the two
+// forecast POSTs below, and neither changes a baseline row — a forecast never touches the
+// approved plan.
+//
+// The VARIANCE report is on the same router for the same reason the forecast is: it reads the
+// same cumulative figures (pv_cum/ev_cum/ac_cum), it is the same reader (the Cost Controller),
+// and splitting them across two routers would mean two copies of the guard. It has no write path
+// at all — variance is computed by migration 022 and read, never entered.
+router.get('/reports/forecast', reportGuard, (req, res) => {
   const project = projectOf(res);
   const caps = capabilities(req.user);
   const sys = forecast.eac(project.id);
@@ -95,6 +114,22 @@ router.get('/reports/forecast', (req, res) => {
       canManage: !!caps.canManageForecast,
       notice: typeof req.query.msg === 'string' ? req.query.msg.slice(0, 220) : null,
       error: typeof req.query.err === 'string' ? req.query.err.slice(0, 220) : null,
+    });
+});
+
+// GET /reports/variance — schedule and cost variance: are we ahead or behind, and by how much?
+// No write path. `?all=1` includes the months nobody has measured yet, and the page says how many
+// it is hiding by default.
+router.get('/reports/variance', reportGuard, (req, res) => {
+  const project = projectOf(res);
+  const v = forecast.variance(project.id, { includeUnmeasured: req.query.all === '1' });
+
+  return page(res, 'Variance',
+    `${project.name} · how far ahead or behind the plan we are, in rupiah`,
+    `${project.name} / Reports / Variance`, 'variance', {
+      active: 'Variance',
+      v,
+      showAll: req.query.all === '1',
     });
 });
 

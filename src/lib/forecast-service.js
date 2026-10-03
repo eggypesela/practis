@@ -171,7 +171,19 @@ function eac(projectId) {
   out.cpi_month = measured.period_month;
   // Rounded to whole rupiah: this is an estimate, and printing an estimate to the rupiah
   // would imply a precision it does not have. The rounding is stated on the screen.
-  out.eac = Math.round(bac / measured.cpi_cum);
+  //
+  // COMPUTED FROM THE UNROUNDED RATIO, NOT from `cpi_cum`. `v_evm_period` rounds CPI to 4
+  // decimal places (0.5882 rather than 0.588235...), and dividing by a rounded intermediate
+  // carries that error straight into the estimate: BAC 1,000,000 with CPI 0.5882 gives
+  // 1,700,102 instead of 1,700,000. That is only Rp 102 here, but the error is proportional to
+  // the project, so on a Rp 300 billion contract it is roughly Rp 18 million of pure artifact
+  // — a number nobody can act on, presented as if it were a finding.
+  //
+  // `BAC / (EV / AC)` is algebraically `BAC * AC / EV`, so this is the same figure with no
+  // rounded intermediate. `cpi_cum` is still returned and still shown; it is a display value,
+  // not an input to arithmetic. The test that caught this is VR8.6, and FC8.2's hand-computed
+  // EAC of 400,000 (where the rounded and unrounded routes happen to agree) still holds.
+  out.eac = Math.round((bac * measured.ac_cum) / measured.ev_cum);
   out.etc = out.eac - out.ac_cum;
   // Positive VAC means "expect to finish under budget", which is what the sign convention
   // in PRD §5.2 means by a natural sign. Stated on the screen so nobody "fixes" it.
@@ -412,7 +424,117 @@ function clearOverride({ projectId, accountId, periodMonth, actorId, note = null
   return { id, version, account: acct, period_month: m, amount: baseline };
 }
 
+// ---------------------------------------------------------------------------
+// Variance (module 8, plan part 8.5)
+// ---------------------------------------------------------------------------
+//
+// SV, CV and VAC — the money answer to "are we ahead or behind, and by how much?", alongside the
+// index SPI/CPI which answers it as a ratio.
+//
+// WHY THE COMPUTATION LIVES HERE AND NOT IN A NEW evm-service.js
+//
+// Decided from the code, and recorded: `VAC = BAC - EAC`, and EAC is `eac()` above. Putting
+// variance in its own module would mean a second reader of the same cumulative figures, or an
+// import that makes this module and that one mutually dependent. There is also no `evm-service.js`
+// in the repo — `spi_cum`/`cpi_cum` have been read straight from `v_evm_period` by
+// `progress-service` and `cbs-service` since 019. So variance goes where the other
+// cumulative-EVM-derived figure already is: one writer, one reader, one place to change.
+//
+// WHERE THE ARITHMETIC ACTUALLY HAPPENS
+//
+// SV and CV are COLUMNS on `v_evm_period` (migration 022), not re-derived here — the rule this
+// module has been bitten by three times (013/014/015, then 018, then 019): compute once, in one
+// place, so two screens cannot disagree. This function does not do arithmetic on SV/CV at all; it
+// reads them and adds the percentages and VAC.
+//
+// THE SIGN TRAP, and why the screen must state it
+//
+// `v_evm_period.cost_variance` is `AC - EV` (pinned by EV7.6) and therefore has the OPPOSITE sign
+// to standard CV. Both are exposed here under names that say which is which, with the convention
+// spelled out in `sign`, so a renderer cannot mix them up silently:
+//
+//   sv, sv_cum   EV - PV   positive = AHEAD of schedule
+//   cv, cv_cum   EV - AC   positive = UNDER budget
+//   vac          BAC - EAC positive = expected to finish UNDER budget
+//   cost_variance AC - EV  positive = OVER budget  (kept for the ledger-side readers)
+//
+// PERCENTAGES
+//
+// Rp 500,000,000 of variance means something different on a Rp 2 mld contract and a Rp 500 mld
+// one, so each variance carries a percentage: SV over the cumulative planned value (how far
+// through the plan we should be), CV over the cumulative actual cost (what the overspend is
+// measured against). Both are BLANK when their denominator is zero — the same honesty rule as the
+// indexes: a percentage of nothing is not 0%, it is not a percentage.
+function variance(projectId, opts = {}) {
+  const p = project(projectId);
+  const includeUnmeasured = opts.includeUnmeasured === true;
+
+  const rows = db.prepare(`SELECT period_month, pv, ev, ac,
+      pv_cum, ev_cum, ac_cum, spi, cpi, spi_cum, cpi_cum,
+      cost_variance, sv, cv, sv_cum, cv_cum
+    FROM v_evm_period WHERE project_id = ? ORDER BY period_month`).all(p.id);
+
+  // A month nobody has measured yet has all three figures 0, so its variances are 0 — arithmetically
+  // right and operationally empty. The trend table drops those by default (the reader gets a chart
+  // of nothing but flat zeroes otherwise) and the service says how many it dropped, so the screen
+  // can state the omission rather than leave a reader wondering where the months went.
+  const months = includeUnmeasured
+    ? rows
+    : rows.filter((r) => r.pv !== 0 || r.ev !== 0 || r.ac !== 0);
+  const omitted = rows.length - months.length;
+
+  const pct = (num, den) => (den ? Math.round((num / den) * 10000) / 100 : null);
+
+  const out = months.map((r) => ({
+    period_month: r.period_month,
+    pv: r.pv, ev: r.ev, ac: r.ac,
+    pv_cum: r.pv_cum, ev_cum: r.ev_cum, ac_cum: r.ac_cum,
+    spi: r.spi, cpi: r.cpi, spi_cum: r.spi_cum, cpi_cum: r.cpi_cum,
+    sv: r.sv, cv: r.cv,
+    sv_cum: r.sv_cum, cv_cum: r.cv_cum,
+    sv_pct: pct(r.sv_cum, r.pv_cum),
+    cv_pct: pct(r.cv_cum, r.ac_cum),
+    // Kept under its own name and its own sign. A screen that wants the ledger-side figure can
+    // read it; a screen that wants standard CV reads `cv`. They are never both called "cost
+    // variance" on one page.
+    cost_variance: r.cost_variance,
+  }));
+
+  // The latest MEASURED month drives the headline, the same rule as the forecast's "as at" date:
+  // a carried-forward figure is not a measurement. Reuses `latestCumulative`, so the two screens
+  // cannot disagree about which month is current.
+  const measured = latestCumulative(p.id);
+  const at = measured
+    ? months.find((r) => r.period_month === measured.period_month) || null
+    : null;
+
+  const est = eac(p.id);
+
+  return {
+    project: p,
+    months: out,
+    omitted,
+    counted: months.length,
+    // The latest measured month's row, or null when nothing has been measured at all.
+    at,
+    // VAC travels with the estimate it came from, so a blank VAC and a stated reason cannot get
+    // separated on the way to the screen.
+    vac: est.vac,
+    bac: est.bac,
+    eac: est.eac,
+    eac_month: est.cpi_month,
+    reason: est.reason,
+    // The convention, as data, so the view cannot render a sign without saying what it means.
+    sign: {
+      sv: 'positive means ahead of schedule',
+      cv: 'positive means under budget',
+      vac: 'positive means expected to finish under budget',
+      cost_variance: 'positive means OVER budget — this is the ledger-side figure, opposite to CV',
+    },
+  };
+}
+
 module.exports = {
   ForecastError, eac, months, totals, setOverride, clearOverride,
-  latestCumulative, latestAnyCumulative,
+  latestCumulative, latestAnyCumulative, variance,
 };

@@ -1112,11 +1112,20 @@ SELECT project_id, period_month, pv, ev, ac,
        -- neither index exists — blank, never 0. (Migration 018's rule.)
        CASE WHEN ev <> 0 AND pv <> 0 THEN ROUND(ev / pv, 4) END AS spi,
        CASE WHEN ev <> 0 AND ac <> 0 THEN ROUND(ev / ac, 4) END AS cpi,
+       -- Kept exactly as 018 wrote it, OPPOSITE sign to `cv` below. EV7.6 pins this
+       -- expression and the ledger-side readers are built on it; changing it to match
+       -- `cv` would silently flip a figure for every existing caller.
        ac - ev AS cost_variance,
        -- The running totals, and the indexes they support. Same rule at both scales.
        pv_cum, ev_cum, ac_cum,
        CASE WHEN ev_cum <> 0 AND pv_cum <> 0 THEN ROUND(ev_cum / pv_cum, 4) END AS spi_cum,
-       CASE WHEN ev_cum <> 0 AND ac_cum <> 0 THEN ROUND(ev_cum / ac_cum, 4) END AS cpi_cum
+       CASE WHEN ev_cum <> 0 AND ac_cum <> 0 THEN ROUND(ev_cum / ac_cum, 4) END AS cpi_cum,
+       -- Standard-EVM variances. Plain arithmetic: 0 is a real answer here ("plan and
+       -- reality agree"), not a missing measurement, so there is no CASE. See the header.
+       ev - pv     AS sv,
+       ev - ac     AS cv,
+       ev_cum - pv_cum AS sv_cum,
+       ev_cum - ac_cum AS cv_cum
 FROM cum;
 CREATE VIEW v_ledger_period AS
 SELECT l.*,

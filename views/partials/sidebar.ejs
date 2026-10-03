@@ -26,7 +26,7 @@
         Who may open it is `canViewReceivable` (Finance + Cost Controller); the sidebar
         shows it to everyone because the sidebar is not a permission system — the route
         answers 403 with a reason. %>
-    <a href="/reports" class="<%= _active === 'Aging' || _active === 'Forecast' ? 'on' : '' %>"><svg><use href="#i-chart"/></svg><span class="lbl">Reports</span></a>
+    <a href="/reports" class="<%= ['Aging', 'Forecast', 'Variance'].includes(_active) ? 'on' : '' %>"><svg><use href="#i-chart"/></svg><span class="lbl">Reports</span></a>
     <div class="pctx">
       <span class="pc-lbl caps">Project</span>
       <% const _list = (typeof projects !== 'undefined' && projects) ? projects : []; %>

@@ -472,30 +472,61 @@ unchanged**; the page prints its own basis (`BAC ÷ CPI`).
 
 ---
 
-## Part 8.5 — Variance
+## Part 8.5 — Variance — ✅ BUILT 2026-10-03
 
-**§10 step 7 names "variance"; PRD §5.4 names "EVM trend".** Small and view-level.
+**Status: implemented, 7/7 VR8 tests green. Migration 022 (additive columns on `v_evm_period`).**
 
-`cost_variance` already exists per period (`AC − EV`, deliberately pinned by EV7.6, **not** changed
-here). What is missing is the human-facing pair:
+**Where it is computed — decided from the code, and recorded:** the plan offered two homes; the
+answer is **the view**. `sv`, `cv`, `sv_cum`, `cv_cum` are columns on `v_evm_period` (migration
+022, additive), because this module has already been bitten three times by a figure derived in two
+places (013/014/015, 018, 019). VAC (`BAC − EAC`) lives in `forecast-service.variance()` because
+EAC does — and there is no `evm-service.js` to put it in: `spi_cum`/`cpi_cum` have been read
+straight from the view since 019, and a separate module would mean a circular dependency on `eac()`.
 
-* **Schedule variance** `SV = EV − PV`, **cost variance** `CV = EV − AC`, **variance at completion**
-  `VAC = BAC − EAC` — each **per period and cumulative**, sign convention stated on the screen
-  (PRD §5.2 "Signs": dashboards render **natural signs** — income +, cost +, net = income − cost).
-* Percentages alongside absolute values (`SV%`, `CV%`), because a Rp 500,000,000 variance means
-  something different on a Rp 2 mld contract and a Rp 500 mld one.
+**The sign trap, which is the whole risk of this part.** The product now carries two figures a
+reader would both call "cost variance", with **opposite signs**: `cost_variance = AC − EV` (018,
+pinned by EV7.6) is positive when **over** budget, and `cv = EV − AC` (022, standard EVM) is
+negative in the same month. Both are plausible numbers of similar magnitude on real data, so a
+screen that rendered the wrong one under the label "Cost variance" would invert every verdict and
+no test that merely checked "a number is shown" would notice. Therefore the screen renders **`cv`
+only, and never renders `cost_variance` at all**, the convention is printed in words taken from
+`v.sign` (not left to the reader's memory of the textbook), and the test pins the sign on a
+deliberately **over-budget** fixture.
 
-**Where it is computed:** in the view/service, **once** — not re-derived by each screen (the rule
-this module has been bitten by three times: 013/014/015, then 018, then 019).
+**`EAC` fixed to compute from the unrounded ratio.** `eac()` divided by `cpi_cum`, carrying the
+view's 4-decimal rounding into the estimate — BAC 1,000,000 at CPI 0.5882 gave **1,700,102**
+instead of 1,700,000. Only Rp 102 here, but the error is proportional to the project: ~**Rp 18
+million** of pure artifact on a Rp 300 bn contract, presented as a finding. `BAC ÷ (EV ÷ AC)` is
+`BAC × AC ÷ EV`, so the same figure with no rounded intermediate. **The variance test caught it**
+— the forecast test's exact 0.625 had hidden it.
 
-**Files:** `db/migrations/022_evm_variance.sql` **only if** the clean home is a view; otherwise a
-`variance()` reader in `src/lib/evm-service.js`. **Decide from the code, and record which.** No new
-test file — variance asserts inside `test/forecast.test.js`'s sibling → NEW `test/variance.test.js`
-(VR8.1–VR8.6, port **3925**).
+**Percentages** alongside the absolutes (`SV%` against cumulative PV, `CV%` against cumulative AC),
+blank when the denominator is zero — with the distinction that **−100% is a real answer while
+`null` is the blank**, because a project whose plan has started and which has earned nothing is
+genuinely 100% behind, whereas "percentage of nothing" is not 0%.
 
-**Tests:** each variance hand-computed; the sign convention is pinned to a **known-shape** example
-(over budget → CV negative) so nobody "fixes" a sign; per-period and cumulative do not contradict
-their own components (the EV7.11 property check, one scale up); `VAC` is blank when EAC is unknown.
+**Authorization — a decision, asserted both ways.** The variance report is **read-only** and PRD
+§5.4 gives "EVM trend" to the exec/Viewer portfolio view, so a **Viewer may read it**. The **write**
+on the same router (the forecast) stays restricted: a Viewer POSTing gets a rendered **403 with the
+reason and zero rows written**. A `reportGuard` makes the read decision explicit rather than
+implied — a page on that router with no guard is a page nobody decided about. Noted that this
+means a later part locking Viewers out of the project dashboard must change this deliberately.
+
+**Files:** NEW `db/migrations/022_evm_variance.sql`; `src/lib/forecast-service.js` (`variance()`,
+the EAC fix); `src/routes/cbs.js` (`/reports/variance` + `reportGuard`, and the forecast page now
+takes that guard too); NEW `views/variance.ejs`; `views/reports-index.ejs`;
+`views/partials/sidebar.ejs` (highlight); NEW `test/variance.test.js` (VR8.1–VR8.7, port **3925**);
+`TEST_PLAN.md`; plan.
+
+**Tests:** per-period and cumulative signs on hand-computed figures · the running totals ARE the sum
+of the monthly figures (read against the table, not against the service) and a month can be behind
+while the project is ahead — both facts must stand · percentage bases, and blank vs −100% ·
+service output byte-identical to the view's columns, with 022 proved **additive** (EV7.6's
+`cost_variance`, `spi` and `cpi` unmoved) · over budget ⇒ negative CV, with the ledger figure
+positive in the same month · VAC = BAC − EAC, blank with the reason when there is no EAC, dated at
+the last **measured** month (the carried-forward trap from 8.4, re-pinned from this side) · the
+screen renders, prints the convention, lets a **Viewer read** it, refuses the Viewer's **write**
+with the row count unchanged, and states how many empty months it is hiding.
 
 ---
 

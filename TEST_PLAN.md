@@ -1068,6 +1068,66 @@ OR ac <> 0` (earned value or actual cost; PV moves by being *planned*, not obser
 
 ---
 
+## 12p. VR8 — Variance: SV, CV and VAC — ✅ IMPLEMENTED 2026-10-03
+
+PRD §5.4: *"Project dashboard (PM/Controller): S-curves, **EVM trend** …"*; TECH-SPEC §10 step 7
+names *"variance"*. There was no schedule variance anywhere, and `cost_variance` already existed
+with a sign that **contradicts** standard EVM.
+
+**The sign trap this part exists to close.** Two figures, one English name, opposite signs:
+
+| Column | Expression | Positive means |
+|---|---|---|
+| `cost_variance` (018, pinned by EV7.6) | `AC − EV` | **OVER** budget |
+| `cv` (022) | `EV − AC` | **UNDER** budget |
+
+Both are plausible numbers on a real project, so a screen that rendered the wrong one under the
+label "Cost variance" would **invert every verdict silently** — and a test asserting only that "a
+number is shown" passes either way. So: **the screen renders `cv` only and never renders
+`cost_variance` at all**, the convention is printed in words from `v.sign` (not left to the
+reader's memory of the textbook), and VR8.5 pins the sign on a deliberately over-budget fixture.
+
+**Computed once, in the view.** `sv`, `cv`, `sv_cum`, `cv_cum` are **columns on `v_evm_period`**
+(migration 022, additive). The rule this module has been bitten by three times — 013/014/015, then
+018, then 019 — is that a figure derived in two places eventually disagrees with itself. The
+service reads the columns; it does not re-derive them. VAC (`BAC − EAC`) lives in the service
+because EAC does, and travels with the estimate's own `reason`.
+
+**`EAC` is now computed from the unrounded ratio.** Dividing by `cpi_cum` carried the view's
+4-decimal rounding into the estimate: BAC 1,000,000 at CPI 0.5882 gave **1,700,102** instead of
+1,700,000. Trivial here, but the error scales with the project — roughly **Rp 18 million** of pure
+artifact on a Rp 300 bn contract, presented as a finding. `BAC ÷ (EV ÷ AC)` is algebraically
+`BAC × AC ÷ EV`: same figure, no rounded intermediate. **Caught by VR8.6** (the FC8.2 fixture's
+exact 0.625 had hidden it).
+
+**Design decision recorded:** the variance report sits on the **CBS/baseline router** (the forecast's
+home), not a new one. No `evm-service.js` exists — `spi_cum`/`cpi_cum` have been read straight from
+the view since 019 — and VAC needs `eac()`, so a separate module would mean a circular dependency
+or a second reader of the same figures. One writer, one reader, one place to change.
+
+**Authorization, decided and now expressed in code:** the variance report is **read-only** and PRD
+§5.4 gives "EVM trend" to the exec/Viewer portfolio view, so a **Viewer MAY read it** (VR8.7 asserts
+200, in both directions). The **write** on the same router stays restricted — a Viewer POSTing the
+forecast gets a rendered **403 with the reason and zero rows written**. A `reportGuard` now makes
+that read decision explicit rather than implied: a page on that router with no guard is a page
+nobody decided about.
+
+**Tests (VR8.1–VR8.7, port 3925):** the view's signs per-period and cumulative · running totals are
+the literal sum of the monthly figures (checked against the table) and a month can be behind while
+the project is ahead (both facts stand) · percentages use PV for SV and AC for CV, blank with no
+denominator, and **−100% is real while `null` is the blank** (the two are not the same thing) ·
+service output is byte-identical to the view's columns, and 022 is **additive** (EV7.6's
+`cost_variance` unchanged) · **over budget ⇒ CV negative**, with the ledger-side figure positive in
+the same month · VAC = BAC − EAC, blank with the reason when there is no EAC, dated at the last
+measured month · the screen renders, prints the convention, **lets a Viewer read it, refuses the
+Viewer's write with rows unchanged**, and states how many empty months it is hiding (with `?all=1`
+to show them).
+
+**Gates:** `dump-schema.js --check` clean ✅ (10 views); `python3 db/validate.py` ALL CHECKS PASS ✅;
+`test/variance.test.js` **7/7** ✅; full suite **479 → 486** ✅.
+
+---
+
 ## 13. Workflow coverage vs PRD §4
 
 The product workflow, step by step, and whether a test exists. **Empty rows are the real answer to
