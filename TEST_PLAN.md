@@ -727,6 +727,52 @@ scrubbed. **Never write the PII you are reporting into the artefact that reports
 
 ---
 
+## 12k. EV7 — EVM acceptance: SPI and CPI are real, honest numbers — ✅ IMPLEMENTED 2026-10-03
+
+`test/evm.test.js`, port **3920**. **This is the Module 7 gate** (plan part 7.8): everything the
+module built exists to feed `v_evm_period`, and these tests measure that view directly — no mock,
+through the real services, on a real migrated database.
+
+| ID | Assertion |
+|---|---|
+| EV7.1 | a baseline with **no progress** gives a real PV, and **SPI/CPI are NULL — not 0** |
+| EV7.2 | with ticks + tagged costs, **SPI = EV/PV = 5** and **CPI = EV/AC = 2.5**, computed by hand |
+| EV7.3 | a second project's baseline **does not leak** into this project's rows (nor ours into theirs) |
+| EV7.4 | PV equals the month's baseline rows **exactly** — a change order's new version is not added in |
+| EV7.5 | **no row anywhere** claims an index it cannot compute; and real measurements are not blanked |
+| EV7.6 | `cost_variance` is still **AC − EV** — the deliberate non-change is pinned |
+| EV7.7 | every baseline month is reported **once**, in order — no month dropped by the FULL OUTER JOINs |
+
+**Two real defects were measured and closed by migration 018.** Migration 018 is the one
+production change 7.8 needed, and the plan predicted it would need none — so the anomaly is
+recorded rather than glossed.
+
+1. **An index of `0` where no index exists.** The view gated each index on its denominator only,
+   while folding a missing EV into a real `0` first. Measured on the seeded dev database:
+   with a plan and no progress → `spi = 0`; with costs and no progress → `cpi = 0`. Both zeros are
+   **claims** — "totally behind schedule", "cost efficiency is zero" — when the truth is that
+   nothing has been measured. PRJ-2026 returned exactly `cpi = 0` for 2026-03
+   (pv 0, ev 0, ac 175,000,000). The view's own guard already returned NULL for
+   "cannot be computed"; the **numerator** was simply never covered. Now both must be non-zero.
+2. **PV double-counting (F2), re-pinned from the report side.** Part 7.4 closed the version axis
+   in the view (migration 014) and the account-total axis at the service (015). EV7.4 asserts it
+   from where a user would notice: a month's PV equals its baseline rows, counted once.
+
+**Verified before and after on the seeded database:** 6 impossible zeros became NULL, **no real
+figure moved**, and `validate.py`'s existing "EVM Feb values present" assertion still passes
+(Feb keeps `spi = 1.5`, `cpi = 2`).
+
+**Deliberately NOT changed:** `cost_variance`. Nothing reads it and its sign convention is a
+separate decision, so it is pinned as-is (EV7.6) rather than quietly "fixed".
+
+**Honest scope limit, recorded:** this view is **per period** — `pv` is the month's bucket and
+`ev` is the month's earned value, so `spi`/`cpi` here are **period indexes**. Standard EVM also
+reports **cumulative** indexes, and those are **not derivable** from this view (you cannot add
+monthly indexes). A cumulative column belongs with the dashboards and trend reports that need it
+— Module 8, which owns "EV, forecast, variance, dashboards". Flagged there, not invented here.
+
+---
+
 ## 13. Workflow coverage vs PRD §4
 
 The product workflow, step by step, and whether a test exists. **Empty rows are the real answer to
@@ -737,7 +783,7 @@ The product workflow, step by step, and whether a test exists. **Empty rows are 
 | 4.1 | Initialisation: create project, assign roles **per project**, COA/WBS/CBS setup, team, client/supplier, approval chain | ❌ **no tests, no UI** (skipped §10 step 3; Module 6) |
 | 4.2 | Planning: WBS tree, milestones + weights, RBS load, CBS budget, **baseline**, **freeze**, **de-scope** | ✅ **complete** — WBS tree (WB7.1–WB7.10), milestones + per-period % complete (MP7.1–MP7.15), RBS load (RB7.1–RB7.17), **CBS budget + the Σ = RBS invariant (BL7.1–BL7.18)**, **baseline change: prospective + atomic (BS7.1–BS7.13)**, **baseline freeze + BCR workflow (BC7.1–BC7.13)**, **de-scope: history intact (DS7.1–DS7.13)** |
 | 4.3 | Execution: progress ticks → EV · actual cost from ledger + checked lines · revenue recognition · billed vs received | ⚠️ **partial** — actual cost ✅ (CA2.2, XO1.9); progress ticks ✅ (MP7.x); revenue, billed≠received ❌ |
-| 4.4 | Monitoring: EVM SPI/CPI, forecast, variance, **de-scope/BCR**, aging, dashboards | ⚠️ **partial** — BCR change control ✅ (BC7.1–BC7.13, incl. the SoD rule that an Administrator does not approve baselines); de-scope ✅ (DS7.1–DS7.13, prospective only — past months byte-identical); EVM SPI/CPI, forecast, variance, aging, dashboards ❌ (part 7.8, Module 8) |
+| 4.4 | Monitoring: EVM SPI/CPI, forecast, variance, **de-scope/BCR**, aging, dashboards | ⚠️ **partial** — **EVM SPI/CPI ✅ (EV7.1–EV7.7 — the module gate: `v_evm_period` returns real, honest indexes; migration 018 stopped a 0 being reported where no index exists)**, BCR change control ✅ (BC7.1–BC7.13, incl. the SoD rule that an Administrator does not approve baselines); de-scope ✅ (DS7.1–DS7.13, prospective only — past months byte-identical); forecast, variance, aging, dashboards ❌ (Module 8) |
 | 4.5 | Closing (3-step): close, final reconciliation, archive, **hide from live dashboards** | ❌ no tests (Module 8) |
 
 ### TECH-SPEC §8.4 required invariants — coverage

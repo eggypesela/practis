@@ -120,9 +120,14 @@ Measured 2026-10-02 by grepping `PORT =` in `test/*.test.js`. **In use:** 3901, 
 (`bola.test.js` `PORT_ON`), 3904, 3905, 3906, 3908, 3910, 3911, 3912, 3913, 3914, 3933, 3994,
 3996–3999.
 
-**Module 7 allocation (corrected — the first draft wrongly claimed 3903, which `bola.test.js` holds
-as its `SCOPE_ENFORCE=1` server):** 7.1 → **3907**, 7.2 → **3915**, 7.3 → **3916**, 7.4 → **3917**,
-7.5 → **3918**, 7.6 → **3919**, 7.7 → **3920**, 7.8 → **3921**.
+**Module 7 allocation — corrected AGAIN 2026-10-03 from the files themselves (`grep -oE 'PORT = [0-9]+'
+test/*.test.js`). The two earlier drafts were both wrong; this line is what is actually on disk:**
+7.1 → **3907**, 7.2 → **3915**, 7.3 → **3906**, 7.4 → **3909**, 7.5 → **3915** (**reused**),
+7.6 → **3918**, 7.7 → **3919**, 7.8 → **3920**.
+**Known latent hazard, not fixed here:** `progress.test.js` and `baseline.test.js` both claim
+**3915**. It has never bitten because the runner serialises them, but a port is not a scarce enough
+resource to share — the next part that needs one should take a free number and this should be
+re-allocated when either file is next touched.
 
 A collision shows up as `server did not start`, which names neither the port nor the other file.
 
@@ -910,12 +915,25 @@ re-activated** without a new BCR.
 
 ---
 
-## Part 7.8 — The acceptance test: EVM finally has inputs
+## Part 7.8 — The acceptance test: EVM finally has inputs — ✅ DONE 2026-10-03
 
 **Objective:** the module's definition of done, in one test.
 
 **Files:** Create `test/evm.test.js` (prefix **EV7**), port **3918**. No production code expected —
 **if this test needs new production code, a previous part is wrong.**
+
+**OUTCOME — it DID need production code, and the rule above did its job.** Measured before writing
+any assertion: the view returned `spi = 0` / `cpi = 0` where no index exists, i.e. exactly the false
+zero this step says must be NULL. Two drafts of this port were also wrong (**3918** is held by
+`bcr.test.js`); the file is on **3920**. Rather than bend the test to the code (or the code to a
+guessed expectation) the anomaly was put to the owner as a decision, and the answer was **A: fix the
+two false zeros, flag the per-period-vs-cumulative SPI question separately, fix nothing silently.**
+Closed by **`db/migrations/018_evm_indexes_need_earned_value.sql`** — 6 false zeros → NULL on the
+seeded DB, no real figure moved, `validate.py` unchanged. EV7.4 was rewritten from the tautology the
+draft implied into the real F2 guard (add a version-2 bucket; PV must stay put). Honest limit
+recorded, not fixed: the view is **per-period**, so cumulative indexes are not derivable from it —
+Module 8. Full detail: `TEST_PLAN.md` §12k and, in the skill,
+`references/evm-acceptance-verification.md`.
 
 **Steps**
 

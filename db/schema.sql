@@ -1076,8 +1076,13 @@ SELECT COALESCE(pv.project_id, ev.project_id, ac.project_id) AS project_id,
        COALESCE(pv.pv, 0)  AS pv,
        COALESCE(ev.ev, 0)  AS ev,
        COALESCE(ac.ac, 0)  AS ac,
-       CASE WHEN COALESCE(pv.pv,0) <> 0 THEN ROUND(COALESCE(ev.ev,0) / pv.pv, 4) END AS spi,
-       CASE WHEN COALESCE(ac.ac,0) <> 0 THEN ROUND(COALESCE(ev.ev,0) / ac.ac, 4) END AS cpi,
+       -- NULL unless there is something to divide: an index needs a denominator AND a
+       -- non-zero numerator. With no measured progress there is no earned value, so
+       -- neither index exists — blank, never 0.
+       CASE WHEN COALESCE(ev.ev,0) <> 0 AND COALESCE(pv.pv,0) <> 0
+            THEN ROUND(COALESCE(ev.ev,0) / pv.pv, 4) END AS spi,
+       CASE WHEN COALESCE(ev.ev,0) <> 0 AND COALESCE(ac.ac,0) <> 0
+            THEN ROUND(COALESCE(ev.ev,0) / ac.ac, 4) END AS cpi,
        COALESCE(ac.ac,0) - COALESCE(ev.ev,0) AS cost_variance
 FROM pv
 FULL OUTER JOIN ev ON ev.project_id = pv.project_id AND ev.period_month = pv.period_month
