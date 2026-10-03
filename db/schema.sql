@@ -989,6 +989,7 @@ SELECT r.project_id, r.document_no, r.partner_id, r.invoice_date, r.outstanding_
        CASE WHEN r.retainage_amount > 0 THEN 1 ELSE 0 END AS has_retainage,
        julianday('now') - julianday(r.invoice_date) AS days_aged,
        CASE
+         WHEN r.invoice_date IS NULL OR r.invoice_date = '' THEN 'no_date'
          WHEN julianday('now') <= julianday(r.invoice_date) THEN 'current'
          WHEN julianday('now') - julianday(r.invoice_date) <= 30 THEN '1_30'
          WHEN julianday('now') - julianday(r.invoice_date) <= 60 THEN '31_60'
@@ -997,7 +998,11 @@ SELECT r.project_id, r.document_no, r.partner_id, r.invoice_date, r.outstanding_
          ELSE '120_plus'
        END AS aging_bucket
 FROM v_receivable r
-WHERE r.outstanding_amount <> 0;
+WHERE r.outstanding_amount <> 0
+  -- An undatable row is NOT an aged row: it has to be fixed, not chased. Filtering is also
+  -- necessary for correctness, not just tidiness — see the note above; julianday('') is NULL,
+  -- so a blank date would otherwise sort and total as if it had an age.
+  AND r.invoice_date IS NOT NULL AND r.invoice_date <> '';
 CREATE VIEW v_cbs_actual AS
 SELECT project_id, transaction_account_id, period_month, SUM(amount) AS actual_amount
 FROM (
@@ -1167,7 +1172,20 @@ FROM v_ledger_period r
 JOIN projects p ON p.id = r.project_id
 WHERE r.project_id IS NOT NULL
   AND r.document_no IS NOT NULL
-  AND (r.line_role = 'payable' OR r.type = 'Payable' OR r.line_role = 'funding')
+  AND (
+    -- A payable: the purchase-side mirror of the claim test above. `line_role <> 'funding'` for
+    -- the same reason — a payment must never be admitted as the thing being paid.
+    (r.line_role <> 'funding'
+       AND (r.line_role IN ('payable', 'expense') OR r.type = 'Payable'))
+    OR
+    -- A payment on a real payable, admitted only when the same document carries one.
+    (r.line_role = 'funding' AND EXISTS (
+        SELECT 1 FROM v_ledger_period c
+        WHERE c.project_id = r.project_id
+          AND c.document_no = r.document_no
+          AND c.line_role <> 'funding'
+          AND (c.line_role IN ('payable', 'expense') OR c.type = 'Payable')))
+  )
 GROUP BY r.project_id, r.document_no, r.partner_type, r.partner_id;
 CREATE VIEW v_receivable AS
 SELECT
@@ -1182,12 +1200,30 @@ SELECT
   SUM(CASE WHEN r.line_role = 'funding' THEN 0 ELSE r.retainage_amount END)   AS retainage_amount,
   SUM(CASE WHEN r.line_role = 'funding' THEN ABS(r.amount) ELSE -ABS(r.amount) END) * -1 AS net_amount,
   SUM(CASE WHEN r.line_role = 'funding' THEN ABS(r.amount) ELSE -ABS(r.amount) END) * -1 - SUM(CASE WHEN r.line_role = 'funding' THEN 0 ELSE r.retainage_amount END) AS outstanding_amount,
-  MIN(CASE WHEN r.line_role = 'funding' THEN NULL ELSE r.date END)            AS invoice_date,
+  MIN(CASE WHEN r.line_role = 'funding' THEN NULL ELSE NULLIF(r.date, '') END) AS invoice_date,
   MAX(r.date)                                AS last_activity_date,
   COUNT(*)                                   AS line_count
 FROM v_ledger_period r
-JOIN cost_categories cc ON cc.id = r.cost_category_id AND (cc.is_receivable = 1 OR r.line_role = 'funding')
-WHERE r.project_id IS NOT NULL AND r.document_no IS NOT NULL
+JOIN projects p ON p.id = r.project_id
+WHERE r.project_id IS NOT NULL
+  AND r.document_no IS NOT NULL
+  AND (
+    -- A claim: identified by type + line_role, per PRD §5.2, never by cost category.
+    -- `line_role <> 'funding'` is NOT decoration. A payment line may itself carry a claim's
+    -- type — `db/validate.py` inserts exactly that (`type='Payable', line_role='funding'`) to
+    -- test netting, and the first draft of this migration admitted one as a claim because the
+    -- type test was evaluated first. A payment is never a claim, whatever its type says.
+    (r.line_role <> 'funding'
+       AND (r.type IN ('Income', 'Receivable') OR r.line_role = 'receivable'))
+    OR
+    -- A payment, admitted only against a claim on the SAME document: "same-doc lines net".
+    (r.line_role = 'funding' AND EXISTS (
+        SELECT 1 FROM v_ledger_period c
+        WHERE c.project_id = r.project_id
+          AND c.document_no = r.document_no
+          AND c.line_role <> 'funding'
+          AND (c.type IN ('Income', 'Receivable') OR c.line_role = 'receivable')))
+  )
 GROUP BY r.project_id, r.document_no, r.partner_type, r.partner_id;
 CREATE VIEW v_untagged_queue AS
 SELECT id, project_id, document_no, date, effective_date, amount, description, source

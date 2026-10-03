@@ -790,6 +790,64 @@ forward. EV7.10 pins it.
 
 ---
 
+## 12l. RG8 — Register honesty: the AR/AP join and the aging bucket — ✅ IMPLEMENTED 2026-10-03
+
+Module 8's first part, and the one that had to come first: every dashboard this module adds renders
+`v_receivable` ("who owes us money"), `v_payable` or `v_aging` (Finance's collection priority list).
+Measured before any screen was built, `v_receivable` returned **one row, and it was the one document
+that is not a receivable** — `CASHOUT-0208`, a cash movement, reported at **minus 30,000,000** —
+while every real claim was invisible (`INV-0224` 400M claim / 300M paid / 40M retainage, `RET-0044`
+40M, `CASHIN-0114` 300M). PRD §5.2 names the rule that was broken: *"Receivable/payable are computed
+views over the ledger (filtered by type + document no)"*. `v_payable` followed it and worked;
+`v_receivable` filtered on `cost_category_id` and did not.
+
+**Migration 020** rewrites both registers to that rule and gives `v_aging` an honest undatable case.
+The defect is the same class migration 018 removed from the EVM view — a missing value presented as
+a confident figure — which is why it is pinned with the same discipline.
+
+| ID | Assertion | Expected |
+|---|---|---|
+| RG8.1 | a claim written by the **manual entry path** **IS** a receivable, with **no cost category anywhere** | billed 250,000,000, outstanding 250,000,000; and the deployment fact is asserted first: `SELECT COUNT(*) FROM cost_categories WHERE is_receivable=1` = **0** |
+| RG8.2 | a **funding-only** document is **not** a receivable and is not aged | absent from both views; no row anywhere reports a negative amount owed to us |
+| RG8.3 | a **same-document** payment nets; a **different-document** payment does not | billed 100,000,000, paid 40,000,000, retainage 10,000,000, outstanding **50,000,000**; `has_retainage` = 1 |
+| RG8.4 | an invoice paid in full **drops out** of the aging list | outstanding 0 → zero rows in `v_aging` |
+| RG8.5 | a **blank** invoice date is **excluded** from aging, and cannot blank a document that has a real date | register reads NULL not `''`; no `120_plus` false alarm; a mixed document keeps its real date |
+| RG8.6 | the 30/60/90/120 boundaries still mean what they meant | −15→`1_30`, −45→`31_60`, −75→`61_90`, −105→`91_120`, −200→`120_plus`, +10→`current` |
+| RG8.7 | billed − paid − retainage = outstanding holds on a mixed document | 250,000,000 − 80,000,000 − 25,000,000 = **145,000,000**; net_amount **170,000,000** |
+| RG8.8 | `v_payable` keeps working (it was correct before — it must not regress) | 90,000,000 billed → 60,000,000 outstanding after a same-doc payment; funding-only document dropped |
+
+**Two defects were found in the FIX itself, both by these tests, both recorded rather than smoothed
+over.** (1) The first draft tested `type` before excluding `funding`, so a **payment carrying a
+claim's type** — which `db/validate.py` inserts deliberately, `type='Payable', line_role='funding'` —
+was admitted as a claim. RG8.3 caught it. The predicate is now written as *claim* OR *payment-against-
+a-claim*, with `line_role <> 'funding'` on the claim branch. (2) The aging guard `invoice_date IS NULL`
+**does not fire**: `accounting_ledger.date` is NOT NULL, which blocks an absent date but not a blank
+one — `date=''` is accepted, `julianday('')` is NULL, so the row fell through every comparison to
+`ELSE '120_plus'` and led the collection list as the most overdue item. Worse, plain `MIN(date)` over
+a document mixing a blank and a real date returns the **blank**, so one undated line erased the whole
+document's date. Closed by `NULLIF(r.date,'')` in the register and an explicit `IS NULL OR = ''`
+filter in aging.
+
+**A consequence worth stating, because it changes what `v_aging` is FOR:** it is the register of
+*datable, still-outstanding* claims. A row it cannot date is not aged and does not belong in it; the
+"no date" to-do list is served by querying `v_receivable` directly (part 8.3 renders it on the aging
+screen), which is why `aging_bucket = 'no_date'` is deliberately never populated by the view.
+
+**Two gaps were measured and are NOT fixed here, deliberately:** (a) **no app path writes
+`line_role='funding'` at all** — the UI's six Types map only to `receivable`/`expense`/`dropping`, so
+payment legs in these tests are fixture data standing in for a workflow the product does not have
+(that is the second half of F1, and it is a build task, not a view fix); (b) a manual claim has **no
+partner** — there is no client field on the entry form and no trigger fills one, so `partner_type` is
+NULL. Neither moves a figure; both are recorded for part 8.3.
+
+**Not changed, and it must not change:** `db/validate.py` pins `INV-0224` outstanding 60,000,000 /
+paid 300,000,000 / retainage 40,000,000 and `PO-9001` 90,000,000 / 30,000,000 / 60,000,000. All six
+figures are **byte-identical** after 020 — verified, not assumed. (On the old view `INV-0224` was not
+visible at all, so the validator's read of it would have returned `None`; that the four figures only
+became *readable* after the fix is further evidence the old filter was wrong rather than a preference.)
+
+---
+
 ## 13. Workflow coverage vs PRD §4
 
 The product workflow, step by step, and whether a test exists. **Empty rows are the real answer to
