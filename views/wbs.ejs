@@ -68,12 +68,20 @@
         </td>
         <% if (canManage) { %>
         <td class="r">
+          <%# A de-scoped line has no status control: its budget has left the curve, so
+              flipping it back to active here would show work the baseline no longer funds.
+              Reopening scope is a contract change and goes through a change request. %>
+          <% if (l.status === 'de_scoped') { %>
+            <span class="muted" style="font-size:12px">out of scope
+              <% if (l.de_scope_period) { %>from <%= l.de_scope_period %><% } %></span>
+          <% } else { %>
           <form method="post" action="/wbs/lines/<%= l.id %>/status" style="display:inline">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <input type="hidden" name="status" value="<%= l.status === 'completed' ? 'active' : 'completed' %>">
             <input type="hidden" name="reason" value="reported from the tree">
             <button class="btn sm" type="submit"><%= l.status === 'completed' ? 'Reopen' : 'Mark complete' %></button>
           </form>
+          <% } %>
           <%# Reporting a period is separate from ticking, so that "nothing done yet"
               can be reported as a real 0 rather than left as an absence — a missing
               row and a zero row are different facts. %>

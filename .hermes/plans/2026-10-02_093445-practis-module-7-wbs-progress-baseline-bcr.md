@@ -821,12 +821,50 @@ them is the "close the dead nav links" work the plan asks for — and the sideba
 
 ---
 
-## Part 7.7 — De-scope
+## Part 7.7 — De-scope — ✅ DONE 2026-10-03
+
+**Delivered:** modified `src/lib/wbs-service.js` (new `deScope` + a `month()` validator, and
+`setStatus` now refuses to reopen a de-scoped line), `src/lib/baseline-service.js` (new
+`planDeScope` — the arithmetic, returning rows instead of writing them), `src/lib/bcr-service.js`
+(approval drives a de-scope through 7.5), `src/routes/bcr.js` + `views/wbs.ejs`; test
+`test/descope.test.js` (DS7.1–DS7.13, **13 tests, port 3919** — the plan's 3917 was already held
+by `cbs.test.js`).
 
 **Objective:** remove a line from scope without deleting it and without rewriting history.
 
 **Files:** Modify `src/lib/wbs-service.js`, `src/lib/baseline-service.js`, `src/routes/wbs.js`;
-test `test/descope.test.js` (prefix **DS7**), port **3917**.
+test `test/descope.test.js` (prefix **DS7**), port **3919**.
+
+**Outcome / decisions taken during the build**
+
+- **A de-scope is not a second writer.** The de-scope does NOT call `applyBaselineChange` twice
+  (once at approval for the money, once at de-scope for the line). 7.6's `approveBcr` records the
+  decision FIRST and then calls `deScope`, which is the single path that both stamps the line and
+  moves the money through 7.5 — all inside one transaction. Passing no `bcrId` on that inner call
+  avoids archiving the snapshot a second time, which would have overwritten it with post-write state.
+- **The new plan is DERIVED, not stated.** `planDeScope(projectId, from, nodeId)` reads the
+  current baseline and returns what remains from `from` forward, with the line's forward buckets
+  removed. A de-scope therefore cannot be talked into moving money it was never about, and
+  `initiateBcr` refuses a de-scope that carries proposed months (DS7.11).
+- **Removing the line's whole plan violates 7.5's invariant.** 7.5 checks that an account's buckets
+  over its WHOLE history still sum to its resource plan. Zeroing the line would leave past reported
+  buckets standing with nothing to match, so the plan REDUCES the resource plan by exactly what
+  leaves the curve (`impactCost: -plan.leaving`). DS7.13 pins that the account still reconciles.
+- **A line with no forward budget de-scopes cleanly** (DS7.12) — it leaves scope without inventing
+  a saving, because there was nothing left to remove.
+- **The tree cannot reopen a de-scoped line** (DS7.7): the status control is replaced by a note, and
+  `setStatus` refuses it at the service with a message naming the way back (a new change request).
+- **`v_descoped_lines.budget_removed` was left at its pre-existing meaning** — the REMAINING
+  baseline still standing on the dead line (200,000), not the forward removal (400,000). The
+  movement itself is on the register and in the approval's report, where an exact number belongs.
+  DS7.5 pins both numbers so the distinction is recorded rather than discovered later.
+- **Fixture-boot cost, measured not guessed:** this file takes ~40 s, and instrumenting the hooks
+  showed ~41 s of that is `startFixture()` boot (migrate + seed + seed-master, `synchronous = FULL`
+  on a 2 GB box). DS7.2's own body is 65 ms and `busy_timeout` never fires. Not a 7.7 defect —
+  `bcr.test.js` alone is also ~42 s and the full suite ~810 s.
+
+**Verification:** `node --test test/descope.test.js` → **13/13**; then full suite.
+**Commit:** `feat(descope): prospective de-scope that leaves history intact`
 
 **Steps**
 

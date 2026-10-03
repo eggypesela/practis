@@ -34,6 +34,7 @@ const db = require('../db/db');
 const q = require('../db/queries');
 const { rolesOf, capabilities } = require('../lib/permissions');
 const base = require('./baseline-service');
+const wbs = require('./wbs-service');
 
 class BcrError extends Error {
   constructor(message, status = 400) {
@@ -241,7 +242,15 @@ function initiateBcr({ projectId, actorId, caps, changeType, wbsNodeId = null, t
   // The same rule 7.5 enforces at approval, said early and in the same words: a change
   // that moves money has to state the plan that supports it, or the budget would be
   // adjusted against a resource plan still showing the old figure.
-  if (cost !== 0 && resource.length === 0) {
+  //
+  // A DE-SCOPE IS EXEMPT, and deliberately. Its proposals are DERIVED at approval from the
+  // baseline itself (what remains once the line is taken out), so there is nothing for the
+  // operator to state and nothing for Finance to check on this screen beyond the line, the
+  // month and the reason. Requiring rows here would mean typing figures that 7.7 then
+  // discards — and a figure typed into a form and quietly ignored is worse than no form
+  // field at all. Part 7.7 writes the real impact back onto this row when it applies it, so
+  // the register still ends up with the movement on it.
+  if (type !== 'de_scope' && cost !== 0 && resource.length === 0) {
     throw new BcrError(
       'A change that moves money has to state the resource plan that supports it. Every '
       + 'budget bucket must be backed by rate x quantity, so the two move together. Either '
@@ -369,10 +378,27 @@ function approveBcr({ projectId, bcrId, actorId, caps, note = null }) {
   const from = month(bcr.effective_period);
   const proposed = bcr.new_baseline_json ? JSON.parse(bcr.new_baseline_json) : [];
   const resource = bcr.rbs_rows_json ? JSON.parse(bcr.rbs_rows_json) : [];
+  const isDeScope = bcr.change_type === 'de_scope';
+
+  // A de-scope derives its own figures from the baseline, so proposed rows on the request
+  // would be a second, competing statement of what should happen. Refused rather than
+  // silently ignored: which of the two won would depend on the order of two statements in
+  // this function, and that is not something an operator could reason about.
+  if (isDeScope && proposed.length) {
+    throw new BcrError(
+      `${bcr.bcr_no} is a de-scope, and a de-scope works out what remains from the baseline `
+      + 'itself — it does not take proposed months. Withdraw it and raise it as the kind of '
+      + 'change you actually mean.', 400);
+  }
+  if (isDeScope && bcr.wbs_node_id === null) {
+    throw new BcrError(
+      'A de-scope takes a specific line out of scope, and this request names none, so there is '
+      + 'no way to know what to remove. Reject it and raise it again naming the work line.', 400);
+  }
 
   // A money-moving request with no proposal would re-baseline nothing while claiming a
   // cost impact — the register would say the contract moved and the budget would not.
-  if (bcr.impact_cost !== 0 && proposed.length === 0) {
+  if (!isDeScope && bcr.impact_cost !== 0 && proposed.length === 0) {
     throw new BcrError(
       `This request records a cost impact of ${Number(bcr.impact_cost).toLocaleString('en-US')} `
       + 'but states no new baseline rows, so approving it would move nothing. Add the proposed '
@@ -384,7 +410,37 @@ function approveBcr({ projectId, bcrId, actorId, caps, note = null }) {
     // cannot leave a half-moved baseline behind. `bcrId` tells it to archive what was
     // there into this request.
     let applied = null;
-    if (proposed.length) {
+    let deScoped = null;
+
+    // THE DECISION IS RECORDED FIRST, then applied.
+    //
+    // The order is what lets a de-scope use the SAME gate as every other caller: `deScope`
+    // re-reads the register and insists the request is approved, so if the stamp came after,
+    // approval would have to bypass its own rule. Both statements are in this one
+    // transaction, so "approved" and "applied" can never be observed apart — a reader either
+    // sees the request still pending with the baseline untouched, or approved and moved.
+    db.prepare(`UPDATE bcr_register SET status = 'approved', approved_by = ?,
+        decided_at = datetime('now'), decision_note = COALESCE(?, decision_note)
+        WHERE id = ? AND project_id = ?`)
+      .run(actorId, note ? String(note).slice(0, 500) : null, bcrId, projectId);
+
+    // A DE-SCOPE GOES THROUGH 7.5 LIKE EVERYTHING ELSE, but as its own branch.
+    //
+    // `deScope` works out and applies the remaining baseline itself, so running the generic
+    // change below as well would move the money twice. It runs after the stamp above because
+    // it enforces "approved" on itself — the same gate any other caller gets, not a bypass.
+    // If it refuses, this whole transaction rolls back and the request is not approved either.
+    if (isDeScope) {
+      deScoped = wbs.deScope({
+        projectId, actorId, nodeId: Number(bcr.wbs_node_id), period: from, bcrId,
+        reason: bcr.reason,
+      });
+      // Write the movement back onto the register. It was 0 at raise (7.7 derives the figure,
+      // so there is nothing for the operator to state), and a register that recorded a
+      // de-scope as a 0 movement would understate every downstream report.
+      db.prepare('UPDATE bcr_register SET impact_cost = ? WHERE id = ? AND project_id = ?')
+        .run(-deScoped.budgetRemoved, bcrId, projectId);
+    } else if (proposed.length) {
       applied = base.applyBaselineChange({
         projectId,
         effectivePeriod: from,
@@ -397,14 +453,15 @@ function approveBcr({ projectId, bcrId, actorId, caps, note = null }) {
       });
     }
 
-    db.prepare(`UPDATE bcr_register SET status = 'approved', approved_by = ?,
-        decided_at = datetime('now'), decision_note = COALESCE(?, decision_note)
-        WHERE id = ? AND project_id = ?`)
-      .run(actorId, note ? String(note).slice(0, 500) : null, bcrId, projectId);
-
     q.audit('bcr_register', bcrId, 'approve', actorId, { status: bcr.status },
-      { status: 'approved', effective_period: from, applied });
-    return { bcr: byId(projectId, bcrId), applied };
+      { status: 'approved', effective_period: from, applied,
+        de_scoped: deScoped ? { line: deScoped.node.wbs_code, budget_removed: deScoped.budgetRemoved } : null });
+
+    // The caller reports on what happened, so the outcome is flattened here: a route (or a
+    // test) should not have to know the row shape to say "BCR-0003 approved from 2026-08".
+    const row = byId(projectId, bcrId);
+    return { bcr_no: row.bcr_no, effective_period: from, status: row.status,
+      applied, deScoped, bcr: row };
   });
 
   return run();

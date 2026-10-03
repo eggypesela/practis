@@ -232,6 +232,14 @@ test('BC7.4 an approved BCR moves PV from the effective month FORWARD', () => {
     caps: capsOf(pmAdminId) });
   assert.strictEqual(done.bcr.status, 'approved');
   assert.ok(done.applied, 'the approval reported what it applied');
+  // The route builds its flash message from the RETURNED value, and BC7.4 is the test that
+  // owns that contract: `bcr_no` and `effective_period` are top-level. When they were nested
+  // under `bcr`, the end-to-end flash read "undefined approved. The baseline now runs from
+  // undefined forward." — a green suite and a broken screen, because nothing asserted the
+  // words a user actually reads.
+  assert.strictEqual(done.bcr_no, moved.bcr_no);
+  assert.strictEqual(done.effective_period, moved.effective_period,
+    'and the month it reports is the request\u2019s own, not a second guess at it');
 
   // EIA-748 G-30, on the number a user actually sees.
   assert.strictEqual(pv('2026-04'), 1700000, 'April moved — it is at the effective month');

@@ -103,6 +103,20 @@ function loadNode(projectId, nodeId) {
     throw new ProgressError(
       `That line was replaced by version ${n.version + 1}. Report progress on the current version.`, 403);
   }
+  // PRD §4.4 — progress FREEZES at the de-scope. A de-scoped line keeps the progress it had
+  // (nothing is deleted, and its earned value stays on the curve for the months it was in
+  // scope), but no further period may be reported against it: the work is not being done any
+  // more, so a later percentage would be a figure for work nobody is performing. Refused here
+  // so every progress path is covered at once — `writePeriod` (a manual report) and
+  // `setMilestoneTick` both come through this function.
+  if (n.status === 'de_scoped') {
+    throw new ProgressError(
+      `${n.wbs_code} was taken out of scope in ${n.de_scope_period || 'a later period'}. Progress `
+      + 'stopped at the last reported period and cannot be reported again — its costs already '
+      + 'booked stay on the line, and the record of what was spent is on the de-scoped list.', 403);
+  }
+  // A line deliberately parked at `completed` is a different state: the work IS done, so
+  // reporting a correction against it is legitimate. Only `de_scoped` freezes.
   return n;
 }
 

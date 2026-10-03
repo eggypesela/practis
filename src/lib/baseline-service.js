@@ -209,6 +209,114 @@ function writeResourcePlan(projectId, rbsRows, actorId) {
   return n;
 }
 
+// Take a line out of scope: what the baseline SHOWS from `from` forward once it is gone.
+//
+// This is arithmetic, not a mutation — it returns the rows and the reduced resource figure,
+// and 7.5 writes them. Kept here because it has to know how the buckets and the plan relate,
+// and a second place that knew that is exactly how the two would drift.
+//
+// WHY IT DERIVES RATHER THAN ASKS. The post-condition is "Σ buckets == the account's plan",
+// so a de-scope has to move BOTH halves of the line: its remaining buckets AND its resource
+// plan. Asking the operator to type the figures would mean a de-scope that succeeds on the
+// money and fails on the plan. The facts needed are already in the database.
+//
+// THE TRAP THAT DECIDES THE SHAPE OF THIS FUNCTION. The obvious move — zero the line's
+// resource plan, since the line is gone — is WRONG, and 7.5's own post-condition is what
+// proves it. That check compares Σ buckets over the account's WHOLE history (deliberately:
+// a per-period check once reported success while an account was 1,000,000 over). The months
+// already reported are NOT removed — EIA-748 G-30, and PV must keep showing them. So after a
+// de-scope the account still holds those past buckets, and if their resource plan had been
+// zeroed the identity would fail and the whole change would roll back. Measured on the
+// fixture below: zeroing left account 3.1.1 with 300,000 of buckets against a plan of 0.
+//
+// So the plan is reduced by EXACTLY what leaves the curve — not to zero. The identity
+// then holds on both sides at once, which is the point:
+//
+//   Σ buckets_after = Σ buckets_before − leaving     (past months untouched)
+//   plan_after      = plan_before      − leaving
+//
+// `leaving` is distributed across the line's plan lines in proportion to their size, with
+// the rounding remainder on the last, so the line's plan total lands on the rupiah. A line
+// with one resource has one row and no distribution at all.
+//
+// Returns `{ rows, rbsRows, leaving, removedPlanned, planBefore, planAfter }` so the caller
+// can report what actually left scope rather than assert it did.
+function planDeScope(projectId, from, nodeId) {
+  const period = month(from);
+  const node = db.prepare('SELECT * FROM wbs_nodes WHERE id = ? AND project_id = ?').get(nodeId, projectId);
+  if (!node) throw new BaselineError('That WBS line does not exist in this project.', 404);
+
+  // What stays: every CURRENT forward bucket EXCEPT this line's. Reading the current version
+  // only — a superseded row is not part of the baseline, so copying it forward would
+  // re-introduce money that was already replaced.
+  const rows = db.prepare(`SELECT c.transaction_account_id, c.wbs_node_id, c.period_month, c.amount
+    FROM cbs_plan c
+    WHERE c.project_id = ? AND c.plan_type = 'baseline' AND c.period_month >= ?
+      AND COALESCE(c.wbs_node_id, 0) <> ?
+      AND c.version = (
+        SELECT MAX(c2.version) FROM cbs_plan c2
+        WHERE c2.project_id = c.project_id
+          AND c2.transaction_account_id = c.transaction_account_id
+          AND COALESCE(c2.wbs_node_id, 0) = COALESCE(c.wbs_node_id, 0)
+          AND c2.plan_type = c.plan_type AND c2.period_month = c.period_month)
+    ORDER BY c.period_month, c.transaction_account_id`).all(projectId, period, nodeId);
+
+  // What leaves the curve: this line's current forward buckets.
+  const leaving = db.prepare(`SELECT COALESCE(SUM(c.amount), 0) AS s FROM cbs_plan c
+    WHERE c.project_id = ? AND c.plan_type = 'baseline' AND c.period_month >= ?
+      AND c.wbs_node_id = ?
+      AND c.version = (
+        SELECT MAX(c2.version) FROM cbs_plan c2
+        WHERE c2.project_id = c.project_id
+          AND c2.transaction_account_id = c.transaction_account_id
+          AND COALESCE(c2.wbs_node_id, 0) = COALESCE(c.wbs_node_id, 0)
+          AND c2.plan_type = c.plan_type AND c2.period_month = c.period_month)`)
+    .get(projectId, period, nodeId).s;
+
+  // This line's current plan lines, and their total.
+  const planned = db.prepare(`SELECT * FROM rbs_load r WHERE r.project_id = ? AND r.wbs_node_id = ?
+      AND r.version = (SELECT MAX(r2.version) FROM rbs_load r2
+        WHERE r2.project_id = r.project_id AND r2.wbs_node_id = r.wbs_node_id
+          AND r2.rbs_code = r.rbs_code
+          AND COALESCE(r2.transaction_account_id, 0) = COALESCE(r.transaction_account_id, 0))
+      ORDER BY r.total_amount DESC, r.id`).all(projectId, nodeId);
+  const planBefore = planned.reduce((s, r) => s + r.total_amount, 0);
+
+  // Guard the arithmetic rather than let it run negative: more budget leaving the curve than
+  // the line was ever planned is not a de-scope, it is a broken baseline.
+  if (leaving > planBefore) {
+    throw new BaselineError(
+      `${node.wbs_code} has ${leaving} of remaining budget from ${period} but a resource plan of `
+      + `only ${planBefore}. The de-scope cannot reconcile, so nothing was changed.`, 409);
+  }
+  const planAfter = planBefore - leaving;
+
+  // Distribute the REMAINING plan across the line's plan lines, proportionally, remainder on
+  // the last so the total is exact. `units` becomes 1 and `rate` carries the remaining money:
+  // once part of a line is cancelled there is no honest rate x quantity that describes the
+  // remainder, and inventing one would put a figure in a rate column that means nothing.
+  // The prior rate and units stay readable in the versions below this one.
+  let allocated = 0;
+  const rbsRows = planned.map((r, i) => {
+    const last = i === planned.length - 1;
+    const share = last
+      ? planAfter - allocated
+      : Math.floor((r.total_amount * planAfter) / (planBefore || 1));
+    allocated += share;
+    return {
+      wbs_node_id: r.wbs_node_id,
+      rbs_code: r.rbs_code,
+      transaction_account_id: r.transaction_account_id,
+      rate: share,
+      units: share === 0 ? 0 : 1,
+      unit_label: r.unit_label,
+      description: `remaining after ${node.wbs_code} left scope from ${period}`,
+    };
+  });
+
+  return { rows, rbsRows, leaving, removedPlanned: planned.length, planBefore, planAfter };
+}
+
 // Replace the baseline from `effectivePeriod` forward.
 //
 //   applyBaselineChange({ projectId, effectivePeriod, rows, actorId, reason,
@@ -365,5 +473,5 @@ const validateProposalRows = (projectId, effectivePeriod, rows) =>
 
 module.exports = {
   BaselineError, applyBaselineChange, setProposedBaseline, proposedBaseline, archivedBaseline,
-  snapshot, writeResourcePlan, validateProposalRows,
+  snapshot, writeResourcePlan, validateProposalRows, planDeScope,
 };

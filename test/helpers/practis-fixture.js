@@ -41,7 +41,7 @@ function sh(args, env) {
 }
 
 // Start a fixture. Returns { ORIGIN, PORT, dbPath, db, admin, clients, users, pmAdmin,
-// adminOnly, load, refresh, post, stop }.
+// adminOnly, load, loadMany, refresh, post, stop }.
 //
 //   `clients`  role code → logged-in HTTP client (each user holds EXACTLY that one role)
 //   `users`    role code → user id (for service calls and SoD comparisons)
@@ -50,6 +50,10 @@ function sh(args, env) {
 //
 // The last two exist for part 7.6: `canApproveBaseline` is `hasExact`, so they must get
 // different answers, and asserting that needs both.
+//
+//   `load(p)`       one module under src/, freshly required
+//   `loadMany(...p)` several, SHARING ONE CONNECTION — use this whenever a test touches more
+//                    than one service (see the note on `loadMany`)
 //
 //   const fx = await startFixture({ port: 3918, prefix: 'practis-bc7-' });
 //   after(() => fx.stop());
@@ -139,6 +143,26 @@ async function startFixture({ port, prefix = 'practis-fx-', roles = ROLES, admin
     return require(path.join(ROOT, relPath));
   }
 
+  // Load SEVERAL modules so they share one connection.
+  //
+  // Calling `load()` once per module is a trap worth stating: each call clears the whole
+  // `src/` cache and re-requires, so every module gets its OWN `db.js` and therefore its own
+  // better-sqlite3 connection. Two services under test then write through different
+  // connections and contend for the same write lock — which shows up not as an error but as
+  // a test that takes 5 seconds (the `busy_timeout`) and then fails, looking like a logic
+  // bug. Measured: a 4-service file went from 36s to well under a second once they shared
+  // one connection. So load them TOGETHER.
+  //
+  //   const [wbs, bcr] = fx.loadMany('src/lib/wbs-service.js', 'src/lib/bcr-service.js');
+  function loadMany(...relPaths) {
+    process.env.PRACTIS_DB = dbPath;
+    const prefixKey = path.join(ROOT, 'src') + path.sep;
+    for (const key of Object.keys(require.cache)) {
+      if (key.startsWith(prefixKey)) delete require.cache[key];
+    }
+    return relPaths.map((p) => require(path.join(ROOT, p)));
+  }
+
   // Re-run the master seed against THIS database (e.g. after a migration added a step).
   // Uses a fresh process, so it does not disturb the server's open connection.
   function refresh() {
@@ -154,7 +178,7 @@ async function startFixture({ port, prefix = 'practis-fx-', roles = ROLES, admin
   }
 
   return { ORIGIN, PORT: port, dbPath, db, admin, clients, users, pmAdmin, adminOnly,
-    load, refresh, post, stop, proc };
+    load, loadMany, refresh, post, stop, proc };
 }
 
 module.exports = { startFixture, ROLES, ROOT, NODE };

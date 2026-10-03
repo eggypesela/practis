@@ -34,6 +34,7 @@
 
 const db = require('../db/db');
 const q = require('../db/queries');
+const base = require('./baseline-service');
 
 // PRD §4.4 — the only two statuses this screen may set. `de_scoped` is reachable
 // only through an approved BCR (plan decisions 3A; part 7.7), because a de-scope
@@ -307,6 +308,18 @@ function setStatus({ projectId, actorId, nodeId, status, reason }) {
   }
   if (node.status === status) throw new WbsError(`That line is already ${status}.`, 400);
 
+  // A DE-SCOPED LINE DOES NOT COME BACK THROUGH THIS SCREEN. Its budget has left the PV
+  // curve and its plan lines are zeroed, so flipping the status to `active` here would show
+  // work in the tree that the baseline no longer funds — the line would be tickable again
+  // while every SPI said the money was gone. Putting scope back is a contract change: it
+  // needs its own approved BCR (PRD §4.4), the same door that took it out.
+  if (node.status === 'de_scoped') {
+    throw new WbsError(
+      `${node.wbs_code} was taken out of scope in ${node.de_scope_period || 'a later period'}. `
+      + 'Putting work back into scope changes the contract value, so it needs an approved '
+      + 'change request — this screen cannot reopen it.', 403);
+  }
+
   const run = db.transaction(() => {
     db.prepare('UPDATE wbs_nodes SET status = ? WHERE id = ?').run(status, nodeId);
     // A status change is not a replanning act and has no change_log action of its
@@ -317,8 +330,122 @@ function setStatus({ projectId, actorId, nodeId, status, reason }) {
   return node;
 }
 
+// De-scope: take a work line out of scope WITHOUT deleting it and without rewriting history.
+//
+// PRD §4.4. A de-scope is an EXTERNAL change (the contract value drops), so it always needs an
+// approved BCR — decision 3A, and the reason `setStatus` refuses `de_scoped` by name.
+//
+// WHAT THIS FUNCTION DOES NOT DO: it does not touch `cbs_plan`. The budget that leaves scope is
+// removed by `applyBaselineChange` (7.5), which the BCR approval (7.6) already calls with the
+// request's proposed rows. Removing it here too would move the same money twice — once here and
+// again at approval — and the second move would take money off a baseline that no longer has it.
+// So this marks the LINE, and the money follows through the one mutation path that owns it.
+//
+// The order matters and is what makes the rule true: `de_scope_period` is the first month the
+// line is out of scope, and the BCR's `effective_period` is the same month. A change effective
+// from that month forward cannot touch a month before it (7.5 refuses it), so the PV curve keeps
+// every month up to and including the one before — EIA-748 G-30, and DS7.4 asserts it on the
+// curve a user actually sees rather than on the plan table.
+//
+// The caller is expected to call this INSIDE the same transaction that sets `cbs_plan`, so the
+// line and its money are one fact rather than two. Kept as its own function so 7.6's approval
+// owns that ordering in one place.
+
+// A reporting month, YYYY-MM. Same shape as the other services' validator, and the same
+// message, so an operator who has seen one of these refusals recognises the next.
+function month(m, what = 'The month') {
+  const s = String(m ?? '').trim();
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(s)) {
+    throw new WbsError(`${what} has to be a month, as YYYY-MM (e.g. 2026-07).`, 400);
+  }
+  return s;
+}
+
+function deScope({ projectId, actorId, nodeId, period, bcrId, reason }) {
+  const node = loadNode(projectId, nodeId);
+  const from = month(period, 'The de-scope month');
+
+  if (node.status === 'de_scoped') {
+    throw new WbsError(`${node.wbs_code} is already out of scope.`, 400);
+  }
+
+  // ALWAYS through an approved change request. Checked against the register rather than
+  // trusted from the caller, so a stale browser tab cannot smuggle a de-scope through: the
+  // request has to BE approved, in this project, and BE a de-scope.
+  const bcr = db.prepare('SELECT * FROM bcr_register WHERE id = ? AND project_id = ?').get(bcrId, projectId);
+  if (!bcr) {
+    throw new WbsError(
+      'Removing scope drops contract value, so it needs a change request. Raise one, have the '
+      + 'Project Manager approve it, and the de-scope follows from that approval.', 403);
+  }
+  if (bcr.change_type !== 'de_scope') {
+    throw new WbsError(
+      `Change request ${bcr.bcr_no} is a ${bcr.change_type.replace('_', ' ')}, not a de-scope. `
+      + 'Removing a line from scope has to be raised as one, with the work it takes out named.', 400);
+  }
+  if (bcr.status !== 'approved') {
+    throw new WbsError(
+      `Change request ${bcr.bcr_no} is ${bcr.status}. Removing scope needs it approved first — `
+      + 'until then the line stays in the baseline and in the PV curve.', 409);
+  }
+  if (bcr.wbs_node_id !== null && Number(bcr.wbs_node_id) !== Number(nodeId)) {
+    const other = db.prepare('SELECT wbs_code FROM wbs_nodes WHERE id = ?').get(bcr.wbs_node_id);
+    throw new WbsError(
+      `Change request ${bcr.bcr_no} removes ${other ? other.wbs_code : 'a different line'} from `
+      + `scope, not ${node.wbs_code}. Each de-scope takes out one line.`, 400);
+  }
+  // The request and the line must agree about WHEN, or the money would leave the PV curve in
+  // one month while the line is reported as out of scope from another.
+  if (bcr.effective_period !== from) {
+    throw new WbsError(
+      `Change request ${bcr.bcr_no} takes effect from ${bcr.effective_period}, so ${node.wbs_code} `
+      + `cannot leave scope from ${from}. Use the request's own month.`, 400);
+  }
+
+  const run = db.transaction(() => {
+    // THE MONEY FOLLOWS IN THIS SAME TRANSACTION.
+    //
+    // The plan for what remains is DERIVED from the current baseline rather than taken from
+    // the request, so a de-scope cannot be talked into moving something it was never about.
+    // `applyBaselineChange` is 7.5's one mutation path — the archive, the version numbering
+    // and the post-condition all live there, and this call is what keeps a de-scope from
+    // being a second, subtly different way to write a baseline.
+    //
+    // No `bcrId` is passed: 7.6's approval has already archived this change into the request,
+    // and archiving twice would overwrite that snapshot with the state AFTER the first write.
+    const plan = base.planDeScope(projectId, from, nodeId);
+    const applied = base.applyBaselineChange({
+      projectId,
+      effectivePeriod: from,
+      rows: plan.rows,
+      actorId,
+      reason: reason ? String(reason).trim().slice(0, 500) : `de-scope of ${node.wbs_code}`,
+      impactCost: -plan.leaving,
+      rbsRows: plan.rbsRows,
+    });
+
+    db.prepare(`UPDATE wbs_nodes SET status = 'de_scoped', de_scope_period = ?
+        WHERE id = ? AND project_id = ?`).run(from, nodeId, projectId);
+    if (bcrId) {
+      q.audit('wbs_node', nodeId, 'de_scope', actorId,
+        { status: node.status, de_scope_period: node.de_scope_period },
+        { status: 'de_scoped', de_scope_period: from, bcr_id: bcr.id, bcr_no: bcr.bcr_no,
+          budget_removed: plan.leaving, plan_lines_reduced: plan.removedPlanned,
+          reason: reason ? String(reason).trim().slice(0, 500) : bcr.reason });
+    }
+    // With a `bcrId` the de-scope is the fact, so it gets its own audit row. Without one — the
+    // path 7.6 takes, where `approveBcr` calls this from inside the approval — the decision has
+    // already been audited as `bcr_decision` (carrying `impact_cost` and `budget_removed`) and
+    // the plan movement as `baseline_change`. A third row would be one fact counted three times.
+    return { node: db.prepare('SELECT * FROM wbs_nodes WHERE id = ?').get(nodeId),
+      applied, budgetRemoved: plan.leaving };
+  });
+
+  return run();
+}
+
 module.exports = {
   WbsError, USER_STATUSES, assertInternalReplanning,
   tree, milestones, changeHistory,
-  addLine, renameLine, reparentLine, splitLine, setStatus,
+  addLine, renameLine, reparentLine, splitLine, setStatus, deScope,
 };

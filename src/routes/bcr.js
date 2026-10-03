@@ -233,7 +233,15 @@ for (const [verb, spec] of Object.entries(MOVE_VERBS)) {
         reject: `${out.bcr_no} rejected. Nothing was changed — the baseline is exactly as it was.`,
         withdraw: `${out.bcr_no} withdrawn.`,
       }[verb];
-      return res.redirect('/bcr?msg=' + msg(say));
+      // A de-scope does one more thing than a re-phase, and the operator should be told it
+      // rather than left to notice the line missing from the tree.
+      const extra = out.deScoped
+        ? ` ${out.deScoped.node.wbs_code} is now out of scope from ${out.effective_period}; `
+          + `${Number(out.deScoped.budgetRemoved).toLocaleString('en-US')} of remaining budget left `
+          + 'the curve, its costs already booked stay on the line, and no further progress can '
+          + 'be reported against it.'
+        : '';
+      return res.redirect('/bcr?msg=' + msg(say + extra));
     } catch (err) { return fail(res, err, spec.back); }
   });
 }
