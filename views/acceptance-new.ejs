@@ -1,0 +1,77 @@
+<%# Record a BAST progress certificate (module 8 part 8.9; PRD §4.2).
+
+    THE ABSENT STATUS FIELD IS THE FEATURE. There is deliberately no status selector on this form:
+    a certificate always lands as a DRAFT, and the submit → accept steps happen on the register.
+    That is owner decision A (2026-10-04) — the difference between "we sent it" and "the client
+    accepted it" is the control, so one form cannot collapse the two.
+
+    Receives: project, wbsLines, form, error, field, nextSequence. %>
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Not recorded.</b> <%= error %></p></div></div>
+<% } %>
+
+<% const v = (k) => (typeof form !== 'undefined' && form && form[k] != null) ? form[k] : ''; %>
+<% const bad = (k) => (typeof field !== 'undefined' && field === k) ? 'aria-invalid="true"' : ''; %>
+
+<form method="post" action="/acceptance">
+  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+<div class="card" style="max-width:760px">
+  <div class="card-hd">
+    <h2>Progress certificate</h2>
+    <span class="r">PRD §4.2 · saved as a draft</span>
+  </div>
+  <div class="fbody">
+    <label class="fld">Certificate number <span class="dim">the number on the signed paper</span>
+      <input type="text" name="certificate_no" maxlength="60" <%= bad('certificate_no') %>
+             value="<%= v('certificate_no') %>" placeholder="BAST-001"></label>
+
+    <label class="fld">Accepted percentage <span class="dim">required — this is what revenue is calculated from</span>
+      <input type="text" name="percentage_progress" required <%= bad('percentage_progress') %>
+             value="<%= v('percentage_progress') %>" placeholder="25" inputmode="decimal"></label>
+
+    <label class="fld">WBS line <span class="dim">optional — leave blank for a certificate covering the whole project</span>
+      <select name="wbs_node_id" <%= bad('wbs_node_id') %>>
+        <option value="">— whole project —</option>
+        <% (typeof wbsLines !== 'undefined' ? wbsLines : []).forEach(function(l){ %>
+        <option value="<%= l.id %>" <%= String(v('wbs_node_id')) === String(l.id) ? 'selected' : '' %>><%= l.wbs_code %> — <%= l.name %></option>
+        <% }) %>
+      </select></label>
+
+    <label class="fld">Description <span class="dim">optional</span>
+      <input type="text" name="description" maxlength="400" <%= bad('description') %>
+             value="<%= v('description') %>" placeholder="What was handed over"></label>
+
+    <div class="fgrid">
+      <label class="fld">Signed date <span class="dim">the date on the paper</span>
+        <input type="date" name="document_date" <%= bad('document_date') %> value="<%= v('document_date') %>"></label>
+
+      <label class="fld">Handover date <span class="dim">optional</span>
+        <input type="date" name="handover_date" <%= bad('handover_date') %> value="<%= v('handover_date') %>"></label>
+    </div>
+
+    <div class="fgrid">
+      <label class="fld">Invoice date <span class="dim">optional</span>
+        <input type="date" name="invoice_date" <%= bad('invoice_date') %> value="<%= v('invoice_date') %>"></label>
+
+      <label class="fld">Sequence <span class="dim">filled in automatically</span>
+        <input type="text" value="<%= nextSequence %>" readonly disabled></label>
+    </div>
+
+    <div class="fnote"><svg><use href="#i-info"/></svg><span>
+      <b>The percentage is what the CLIENT has accepted</b> on this certificate — not the progress
+      your team has ticked off internally. If the paper says a quarter of the work has been handed
+      over, enter <b>25</b>.
+      <br><br>
+      <b>The date the client accepts it is not entered here.</b> It is stamped when a Project Manager
+      accepts the certificate, because it is a fact about the acceptance — not about the submission.
+      After recording you can <b>submit</b> it from the register; only then can a Project Manager
+      <b>accept</b> it, and only an accepted certificate counts towards revenue.
+    </span></div>
+
+    <button class="btn pri wide" type="submit"><svg><use href="#i-plus"/></svg>Record as draft</button>
+  </div>
+</div>
+</form>
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
+</defs></svg>

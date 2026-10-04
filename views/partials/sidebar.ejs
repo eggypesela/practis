@@ -37,6 +37,12 @@
         reads as "the reports, then this project's overview", not as a stray link. It is a READ:
         no capability gate, unlike the aging report above it — see the route's comment. %>
     <a href="/reports/project" class="<%= _active === 'Overview' ? 'on' : '' %>"><svg><use href="#i-chart"/></svg><span class="lbl">Project overview</span></a>
+    <%# Module 8 part 8.9: the BAST acceptance register (PRD §4.2/§4.3). Placed with the project
+        reports because it is where revenue comes from: the accepted percentage on these
+        certificates IS the POC revenue basis. The sidebar is not a permission system (see the
+        Reports link above) — the route answers 403 with a reason, and the register itself offers
+        no control the reader cannot submit. %>
+    <a href="/acceptance" class="<%= _active === 'Acceptance' ? 'on' : '' %>"><svg><use href="#i-check"/></svg><span class="lbl">Acceptance</span></a>
     <div class="pctx">
       <span class="pc-lbl caps">Project</span>
       <% const _list = (typeof projects !== 'undefined' && projects) ? projects : []; %>

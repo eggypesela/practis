@@ -1,0 +1,169 @@
+<%# BAST acceptance register (module 8 part 8.9; PRD §4.2/§4.3).
+
+    WHAT THIS SCREEN HAS TO MAKE OBVIOUS, because the whole revenue feature depends on it:
+
+    1. THE ACCEPTED PERCENTAGE IS THE REVENUE BASIS. Not the internal tick %. The header states the
+       figure and explains the difference, so the reader sees the gap rather than being told about it.
+    2. ONLY `accepted` COUNTS. The status column is the workflow, and a `submitted` certificate is
+       visibly NOT yet revenue — the chip is amber, not green.
+    3. A CERTIFICATE CANNOT BE CREATED AS ACCEPTED. That is decision A, so the record form has no
+       status field at all and this page says so.
+    4. AN ACCEPTED CERTIFICATE IS FROZEN. No edit or delete control is offered for one, because the
+       basis revenue was computed from must not change underneath it.
+
+    Receives: project, summary ({rows, counts, acceptedPct, rawAcceptedPct, overlapping}), caps,
+    saved, savedStatus, error. %>
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Not done.</b> <%= error %></p></div></div>
+<% } %>
+
+<% if (!project) { %>
+<div class="card"><div class="fbody">
+  <p><b>No project is in scope for your account, so there is nothing to show.</b></p>
+  <p class="dim" style="margin:6px 0 0">
+    A progress certificate belongs to a project. Ask an Administrator to assign you to one.
+  </p>
+</div></div>
+<% } else { %>
+
+<% if (saved) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b>Recorded as a draft.</b>
+  It does not count towards revenue until it is submitted and a Project Manager accepts it — that is
+  the check that makes the client's sign-off real.</div>
+<% } %>
+<% if (savedStatus === 'submitted') { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b>Submitted.</b>
+  It is now waiting for a Project Manager to accept it against the signed paper.</div>
+<% } %>
+<% if (savedStatus === 'accepted') { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b>Accepted.</b>
+  This percentage is now part of the revenue basis the POC method reads.</div>
+<% } %>
+<% if (savedStatus === 'rejected') { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b>Rejected.</b>
+  It counts for nothing. Record a new certificate that supersedes it — a rejected certificate is kept
+  as a record and cannot be revived.</div>
+<% } %>
+
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Client accepted</div>
+    <div class="v"><%= summary.acceptedPct %>%</div><div class="f">BAST certificates — the revenue basis</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-file"/></svg>Awaiting acceptance</div>
+    <div class="v"><%= summary.counts.submitted %></div><div class="f">submitted, not yet signed</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-swap"/></svg>Drafts</div>
+    <div class="v"><%= summary.counts.draft %></div><div class="f">not yet submitted</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-lock"/></svg>Rejected</div>
+    <div class="v"><%= summary.counts.rejected %></div><div class="f">count for nothing</div></div>
+</div>
+
+<div class="card">
+  <div class="card-hd">
+    <h2>What the client has accepted</h2>
+    <span class="r"><%= summary.counts.accepted %> accepted certificate<%= summary.counts.accepted === 1 ? '' : 's' %></span>
+  </div>
+  <div class="fbody">
+    <p><b>The accepted figure is what revenue is calculated from.</b> It is the percentage the client
+    has put its name to on a certificate — not the progress your team has ticked off internally.</p>
+    <p style="margin:8px 0 0" class="dim">
+      The two are different things on purpose: the internal figure is an estimate of work done, this
+      one is a signed acceptance. Revenue uses <b>this</b> one, so a month where the client has
+      accepted nothing recognises nothing — however much work the team has finished.
+    </p>
+    <% if (summary.overlapping) { %>
+    <p style="margin:10px 0 0"><b class="wn">
+      The certificates total <%= summary.rawAcceptedPct %>% before capping. Revenue is capped at 100%
+      so it can never exceed the contract — but overlapping certificates are worth a look.
+    </b></p>
+    <% } %>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-hd">
+    <h2>Certificates</h2>
+    <span class="r">in the order they were issued</span>
+  </div>
+  <div class="tw">
+    <table>
+      <thead><tr>
+        <th>#</th><th>Certificate</th><th>WBS line</th><th>Description</th>
+        <th class="r">Accepted %</th><th>Signed</th><th>Handover</th><th>Accepted</th>
+        <th>Status</th><th></th>
+      </tr></thead>
+      <tbody>
+      <% if (!summary.rows.length) { %>
+        <tr><td colspan="10" class="dim">
+          No certificates recorded yet. Until one is accepted, revenue recognition has nothing to
+          work from and will read 0%.
+        </td></tr>
+      <% } %>
+      <% summary.rows.forEach(function(c) { %>
+        <% const chip = c.status === 'accepted' ? 'ok'
+             : (c.status === 'submitted' ? 'wn' : (c.status === 'rejected' ? 'bd' : 'nt')); %>
+        <tr>
+          <td class="dim"><%= c.sequence == null ? '' : c.sequence %></td>
+          <td><b><%= c.certificate_no || '—' %></b></td>
+          <td><%= c.wbs_code ? (c.wbs_code + ' ' + (c.wbs_name || '')) : '' %><% if (!c.wbs_code) { %><span class="dim">whole project</span><% } %></td>
+          <td><%= c.description || '' %><% if (!c.description) { %><span class="dim">—</span><% } %></td>
+          <td class="r"><b><%= c.percentage_progress == null ? '—' : c.percentage_progress + '%' %></b></td>
+          <td><%= c.document_date || '' %><% if (!c.document_date) { %><span class="dim">—</span><% } %></td>
+          <td><%= c.handover_date || '' %><% if (!c.handover_date) { %><span class="dim">—</span><% } %></td>
+          <td><%= c.accepted_date || '' %><% if (!c.accepted_date) { %><span class="dim">—</span><% } %></td>
+          <td><span class="chip <%= chip %>"><%= c.status.toUpperCase() %></span></td>
+          <td>
+            <% if (c.status === 'draft' && caps.canManageAcceptance) { %>
+              <form method="post" action="/acceptance/<%= c.id %>/submit" style="display:inline">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button class="btn" type="submit">Submit</button>
+              </form>
+            <% } else if (c.status === 'submitted' && caps.canApproveAcceptance) { %>
+              <form method="post" action="/acceptance/<%= c.id %>/accept" style="display:inline">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button class="btn pri" type="submit">Accept</button>
+              </form>
+              <form method="post" action="/acceptance/<%= c.id %>/reject" style="display:inline">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button class="btn" type="submit">Reject</button>
+              </form>
+            <% } else if (c.status === 'submitted') { %>
+              <span class="dim">a Project Manager accepts this</span>
+            <% } else if (c.status === 'accepted') { %>
+              <span class="dim">counted</span>
+            <% } else { %>
+              <span class="dim">—</span>
+            <% } %>
+          </td>
+        </tr>
+      <% }); %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-hd"><h2>How a certificate becomes revenue</h2><span class="r">PRD §4.3</span></div>
+  <div class="fbody">
+    <p><b>Record → Submit → Accept.</b> A certificate is always recorded as a <b>draft</b>; nobody can
+    create one already accepted. That is deliberate — the difference between &ldquo;we submitted
+    it&rdquo; and &ldquo;the client accepted it&rdquo; is the whole point of the figure.</p>
+    <p style="margin:8px 0 0">
+      <b>Submitting</b> says the paper has gone to the client. <b>Accepting</b> records that they
+      signed it, and that is a Project Manager's decision, not the recorder's.
+    </p>
+    <p style="margin:8px 0 0" class="dim">
+      An accepted certificate cannot be edited or deleted — it is the basis the revenue was
+      calculated from. If it was wrong, record a new certificate: the sequence keeps the order clear,
+      and the revenue figure will follow the corrected total.
+    </p>
+    <p style="margin:8px 0 0" class="dim">
+      A <b>rejected</b> certificate counts for nothing and cannot be accepted later. It is kept so the
+      register shows what happened.
+    </p>
+  </div>
+</div>
+
+<% } %>
+
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
+</defs></svg>

@@ -147,6 +147,28 @@ function capabilities(user) {
   // them. The WRITE guard is the boundary here, not the read.
   const canViewForecast = true;
 
+  // --- BAST acceptance register (module 8 part 8.9, PRD §4.2/§4.3) -------------
+  // Who may RECORD and SUBMIT a progress certificate. Follows `canManageWbs`'s pairing — the
+  // people who own progress — plus `project_admin`, who is the hands-on uploader that actually
+  // has the signed paper in front of them.
+  const canManageAcceptance = has('project_controller', 'project_manager', 'project_admin');
+
+  // Who may ACCEPT or REJECT it. Deliberately the same capability that approves the other
+  // registers (`canApproveProjects` = project_manager) rather than a new flag, so the app has ONE
+  // answer to "who approves things here". Accepting is the step that lets a certificate count as
+  // revenue, so it is the real control: a cost_controller may record and submit, and still may
+  // not accept.
+  //
+  // NOT a second `approvals-service` chain — the `status` column IS the workflow (owner decision
+  // A, 2026-10-04). See acceptance-service.js.
+  const canApproveAcceptance = has('project_manager');
+
+  // READING the register is unrestricted for any signed-in user, for the same reason
+  // `canViewForecast` is: it is a PROJECT figure (what the client has signed off), not Finance's
+  // customer-by-customer ledger — which is exactly why `canViewReceivable` IS gated. A viewer
+  // gets the register, and does not get the forms it cannot submit.
+  const canViewAcceptance = true;
+
   return {
     roles,
     isAdmin,
@@ -203,6 +225,10 @@ function capabilities(user) {
     // --- Forecast / EAC (module 8 part 8.4) --------------------------------
     canViewForecast,
     canManageForecast,
+    // BAST acceptance register (module 8 part 8.9).
+    canViewAcceptance,
+    canManageAcceptance,
+    canApproveAcceptance,
 
     // --- Baseline change requests (module 7 part 7.6) ----------------------
     canInitiateBcr,

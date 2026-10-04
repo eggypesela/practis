@@ -1303,6 +1303,85 @@ assertion. The viewer's page does not offer the forms it cannot submit.
 
 ---
 
+## 12t. BA8 — BAST acceptance register — ✅ IMPLEMENTED 2026-10-04
+
+PRD §4.2 (`acceptance_register`, milestone % certificate + `sequence`) and §4.3 (**"Progress % ≠
+client acceptance %… POC revenue uses BAST%; EVM uses tick%. Both stored; never conflated"**).
+Screens: `GET /acceptance` (register), `GET|POST /acceptance/new`. Service
+`src/lib/acceptance-service.js`. **NO migration** — the table, the WBS-line FK, `sequence` and all
+three dates have existed since migration 001.
+
+**Why this part exists (measured):** after 8.8 landed, `acceptance_register` had **ZERO WRITERS** in
+`src/` — the revenue service only ever SELECTed from it. So the POC basis could only ever read 0%.
+This is 8.8's missing input, not a new feature.
+
+**The workflow IS the `status` column (owner decision A, 2026-10-04):**
+
+```
+draft ──submit──> submitted ──accept──> accepted
+                       └────reject────> rejected
+```
+
+No second `approvals-service` chain — a register with two competing notions of "approved" is worse
+than either alone. `record()` **hard-codes `'draft'`** and IGNORES a posted status; **BA8.2 posts
+`status=accepted` + a tampered `accepted_date` and pins that both are dropped.** A form-level check
+is not a control.
+
+**Capabilities (deliberately split):** `canManageAcceptance` = project_controller / project_manager /
+project_admin (record + submit — follows WBS ownership); `canApproveAcceptance` = project_manager
+(accept + reject — reuses the register-approval capability so the app has one answer to "who approves
+things"). `canViewAcceptance = true` (a project figure, not Finance's customer ledger — hence
+`canViewReceivable` IS gated and this is not).
+
+**Rules pinned by the tests:**
+
+| Rule | Test |
+|---|---|
+| Recorded → draft; a draft moves no revenue | BA8.1 |
+| **`status=accepted` on the form is IGNORED**; draft → accepted refused even for the PM | BA8.2 |
+| submit → accepted walk; `accepted_date` stamped by the transition | BA8.3 |
+| explicit acceptance date honoured; impossible/non-ISO dates refused | BA8.4 |
+| **only the PM accepts** — project_controller gets 403, DB unchanged | BA8.5 |
+| rejected is terminal and can never count or be revived | BA8.6 |
+| accepted → draft/submitted/rejected all refused (409) | BA8.7 |
+| percentage required, >0, ≤100; 100 and 12.5 both valid | BA8.8 |
+| **record → submit → accept → `/reports/revenue` shows 2,500,000** | BA8.9 |
+
+**BA8.9 IS the important one** — the only assertion that proves 8.8 and 8.9 connect. It drives the
+real HTTP forms and then reads the RECOGNITION page, asserting a draft and a submitted certificate
+still read 0 accepted while the accepted one yields 25% of the contract = **Rp 2,500,000**.
+
+**THREE TEST BUGS OF MINE that this part caught, all worth remembering:**
+1. **`bastPct` is an AS-AT-MONTH figure.** It counts certificates accepted *by the end of* the month
+   asked about. Accepting **today** and then asking about **March 2026** correctly returns **0%** —
+   the basis as at March did not include it. Every acceptance in the tests now carries an **explicit
+   past `accepted_date`**. An implementation with a time machine would have passed; the as-at
+   semantics are the requirement.
+2. **SQLite REUSES rowids after a DELETE.** `resetRegister()` deletes certificates between tests, so
+   audit rows from earlier tests share the new `entity_id` and the audit-action list came back
+   `['create','create','create','submitted','accepted']`. Fixed with `.slice(-3)`.
+3. **`cost_controller` holds NEITHER acceptance capability.** The recording family follows WBS
+   ownership (project_controller / project_manager / project_admin), so BA8.9's first draft got a 403
+   from the wrong rule and proved nothing. The recorder is a **project_controller**, the reader a
+   cost_controller.
+
+**Also pinned:** a baseline fixture needs an `rbs_load` row totalling the same figure as the buckets,
+or `spreadBaseline` refuses it (the §7.4 Σ invariant) — the error reads like a data problem rather
+than a missing fixture row.
+
+**Files:** NEW `src/lib/acceptance-service.js`, `views/acceptance.ejs`, `views/acceptance-new.ejs`,
+`test/acceptance.test.js` (BA8.1–BA8.9, port **3929**); MOD `src/lib/permissions.js` (+3 flags),
+`src/routes/projects.js` (5 routes + `/acceptance` in `PAGE_PATHS`), `views/partials/sidebar.ejs`.
+
+**Gaps recorded, not hidden:** `certificate_no` has no UNIQUE constraint — a duplicate WARNS rather
+than refuses (legacy data may repeat; a re-issue can carry the same number). `invoice_date` is
+captured but nothing bills from it. No DB trigger freezes `acceptance_register`, so the freeze is
+service-level only.
+
+**Gates:** `test/acceptance.test.js` **9/9** ✅; full suite **512 → 521** ✅.
+
+---
+
 ## 13. Workflow coverage vs PRD §4
 
 The product workflow, step by step, and whether a test exists. **Empty rows are the real answer to

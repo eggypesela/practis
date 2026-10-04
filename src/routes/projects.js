@@ -19,6 +19,7 @@ const requirePage = require('../middleware/auth').requirePage;
 const svc = require('../lib/projects-service');
 const clientsSvc = require('../lib/clients-service');
 const suppliersSvc = require('../lib/suppliers-service');
+const acceptanceSvc = require('../lib/acceptance-service');
 
 const IDR = new Intl.NumberFormat('id-ID');
 const fmt = (n) => IDR.format(n || 0);
@@ -66,7 +67,7 @@ function page(res, title, subtitle, crumb, bodyView, opts = {}) {
 // The path list must be an ARRAY (or an anchored regex). Express 5's
 // '/projects/{*path}' and '/projects/*splat' forms were tested and SILENTLY DROP
 // the guard on the bare prefix '/projects' itself — see TEST_PLAN §12f.
-const PAGE_PATHS = ['/projects', '/clients', '/suppliers'];
+const PAGE_PATHS = ['/projects', '/clients', '/suppliers', '/acceptance'];
 router.use(PAGE_PATHS, requirePage);
 
 // The register carries a cost-to-date figure per project, so it needs the same
@@ -489,6 +490,156 @@ router.post('/suppliers/:id/approve',
       });
     }
     return res.redirect(`/suppliers?approved=${id}`);
+  });
+
+// ---- BAST acceptance register (module 8 part 8.9; PRD §4.2/§4.3) -----------
+//
+// The register of progress certificates the CLIENT has signed. It exists so part 8.8's POC revenue
+// has an input: before this, `acceptance_register` had no writer anywhere in `src/`, so the POC
+// basis could only ever be zero.
+//
+// The workflow is the `status` column — record (draft) → submit → accept — and there is no second
+// approval chain. Read `src/lib/acceptance-service.js` for why.
+//
+// Every route below is registered on the ACCEPTANCE page paths only, and the two write families
+// carry DIFFERENT capabilities: recording/submitting vs accepting. That split is the control.
+
+// Turn a service refusal into a rendered page rather than a stack trace. `err.field` is carried
+// through so the form can mark the offending input.
+function acceptanceFail(res, view, locals, err, title) {
+  const status = err.status || 400;
+  return res.status(status).render(view, {
+    layout: 'layout-app', title,
+    subtitle: err.message,
+    crumb: `${res.locals.project?.name || 'No project'} / Acceptance`,
+    active: 'Acceptance', actions: '',
+    projectName: res.locals.project?.name || 'No project',
+    error: err.message, field: err.field || null,
+    ...locals,
+  });
+}
+
+router.get('/acceptance', (req, res) => {
+  const project = res.locals.project;
+  if (!project) {
+    return page(res, 'Acceptance register', 'No project is in scope for your account',
+      'Portfolio / Acceptance', 'acceptance', {
+        active: 'Acceptance',
+        locals: { project: null, summary: null, caps: capabilities(req.user), saved: null, error: null },
+      });
+  }
+
+  const summary = acceptanceSvc.summary(project.id);
+  return page(res, 'Acceptance register', `${project.name} · the certificates the client has signed`,
+    `${project.name} / Acceptance`, 'acceptance', {
+      active: 'Acceptance',
+      actions: capabilities(req.user).canManageAcceptance
+        ? '<a class="btn pri" href="/acceptance/new"><svg><use href="#i-plus"/></svg>Record certificate</a>'
+        : '',
+      locals: {
+        project,
+        summary,
+        caps: capabilities(req.user),
+        // The three figures the reader needs at once, from ONE source. `summary.acceptedPct` is what
+        // 8.8's POC basis reads, so showing it here means the register and the revenue screen cannot
+        // disagree about how much the client has accepted.
+        saved: req.query.saved ? Number(req.query.saved) : null,
+        savedStatus: req.query.status || null,
+        error: null,
+      },
+    });
+});
+
+router.get('/acceptance/new',
+  requireCapability('canManageAcceptance',
+    'Recording a progress certificate is a Project Controller, Project Manager or Project Admin task.'),
+  (req, res) => {
+    page(res, 'Record certificate',
+      'PRD §4.2 · a progress certificate (BAST) the client has signed',
+      `${res.locals.project?.name || 'No project'} / Acceptance / New`, 'acceptance-new', {
+        active: 'Acceptance',
+        locals: {
+          project: res.locals.project,
+          wbsLines: acceptanceSvc.wbsLines(res.locals.project?.id),
+          form: {}, error: null, field: null,
+          nextSequence: acceptanceSvc.nextSequence(res.locals.project.id),
+        },
+      });
+  });
+
+router.post('/acceptance',
+  requireCapability('canManageAcceptance',
+    'Recording a progress certificate is a Project Controller, Project Manager or Project Admin task.'),
+  (req, res) => {
+    try {
+      // NOTE: the posted `status` is ignored by the service — a certificate always lands as a
+      // draft. That is decision A, and it is not a form-level check.
+      const out = acceptanceSvc.record({
+        projectId: res.locals.project.id, input: req.body, actorId: req.user.id,
+      });
+      const q = out.duplicateOf ? `&dup=${out.duplicateOf.id}` : '';
+      return res.redirect(`/acceptance?saved=${out.certificate.id}${q}`);
+    } catch (err) {
+      if (!(err instanceof acceptanceSvc.AcceptanceError)) throw err;
+      return acceptanceFail(res, 'acceptance-new', {
+        wbsLines: acceptanceSvc.wbsLines(res.locals.project?.id),
+        form: req.body, nextSequence: acceptanceSvc.nextSequence(res.locals.project.id),
+      }, err, 'Record certificate');
+    }
+  });
+
+router.post('/acceptance/:id/submit',
+  requireCapability('canManageAcceptance',
+    'Submitting a progress certificate is a Project Controller, Project Manager or Project Admin task.'),
+  (req, res) => {
+    try {
+      acceptanceSvc.submit({ projectId: res.locals.project.id, id: Number(req.params.id), actorId: req.user.id });
+      return res.redirect('/acceptance?status=submitted');
+    } catch (err) {
+      if (!(err instanceof acceptanceSvc.AcceptanceError)) throw err;
+      return res.status(err.status || 400).render('403', {
+        layout: 'layout-app', title: 'Not allowed', subtitle: err.message,
+        crumb: `${res.locals.project?.name || ''} · blocked`, active: 'Acceptance',
+        projectName: res.locals.project?.name || 'No project',
+      });
+    }
+  });
+
+// ACCEPT — the step that lets a certificate count as revenue, so it carries the approving
+// capability rather than the recording one.
+router.post('/acceptance/:id/accept',
+  requireCapability('canApproveAcceptance', 'Accepting a progress certificate is a Project Manager task.'),
+  (req, res) => {
+    try {
+      acceptanceSvc.accept({
+        projectId: res.locals.project.id, id: Number(req.params.id),
+        actorId: req.user.id, acceptedDate: req.body.accepted_date,
+      });
+      return res.redirect('/acceptance?status=accepted');
+    } catch (err) {
+      if (!(err instanceof acceptanceSvc.AcceptanceError)) throw err;
+      return res.status(err.status || 400).render('403', {
+        layout: 'layout-app', title: 'Not allowed', subtitle: err.message,
+        crumb: `${res.locals.project?.name || ''} · blocked`, active: 'Acceptance',
+        projectName: res.locals.project?.name || 'No project',
+      });
+    }
+  });
+
+router.post('/acceptance/:id/reject',
+  requireCapability('canApproveAcceptance', 'Rejecting a progress certificate is a Project Manager task.'),
+  (req, res) => {
+    try {
+      acceptanceSvc.reject({ projectId: res.locals.project.id, id: Number(req.params.id), actorId: req.user.id });
+      return res.redirect('/acceptance?status=rejected');
+    } catch (err) {
+      if (!(err instanceof acceptanceSvc.AcceptanceError)) throw err;
+      return res.status(err.status || 400).render('403', {
+        layout: 'layout-app', title: 'Not allowed', subtitle: err.message,
+        crumb: `${res.locals.project?.name || ''} · blocked`, active: 'Acceptance',
+        projectName: res.locals.project?.name || 'No project',
+      });
+    }
   });
 
 module.exports = router;
