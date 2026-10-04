@@ -27,6 +27,12 @@
         shows it to everyone because the sidebar is not a permission system — the route
         answers 403 with a reason. %>
     <a href="/reports" class="<%= ['Aging', 'Forecast', 'Variance'].includes(_active) ? 'on' : '' %>"><svg><use href="#i-chart"/></svg><span class="lbl">Reports</span></a>
+    <%# Module 8 part 8.6: the Project Overview S-curve screen. It sits HERE rather than in the
+        (still display:none) Project group with WBS/Budget, because it is the report a PM opens
+        first and it belongs beside the other reports. The group is a visible heading, so this
+        reads as "the reports, then this project's overview", not as a stray link. It is a READ:
+        no capability gate, unlike the aging report above it — see the route's comment. %>
+    <a href="/reports/project" class="<%= _active === 'Overview' ? 'on' : '' %>"><svg><use href="#i-chart"/></svg><span class="lbl">Project overview</span></a>
     <div class="pctx">
       <span class="pc-lbl caps">Project</span>
       <% const _list = (typeof projects !== 'undefined' && projects) ? projects : []; %>

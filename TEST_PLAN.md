@@ -1128,6 +1128,62 @@ to show them).
 
 ---
 
+## 12q. DB8 — Project dashboard / S-curves — ✅ IMPLEMENTED 2026-10-03
+
+PRD §5.4: *"EVM S-curves (project dashboard) … Calendar-rendered"* and *"Project dashboard
+(PM/Controller): S-curves, EVM trend, cashflow actual vs forecast, WBS drill-down"*.
+Screen: `GET /reports/project` (the screen map's "Project Overview" — **it did not exist before**).
+
+**Charts are self-hosted Chart.js** (4.5.1, MIT, vendored from the npm registry tarball, sha256
+pinned). No CDN (TECH-SPEC §3.6), **no CSP change** — the CSP already allows `'self'` and Chart.js 4
+uses **no `eval` / `new Function`**, which was the only real hazard (verified, see F8 in the plan).
+
+**The split that keeps it testable — the point of this part.** Chart.js paints a `<canvas>`, and a
+canvas **cannot be asserted on in this environment** (no reliable headless Chrome at 2 GB / no
+swap). So **no arithmetic happens in the browser**: `src/lib/chart-config.js` builds every figure
+server-side and returns a plain object; the view serialises it into an
+`application/json` block (the `terms-by-client` pattern from `project-new.ejs`) and a small nonce'd
+script only reads it. DB8.6 asserts the browser script carries **no monetary figure**, so the
+separation cannot rot back.
+
+**Files:** NEW `assets/vendor/chart.js/chart.umd.min.js` + `LICENSE.md`; NEW
+`src/lib/chart-config.js`; NEW `views/project-dashboard.ejs`; `src/routes/reporting.js`
+(`/reports/project`, `REPORT_PATHS`); `views/reports-index.ejs`, `views/partials/sidebar.ejs`;
+NEW `test/dashboard.test.js` (DB8.1–DB8.8, port **3926**).
+
+**Three defects this part's own tests caught, all worth recording:**
+
+1. **The `<script src>` tag was missing entirely.** The page rendered, the JSON was right, the
+   canvases were there — and the library never loaded, so every chart would have been **blank**.
+   DB8.7 asserts the tag. Note DB8.8 (the file exists on disk, right hash) passed while this was
+   broken: the file was fine, the *tag* was not. Both assertions are needed.
+2. **`isMeasured` was judged on per-period figures only**, so a project with a spread budget and no
+   ticks yet was told *"nothing has been measured against the budget"* while its budget sat right
+   there. Split into two predicates: `isMeasured` (per-period — right for the bars) and `reached`
+   (cumulative — right for the curve). DB8.3 pins all **four** states with four different sentences.
+3. **The test hardcoded the project name** (`Jembatan Citarum`); the fixture seeder creates
+   **`Citarum Bridge`**. Same lesson as RP8's `PRJ-2026`: read it from the DB, do not guess.
+
+**Scoping, asserted in both directions.** A user with **no role** resolves to no project and is
+told so, and `?project=N` does **not** widen scope (the BOLA rule). An **org-wide** role (Cost
+Controller, rule 5 of `projectsFor`) legitimately reaches every project, and the switch is
+honoured — pinned deliberately so a later silent narrowing fails the suite.
+
+**Tests (DB8.1–DB8.8, port 3926):** every point on each series is the view's own `*_cum` column,
+per month (no re-derivation) · the curve accumulates — each point is the previous plus that month's
+values · the **four** distinct states (no baseline / baseline-not-measured / cost-but-no-plan /
+measured) give four different answers and none is a zeroed series · the stated Y scale covers the
+peak and rounds up to a readable step · the bars are the **per-period** figures while the curve is
+cumulative (same month, deliberately different numbers) · **the browser script contains no figure** ·
+the page renders, names its project, emits the JSON + the script tag, loads nothing from a CDN, and
+is scoped both ways · **the vendored bundle exists, is served, and matches the pinned sha256**, with
+the MIT notice shipped.
+
+**Gates:** `dump-schema.js --check` clean ✅ (no schema change); `python3 db/validate.py`
+ALL CHECKS PASS ✅; `test/dashboard.test.js` **8/8** ✅; full suite **486 → 494** ✅.
+
+---
+
 ## 13. Workflow coverage vs PRD §4
 
 The product workflow, step by step, and whether a test exists. **Empty rows are the real answer to

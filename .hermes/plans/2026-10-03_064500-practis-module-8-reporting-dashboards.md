@@ -10,8 +10,9 @@ currently report the opposite of the truth**, which Module 8 is the first module
 
 **Architecture:** unchanged layered pattern — `src/routes/<area>.js` (thin HTTP),
 `src/lib/<area>-service.js` (rules, all validation, all writes), `src/db/queries.js` (prepared
-statements), `views/` (EJS + `layout-app`). New: a reporting route group + a small SVG chart
-helper (there is no chart library, and the CSP forbids one — see F8).
+statements), `views/` (EJS + `layout-app`). New: a reporting route group + a **self-hosted
+Chart.js** (vendored, no CDN, no build step — see F8) with the chart **data and configuration built
+server-side** in `src/lib/chart-config.js` so every number is testable without a browser.
 
 **Scope:** plan § "MODULE 8" at `.hermes/plans/2026-09-30_140100-practis-forward-development.md:879`;
 TECH-SPEC §10 step 7; PRD §4.4 (Monitoring & Control), §5.2 (Cost Control), §5.3 (Revenue),
@@ -150,16 +151,58 @@ same `projectContext`. And note the **path-list trap**: a root-mounted router wi
 /login. Every new router needs its own scoped path array (`PAGE_PATHS`), and the array form is
 required — Express 5's `/x/{*path}` silently drops the guard on the bare prefix.
 
-### F8. Charts must be server-rendered SVG. There is no chart library and the CSP forbids one.
+### F8. Charts: **self-hosted Chart.js**, vendored — and the correction to what this finding first said.
 
-`assets/` holds only `app.css`, `fonts.css` and four Inter woff2 files. The CSP is
-`script-src 'self' 'nonce-…'` with **no `unsafe-eval`** (TECH-SPEC §3.6, the Alpine CSP build
-rationale). So: no CDN charting library, no `eval`-based template engine. An S-curve is a
-polyline; the honest implementation is a small helper that emits `<svg>` + `<path>` from an array
-of points, server-side, requiring no client JavaScript at all. **This is also the better product
-answer** — it prints correctly on the light print theme (PRD §5.4 / Q20c) and adds nothing to TBT.
+**REVISED 2026-10-03 on the owner's instruction (self-hosted Chart.js, not server-rendered SVG).**
+
+The first version of this finding said "the CSP forbids a chart library". **That was wrong, and the
+correction matters.** Measured against `src/lib/security-headers.js`:
+
+| Directive | Value | Does Chart.js 4.5.1 need it? |
+|---|---|---|
+| `script-src` | `'self' 'nonce-…'` | **No change.** A vendored file under `assets/` is `'self'`. The inline per-page config needs the nonce, which the layout already emits. |
+| `style-src` | `'self' 'unsafe-inline'` | **No change**, Chart.js writes inline styles. |
+| `img-src` | `'self' data:` | **No change** — canvas, not images. |
+| `worker-src` / `child-src` | *absent* | Falls back to `default-src 'self'`. Not needed. |
+| **`eval` / `new Function`** | *never used by Chart.js 4* | **This was the real hazard, and it is absent.** Verified below. |
+
+So the CSP needs **no relaxation at all**. The only genuine requirement is the `nonce` on the
+inline `<script>` that constructs the chart, which `security-headers.js:56` already provides as
+`res.locals.cspNonce` and `layout-app.ejs` already uses.
+
+**Verified, not assumed** (`/opt/data/cache/probe-chartjs.sh`, `probe-eval.sh`,
+`probe-chartjs-provenance.sh`):
+
+* Latest release **4.5.1**, **MIT**. UMD build `dist/chart.umd.min.js`, **208,522 bytes**.
+* **Zero real `eval` / `new Function` / `document.write`.** The one `eval` substring is a function
+  *named* `evaluateInteractionItems`; all four `Function` substrings are names (`isFunction`,
+  `_tickFormatFunction`). `node --check` passes.
+* **Provenance:** the CDN copy and the **npm registry tarball** (`chart.js-4.5.1.tgz`) are
+  **byte-identical** — `sha256 48444a82d4edcb5bec0f1965faacdde18d9c17db3063d042abada2f705c9f54a`.
+  Vendor **from the npm tarball**, not from a CDN, and pin that hash in the commit message.
+* **MIT obliges us to ship the notice.** `package/LICENSE.md` must be vendored beside the bundle
+  (`assets/vendor/chart.js/LICENSE.md`) and the `/*! … Chart.js v4.5.1 … MIT */` banner at the top
+  of the minified file **kept**. Minifiers are already told to leave it; do not strip it.
+
+**TECH-SPEC §3.6 is satisfied as written, not waived.** It says *"No CDN scripts in production.
+Pin and self-host Alpine, chart assets, and CSS/fonts."* This is precisely a self-hosted, pinned
+chart asset — the spec anticipated Chart.js, not SVG. The `assets/` dir has no build step, so
+vendoring one file is the whole install.
+
+**The one trade-off, recorded honestly:** Chart.js is **~204 KB to parse on every page that shows a
+chart**. On the target 2 GB VPS that is the largest script we serve. Mitigations: load it only on
+chart pages (never in `layout-app.ejs` globally), and the file is static so it caches. The charts
+here are read monthly, not streamed, so the cost is paid once per session.
+
+**Print still matters.** SVG prints as vector; a canvas prints as a bitmap, and as a **blank box**
+if the print fires before the script runs. PRD §5.4 wants these on a printed report, so every chart
+page must handle `beforeprint`. **Chart.js cannot be verified in a screenshot on this box**
+(headless Chrome is unreliable at 2 GB/no swap — see the chart-testing rule below), which is why
+the arithmetic lives server-side in `src/lib/chart-config.js` and the tests assert on **that JSON**,
+never on pixels.
+
 Existing CSS already provides `.kpi`, `.chip.ok/.wn/.bd/.nt/.bl` and a `.k4`/`.k2` grid, so
-traffic-light cards and KPI tiles need no new design system.
+traffic-light cards and KPI tiles still need no new design system.
 
 ### F9. `validate.py` pins the AR/AP arithmetic — the F1 fix must not move those figures.
 
@@ -530,35 +573,95 @@ with the row count unchanged, and states how many empty months it is hiding.
 
 ---
 
-## Part 8.6 — Project dashboard (S-curves, EVM trend, WBS drill-down)
+## Part 8.6 — Project dashboard (S-curves) — ✅ BUILT 2026-10-03
 
-**PRD §5.4:** *"EVM S-curves (project dashboard): PV from baseline (CBS monthly buckets), EV from
-ticks×CBS (internal, not BAST), AC from ledger actuals. Calendar-rendered."* Plus *"Project
-dashboard (PM/Controller): S-curves, EVM trend, cashflow actual vs forecast, WBS drill-down."*
+**Status: implemented, 8/8 DB8 tests green. No schema change. Charts are self-hosted Chart.js.**
 
-**Charts:** server-rendered SVG (F8). A helper `src/lib/svg-chart.js` emitting:
-`lineChart(points, {width, height, labels})` for the S-curve (PV/EV/AC as three paths on one axis,
-calendar x-axis), and a small `barChart` for per-period variance. **No client JavaScript, no
-library, prints cleanly.** Tests assert on the **emitted SVG's numeric attributes**, not on a
-screenshot — deterministic and diffable.
-The `Y` scale is a stated figure on the page (so a reader can check a point by hand), and an
-all-zero series renders as a labelled empty state rather than a flat line at 0 pretending to be
-data.
+Delivered as planned above, with these **measured outcomes and corrections**:
+
+* **The vendored asset is real and verified.** `assets/vendor/chart.js/chart.umd.min.js`,
+  208,522 bytes, sha256 `48444a82d4edcb5bec0f1965faacdde18d9c17db3063d042abada2f705c9f54a` —
+  **byte-identical to the npm registry tarball**, not merely to a CDN. `LICENSE.md` ships beside it
+  and the MIT banner is intact at the top of the file.
+* **`isMeasured` was wrong and is now two functions.** The first version judged "has this project
+  reached this month?" on the PER-PERIOD figures, so a project with a spread budget and no ticks
+  yet was told "nothing has been measured against the budget" while its budget sat there. Split
+  into `isMeasured` (per-period — correct for the bars) and `reached` (cumulative — correct for the
+  curve). **DB8.3 pins four states with four sentences.**
+* **The `<script src>` tag was missing** on the first render — page fine, JSON fine, canvases
+  present, library never loaded, charts blank. Caught by DB8.7. Worth noting **DB8.8 passed while
+  this was broken**: the file existed and hashed correctly; the *tag* did not. The two assertions
+  catch different halves and both are required.
+* **Empty states: four, not three.** The plan named three; building it exposed a fourth that the
+  real development database is actually in — **cost recorded but no baseline**. All four give
+  distinct sentences, and none returns a zeroed series.
+
+**Files:** NEW `assets/vendor/chart.js/{chart.umd.min.js,LICENSE.md}`; NEW
+`src/lib/chart-config.js` (pure, no DOM); NEW `views/project-dashboard.ejs`; NEW
+`test/dashboard.test.js` (DB8.1–DB8.8, port **3926**); `src/routes/reporting.js`,
+`views/reports-index.ejs`, `views/partials/sidebar.ejs` ("Project overview", beside Reports),
+`TEST_PLAN.md` §12q.
+
+**Suite: 486 → 494.**
+
+**Not carried over from the plan:** the **WBS drill-down**. There is no per-WBS-line cumulative EV
+source in the schema, and building one would mean a second implementation of the EVM maths this
+module has been bitten by repeatedly. The page links to `/progress` (ticks) and `/wbs` instead — a
+drill-down screen belongs in Module 9 or needs its own view, decided on its own evidence.
+
+**The separation that keeps this testable — the heart of the part.** Chart.js draws in the browser,
+and **a canvas cannot be asserted on in this environment** (headless Chrome is unreliable at 2 GB /
+no swap). So the arithmetic is **not** in the page script. It lives in a new server module:
+
+* `src/lib/chart-config.js` — pure, server-side, **no DOM**. Exports
+  `scurve(projectId)` → `{ labels, datasets:[{label:'Planned', data:[…], …}, Earned, Actual],
+  yMax, emptyReason }` and `bars(projectId)` for per-period variance. Every figure is read from the
+  *existing* single-computation sources — `v_evm_period` (pv/ev/ac per month) and `v_ledger_period`
+  (actual spend) — and **never re-derived**, the rule this module has been bitten by three times.
+  It reuses `forecast-service.latestCumulative()` so the chart's "as at" month cannot disagree with
+  the forecast and variance screens.
+* `views/project-dashboard.ejs` — serialises that object into a
+  `<script type="application/json" id="scurve-data" nonce="…">` block (exactly the pattern
+  `views/project-new.ejs:8` already uses for `terms-by-client`) and then a small nonce'd inline
+  script hands it to Chart.js. **No number is ever written in JavaScript** — the script only reads
+  the JSON and configures the library.
+
+**This is what makes the part reviewable:** every figure the chart draws is asserted on the JSON,
+in Node, with no browser at all. The browser script is reduced to plumbing — if it were wrong, the
+only symptom would be a blank canvas, which is exactly what DB8.8 checks for in the emitted markup.
+
+**Print.** Every chart page carries a `beforeprint` handler that re-renders at the paper aspect and
+a `matchMedia('print')` fallback, because a canvas printed before its script runs is a **blank box**
+on a report a reader is holding. Stated on the page too — a printed report must not silently lose
+the chart.
+
+**Empty states, not fake lines.** A project with no baseline, or with nothing measured, renders a
+**labelled sentence** in the chart's place (`emptyReason`) — never a flat line at zero pretending to
+be data. The `Y` scale is printed as a figure on the page so a reader can check a point by hand.
 
 **Screens:** `GET /projects/:id/overview` (the screen map's Project Overview — **it does not exist
 today**; only `/?project=N` does) as `/reports/project`, with the current UI's project switcher
 carried over. WBS drill-down: a line's cumulative PV/EV/AC for the selected period, read through the
 same service — never a second implementation of the EVM maths.
 
-**Files:** NEW `src/lib/svg-chart.js`, NEW `views/project-dashboard.ejs`, `src/routes/reporting.js`
-(+route), NEW `test/dashboard.test.js` (DB8.1–DB8.8, port **3926**), `TEST_PLAN.md`, plan,
-`views/partials/sidebar.ejs`.
+**Files:** NEW `assets/vendor/chart.js/chart.umd.min.js` (**168 KB → the pinned 4.5.1 build, sha256
+`48444a82…c9f54a`**, vendored from the npm tarball) + `assets/vendor/chart.js/LICENSE.md` (MIT
+requires the notice ship with it), NEW `src/lib/chart-config.js`, NEW
+`views/project-dashboard.ejs`, `src/routes/reporting.js` (+route), NEW `test/dashboard.test.js`
+(DB8.1–DB8.8, port **3926**), `TEST_PLAN.md`, plan, `views/partials/sidebar.ejs`.
 
-**Tests:** the SVG contains one point per month with the **hand-computed** cumulative value; a
-project with **no** baseline renders the empty state, not a broken chart; PV/EV/AC match
-`v_evm_period` exactly (no re-derivation); the drill-down total equals the sum of its lines; the
-page is scoped — a PM on project A gets **403 + unchanged row count** asking for project B;
-capability gating (a viewer without `canViewPortfolio` cannot open another project's dashboard).
+**Tests (assert on the JSON and the emitted markup — never on a screenshot):**
+`chart-config.scurve()` has one point per month with the **hand-computed** cumulative value · PV/EV/AC
+are **byte-identical to `v_evm_period`** (the no-re-derivation property) · a project with **no**
+baseline returns a labelled `emptyReason` and NOT a zeroed series · the "as at" month equals the
+forecast screen's (the cross-screen agreement pin) · the Y scale is stated and covers the largest
+datum · the page emits the JSON block **and** the vendored script tag, and the script tag points at
+a file that **actually exists on disk** (a 404'd chart script is a blank canvas nobody notices) ·
+the vendored file's sha256 **matches the pinned hash** (so an accidental re-vendor or hand-edit
+fails the suite) · the browser script contains **no monetary figure** (the separation is enforced,
+not just documented) · the drill-down total equals the sum of its lines · the page is scoped — a PM
+on project A gets **403 + unchanged row count** asking for project B · capability gating (a viewer
+without `canViewPortfolio` cannot open another project's dashboard).
 
 ---
 
@@ -636,7 +739,11 @@ state.
 `021_receivable_due_date.sql` (8.2), possibly `022_evm_variance.sql` (8.5, decide from the code).
 
 **New — services:** `src/lib/forecast-service.js`, `src/lib/revenue-service.js`,
-`src/lib/svg-chart.js`, possibly `src/lib/evm-service.js`.
+`src/lib/chart-config.js` (server-side chart data + config; replaced the planned `svg-chart.js` on
+2026-10-03 when charts moved to self-hosted Chart.js — see F8), possibly `src/lib/evm-service.js`.
+
+**New — vendored asset:** `assets/vendor/chart.js/chart.umd.min.js` + its `LICENSE.md` (Chart.js
+4.5.1, MIT, sha256 `48444a82…c9f54a`, vendored from the npm tarball; no CDN, no build step).
 
 **New — routes:** `src/routes/reporting.js`.
 
@@ -671,9 +778,11 @@ EV7.6), `v_evm_period`'s `spi`/`cpi` guard (pinned by EV7.1/7.5), anything in Mo
   is not a security test — it is what missed B1–B3).
 - **Every expected number is hand-computed in a comment.** A test that reads its expectation back
   out of the code under test proves nothing.
-- Charts and dashboards assert on **emitted markup/numbers**, never on a screenshot: headless
-  Chrome is unreliable on this 2 GB no-swap host (memory: bound every browser wait; prefer
-  server-rendered evidence).
+- Charts and dashboards assert on the **server-built JSON and the emitted markup**, never on a
+  screenshot or a canvas: headless Chrome is unreliable on this 2 GB no-swap host (memory: bound
+  every browser wait; prefer server-rendered evidence). This is why the chart figures live in
+  `src/lib/chart-config.js` and the browser script only reads them — a canvas drawn by client
+  JavaScript is **unverifiable here**, so the numbers must be assertable before they reach it.
 
 ---
 
@@ -691,7 +800,8 @@ EV7.6), `v_evm_period`'s `spi`/`cpi` guard (pinned by EV7.1/7.5), anything in Mo
 | **A new root-mounted router answering 404s with /login** | the Express-5 path-list trap, already hit twice | every new router gets its own `PAGE_PATHS` array; MS6.8 covers the sidebar half |
 | **Port collision** | two test files on one port fail nondeterministically | 3921–3928 measured free; grep `PORT = ` before every commit |
 | **Scope creep across 8 parts** | context loss; a red suite with no attribution | one commit per part; stop for review after each; suite green before the next |
-| **Charts needing client JS** | CSP forbids `unsafe-eval`; a CDN chart lib is a supply-chain risk and breaks print | server-rendered SVG (F8), zero client JS |
+| **Charts needing client JS** | a CDN chart lib is a supply-chain risk and breaks print; an unpinned vendored copy drifts | **self-hosted Chart.js from the npm tarball only**, sha256 pinned and asserted in the suite; figures built server-side in `chart-config.js` so they stay testable without a browser (F8) |
+| **Chart script 404s, or is dropped in a refactor** | the page looks perfectly fine, the canvas is blank, and nobody notices | DB8.8 asserts the emitted script tag resolves to a file **on disk**, and that the vendored sha256 matches the pinned hash |
 
 ---
 
@@ -711,14 +821,31 @@ These are now binding spec; the build must not deviate without a new decision.**
 
 **Already-decided defaults in this plan, flagged rather than re-asked** (say so if you disagree):
 the traffic-light threshold is 0.95 read from `app_settings`; a blank index is grey;
-charts are server-rendered SVG; the module is eight parts in the order above.
+**charts are self-hosted Chart.js with the figures built server-side** (revised 2026-10-03 on the
+owner's instruction — was server-rendered SVG, see F8); the module is eight parts in the order above.
 
 ---
 
 ## 7. Immediate next action
 
-**Write nothing until D1–D5 are answered.** Then: Part 8.1 first — migration 020, `test/reporting.test.js`
-on port 3921, suite 446 → 452+, gates green, commit, STOP for review before 8.2.
+**8.1–8.5 are built and pushed** (8.1 `2fe33f8`, 8.2 `d33ae8b`, 8.3 `aaaec49`, 8.4 `655228b`,
+8.5 `6a15a0c`). Migrations **020, 021, 022** are on disk; suite floor is **486**.
 
-Note for the VPS when this ships: migrations **016–021** (and 022 if 8.5 needs it) apply on
-start-up, and `node src/db/seed-master.js` still has to be run **once** — unchanged from Module 7.
+**Next: Part 8.6 — the project dashboard.** Order of work, given the chart decision (F8):
+
+1. **Vendor Chart.js first, and verify it.** `assets/vendor/chart.js/chart.umd.min.js` +
+   `LICENSE.md`, taken from the **npm tarball** for 4.5.1 (not a CDN), sha256
+   `48444a82d4edcb5bec0f1965faacdde18d9c17db3063d042abada2f705c9f54a`, banner and notice kept.
+   Confirm the hash matches *after* copying into the repo — this is the step that fails silently if
+   skipped.
+2. `src/lib/chart-config.js` — `scurve()` / `bars()`, pure and server-side, reading
+   `v_evm_period` + `v_ledger_period` and reusing `forecast-service.latestCumulative()`. **No DOM.**
+3. `views/project-dashboard.ejs` — JSON block (`application/json` + nonce) + a nonce'd inline
+   script that only reads it, plus the `beforeprint` handler.
+4. `test/dashboard.test.js` (DB8.1–DB8.8, **port 3926**) — assert on the JSON, the emitted markup,
+   the **script file's existence on disk**, and the **vendored sha256**. Never a screenshot.
+5. Gates: `dump-schema.js --check`, `db/validate.py`, new test file green, **full suite 486 → 494**,
+   then commit and **STOP for review**.
+
+Note for the VPS when this ships: migrations **016–022** apply on start-up, and
+`node src/db/seed-master.js` still has to be run **once** — unchanged from Module 7.

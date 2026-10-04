@@ -37,7 +37,10 @@ const { projectContext } = require('../middleware/scope');
 // `router.use(requirePage)` on a root-mounted router runs for EVERY request in the app and
 // would answer unknown URLs with a redirect to /login instead of a 404. An ARRAY, and every
 // path this router serves must appear in it.
-const REPORT_PATHS = ['/reports', '/reports/aging'];
+// Cripples every guarded path on this router, and the plan/lesson is explicit that the ARRAY
+// form is required: Express 5's `/x/{*path}` silently drops the guard on the bare prefix, so a
+// non-array mount here would leak this router's pages past `requirePage`. Array it is.
+const REPORT_PATHS = ['/reports', '/reports/aging', '/reports/project'];
 router.use(REPORT_PATHS, requirePage, projectContext);
 
 // Refuse a page the signed-in user has no role for — a rendered 403 with the reason, never a
@@ -122,6 +125,48 @@ router.get('/reports', guard, (req, res) => {
     `${project.name} · what we are owed, and how late it is`,
     `${project.name} / Reports`, 'reports-index', {
       project, tiles: bucketTiles(rows), total: rows.length,
+    });
+});
+
+// GET /reports/project — the Project Overview: the S-curves, the period bars and the headline
+// figures for ONE project (PRD §5.4: "Project dashboard (PM/Controller): S-curves, EVM trend,
+// cashflow actual vs forecast, WBS drill-down").
+//
+// NOT gated on a write capability. A dashboard is a read: PRD §5.2 asks for this report, and
+// PRD §5.4 gives "EVM trend" to readers the write gates (entering the budget, entering the
+// forecast) deliberately exclude. The boundary that matters — who may CHANGE these figures — is
+// enforced on the screens that write them, where it belongs.
+//
+// STILL PROJECT-SCOPED. `projectContext` resolves `?project=N` and the BOLA rule applies: a
+// scoped user asking for another project gets the same refusal as everywhere else, because the
+// scoping middleware is mounted on this path above. DB8.7 asserts that with an unchanged row
+// count, not just a status code.
+router.get('/reports/project', (req, res) => {
+  const project = res.locals.project;
+  if (!project) {
+    return page(res, 'Project overview', 'No project is in scope for your account',
+      'Reports', 'project-dashboard', {
+        project: null, curve: null, bars: null, eac: null, chartSrc: null,
+      });
+  }
+
+  const chart = require('../lib/chart-config');
+  const dash = chart.dashboard(project.id);
+
+  // The chart script is served from `assets/`, which `express.static` mounts at the root. Emitted
+  // here (not in layout-app.ejs) so that ONLY the pages with a chart carry the 204 KB download.
+  // DB8.8 asserts this file exists on disk — a 404 here is a blank canvas and nothing else.
+  const chartSrc = '/vendor/chart.js/chart.umd.min.js';
+
+  return page(res, 'Project overview',
+    `${project.name} · planned, earned and actual, month by month`,
+    `${project.name} / Project overview`, 'project-dashboard', {
+      active: 'Overview',
+      project,
+      curve: dash.curve,
+      bars: dash.bars,
+      eac: dash.eac,
+      chartSrc,
     });
 });
 

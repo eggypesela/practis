@@ -1,0 +1,215 @@
+<%# Project overview / S-curves (module 8 part 8.6; PRD §5.4 "Project dashboard (PM/Controller):
+    S-curves, EVM trend, cashflow actual vs forecast, WBS drill-down").
+
+    HOW THIS PAGE IS BUILT, and why it is shaped this way
+
+    Every figure is computed on the SERVER, in src/lib/chart-config.js, and arrives here as a
+    plain object. This template writes that object into a `application/json` block and hands it to
+    Chart.js. **There is not a single monetary figure in the JavaScript below** — the script only
+    reads the JSON and configures the library. That is not tidiness: a canvas drawn by client
+    JavaScript cannot be asserted on in this environment (no reliable headless Chrome on a 2 GB
+    box), so anything computed in the browser would be untested. DB8.6 asserts that the script
+    contains no figures, so the separation cannot quietly rot.
+
+    EMPTY STATES. `curve.emptyReason` is a sentence, not a zeroed series. A line flat at zero is
+    the shape of a bug, not a fact: three different situations (no budget / budget but nothing
+    measured / measured but empty) each get their own wording, because the thing the reader should
+    go and do differs in each case. %>
+<% const money = (n) => 'Rp ' + fmt(Math.round(Number(n) || 0)); %>
+<% const k = (n) => {
+     const v = Math.round(Number(n) || 0);
+     return Math.abs(v) >= 1e9 ? 'Rp ' + (v / 1e9).toFixed(2) + ' mld'
+       : Math.abs(v) >= 1e6 ? 'Rp ' + (v / 1e6).toFixed(2) + ' jt'
+         : 'Rp ' + v.toLocaleString('en-US');
+   }; %>
+
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-book"/></svg>Approved budget (BAC)</div>
+    <div class="v sm"><%= curve && curve.bac ? k(curve.bac) : '—' %></div>
+    <div class="f"><%= curve && curve.bac ? 'the plan, unchanged by this page'
+      : 'no cost baseline yet' %></div></div>
+
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-tree"/></svg>Earned to date (EV)</div>
+    <div class="v sm"><%= curve && curve.datasets.length
+      ? k(curve.datasets.find((d) => d.key === 'ev').data.slice(-1)[0]) : '—' %></div>
+    <div class="f"><%= curve && curve.asAt ? 'as at ' + curve.asAt + ' · internal progress, not client acceptance'
+      : 'nothing measured yet' %></div></div>
+
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-chart"/></svg>Cost to date (AC)</div>
+    <div class="v sm"><%= curve && curve.datasets.length
+      ? k(curve.datasets.find((d) => d.key === 'ac').data.slice(-1)[0]) : '—' %></div>
+    <div class="f">booked against this project</div></div>
+
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-check"/></svg>Estimate at completion</div>
+    <% if (eac && eac.eac !== null) { %>
+      <div class="v sm"><%= k(eac.eac) %></div>
+      <div class="f"><%= eac.vac >= 0 ? '≈ ' + k(eac.vac) + ' under budget'
+        : '≈ ' + k(Math.abs(eac.vac)) + ' over budget' %><%= eac.cpi_month ? ' · from ' + eac.cpi_month : '' %></div>
+    <% } else { %>
+      <div class="v sm" style="color:var(--mut)">Not measured</div>
+      <div class="f">needs earned value to project from</div>
+    <% } %></div>
+</div>
+
+<% if (curve && curve.emptyReason) { %>
+<div class="card" style="margin-top:12px"><div class="fbody">
+  <p style="margin:0"><b>No S-curve to draw yet.</b> <%= curve.emptyReason %></p>
+  <p class="dim" style="margin:8px 0 0">A flat line at zero would look like a project that has
+    been measured and found to be on plan. It has not been measured at all — so the chart is left
+    out rather than drawn misleadingly. <a href="/cbs">Set the budget</a> ·
+    <a href="/progress">Record progress</a> · <a href="/ledger">Book cost</a></p>
+</div></div>
+<% } %>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd">
+    <h2>Planned, earned and actual</h2>
+    <span class="r">cumulative<%= curve && curve.asAt ? ' · as at ' + curve.asAt : '' %></span>
+  </div>
+  <div class="fbody">
+    <% if (curve && !curve.emptyReason) { %>
+      <div style="position:relative;height:340px">
+        <canvas id="curve" aria-label="Cumulative planned, earned and actual cost by month"
+          role="img"></canvas>
+      </div>
+      <p class="dim" style="margin:10px 0 0">
+        Three running totals on one axis, so they can be compared directly.
+        <b>Planned</b> is the approved baseline. <b>Earned</b> is how much of that budget the work
+        done is worth — measured from internal progress ticks, <b>not</b> from client acceptance.
+        <b>Actual</b> is cost booked in the ledger. Where earned sits below planned the project is
+        behind; where actual sits above earned it is overspending.
+      </p>
+      <p class="dim" style="margin:8px 0 0">
+        The vertical scale is stated: <b><%= k(curve.yMax) %></b> at the top
+        <%= curve.bac ? '(the approved budget is ' + k(curve.bac) + ')' : '' %>, so a point can be
+        checked by hand.
+      </p>
+    <% } else { %>
+      <p class="dim" style="margin:0">The chart appears once the project has a budget and something
+        has been measured against it.</p>
+    <% } %>
+  </div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd">
+    <h2>Month by month</h2>
+    <span class="r">not cumulative — the month on its own</span>
+  </div>
+  <div class="fbody">
+    <% if (bars && !bars.emptyReason) { %>
+      <div style="position:relative;height:240px">
+        <canvas id="bars" aria-label="Planned, earned and actual cost for each recent month"
+          role="img"></canvas>
+      </div>
+      <p class="dim" style="margin:10px 0 0">
+        The running total above can hide a bad month inside a good history. These bars are each
+        month on its own, over the last <%= bars.points %> measured
+        month<%= bars.points === 1 ? '' : 's' %>, so a month that went wrong is visible as itself.
+        Same figures, read at a different granularity — nothing is recalculated for this chart.
+      </p>
+    <% } else { %>
+      <p class="dim" style="margin:0"><%= bars ? bars.emptyReason : 'Nothing has been measured yet.' %></p>
+    <% } %>
+  </div>
+</div>
+
+<div class="card" style="margin-top:12px"><div class="fbody">
+  <p class="dim" style="margin:0">Figures on this page are read from the same place every other
+    screen reads them (<code>v_evm_period</code>), so this dashboard cannot disagree with the cost
+    report underneath it. The <b>Earned</b> line is internal progress, not client acceptance —
+    revenue is recognised from accepted milestones, never from these ticks.
+    <a href="/progress">Progress</a> · <a href="/cbs">Budget</a> ·
+    <a href="/reports/variance">Variance</a> · <a href="/reports/forecast">Forecast</a></p>
+</div></div>
+
+<% if (curve && !curve.emptyReason) { %>
+<%# THE LIBRARY ITSELF. Loaded here, per page, rather than in layout-app.ejs, so only the pages
+    that actually draw a chart pay the 204 KB. NOT `defer`: this tag is synchronous on purpose, so
+    that `Chart` is defined by the time the inline script below runs. With `defer` the library
+    would execute AFTER the inline script had already given up on an undefined `Chart`, and the
+    canvas would be blank — the exact failure DB8.8 exists to catch, and the reason this tag is
+    asserted in the markup by DB8.7 rather than assumed. %>
+<script src="<%= chartSrc %>"></script>
+<script type="application/json" id="scurve-data" nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>"><%- JSON.stringify({
+     curve: { labels: curve.labels, datasets: curve.datasets, yMax: curve.yMax },
+     bars: bars && !bars.emptyReason
+       ? { labels: bars.labels, datasets: bars.datasets, yMax: bars.yMax } : null,
+     source: chartSrc,
+   }) %></script>
+<script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>">
+// Draws the two charts from the JSON block above. NOTE: this script contains no figures — every
+// number, label and scale comes from the server-built JSON. Do not compute anything here; if a
+// figure needs to change it changes in src/lib/chart-config.js, where it can be tested.
+(function () {
+  var el = document.getElementById('scurve-data');
+  if (!el) return;
+  var data;
+  try { data = JSON.parse(el.textContent); } catch (e) { return; }
+  if (typeof Chart === 'undefined') return;  // script blocked or not yet loaded
+
+  var box = { responsive: true, maintainAspectRatio: false, animation: false };
+  var money = function (v) { return 'Rp ' + Number(v).toLocaleString('en-US'); };
+  var axes = function (yMax) {
+    return {
+      x: { grid: { display: false } },
+      y: {
+        beginAtZero: true,
+        suggestedMax: yMax,
+        ticks: { callback: function (v) { return Number(v).toLocaleString('en-US'); } },
+      },
+    };
+  };
+  // A tooltip that shows the rupiah figure AND the month — the whole point of an interactive
+  // chart over a printed one, and the reason this page carries a 204 KB library.
+  var tip = {
+    callbacks: {
+      label: function (c) {
+        return c.dataset.label + ': ' + money(c.parsed.y !== undefined ? c.parsed.y : c.parsed);
+      },
+    },
+  };
+  var line = function (ds) {
+    return {
+      label: ds.label, data: ds.data, borderColor: ds.colour,
+      backgroundColor: ds.colour, borderWidth: 2, pointRadius: 3, tension: 0.25, fill: false,
+    };
+  };
+  var barsets = function (ds) {
+    return {
+      label: ds.label, data: ds.data, backgroundColor: ds.colour, borderWidth: 0,
+    };
+  };
+
+  if (data.curve) {
+    new Chart(document.getElementById('curve'), {
+      type: 'line',
+      data: { labels: data.curve.labels, datasets: data.curve.datasets.map(line) },
+      options: Object.assign({}, box, { scales: axes(data.curve.yMax), plugins: { tooltip: tip, legend: { position: 'bottom' } } }),
+    });
+  }
+  if (data.bars) {
+    new Chart(document.getElementById('bars'), {
+      type: 'bar',
+      data: { labels: data.bars.labels, datasets: data.bars.datasets.map(barsets) },
+      options: Object.assign({}, box, { scales: axes(data.bars.yMax), plugins: { tooltip: tip, legend: { position: 'bottom' } } }),
+    });
+  }
+
+  // PRINT. A canvas prints as a bitmap, and as a BLANK BOX if the print fires before the script
+  // has drawn. PRD §5.4 wants these on a printed report a reader is holding, so redraw at the
+  // paper aspect before the print engine captures the page, and once after (some browsers
+  // snapshot early — 100ms is the cheapest reliable nudge, and it only runs when printing).
+  var redraw = function () {
+    Object.values(Chart.instances || {}).forEach(function (c) { c.resize(); c.update('none'); });
+  };
+  if (window.matchMedia) {
+    var mq = window.matchMedia('print');
+    if (mq.addEventListener) mq.addEventListener('change', redraw);
+    else if (mq.addListener) mq.addListener(redraw);
+  }
+  window.addEventListener('beforeprint', redraw);
+  window.addEventListener('afterprint', function () { setTimeout(redraw, 100); });
+})();
+</script>
+<% } %>
