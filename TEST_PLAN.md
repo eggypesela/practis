@@ -1241,6 +1241,68 @@ user is shown no project name and no rupiah figure.
 
 ---
 
+## 12s. RV8 — Revenue recognition — ✅ IMPLEMENTED 2026-10-03
+
+PRD §5.3: four methods on `projects.revenue_method` — `milestone`, `poc`, `time_based`,
+`on_billing`. Screen: `GET /reports/revenue`. **No migration** — `revenue_recognized` has existed
+since migration 001 and `app_settings` already carried what was needed.
+
+**THE CENTRAL RULE, and the fixture that makes it testable:** `poc` reads the **BAST acceptance %**
+from `acceptance_register` — **never** the internal tick %. The fixture is built so the two numbers
+**deliberately differ** (BAST 40%, internal 50%): if they were equal, an assertion that "POC used
+BAST" would pass whichever column the code read and the test would prove nothing. RV8.3 asserts
+which number was used, and that the stored `basis_pct` is 40 — checkable after the fact.
+
+**A submitted certificate is not acceptance.** RV8.4 pins that only `status = 'accepted'` counts
+(40%, not 40+25), then accepts the second certificate and watches the basis move to 65%.
+
+**Four measured states, not one:**
+| State | What the screen says |
+|---|---|
+| `revenue_method` NULL | "No revenue method is set…" + the four offered. **MEASURED: the live project is here**, so this is the first state a real user meets. |
+| configured, no basis | 0 recognised **with the reason** (no approved certificate / no contract window) |
+| configured, has a basis | the figures |
+| any month | the four methods side by side, so the POC-vs-internal gap is visible rather than asserted |
+
+**A DEFECT THE TESTS CAUGHT — in this part's own service.** The first draft computed the month's
+increment as `cumulative(this month) − SUM(cumulative of all earlier rows)`. Summing the column
+**double-counts**, because every row already carries the running total. On a straight-line project
+that produced Jan 1,000,000 / Feb 1,000,000 / **Mar 0** — and would then go negative. Corrected to
+the **latest prior row's cumulative** (`priorCumulative`), and asserted directly so the shape cannot
+come back. This is a good example of why the plan requires every expected number to be hand-computed
+in a comment: the wrong version looked entirely plausible and produced a number.
+
+**Deliberate choices, recorded because the plan required them:**
+* **A second recognition in the same month is an UPSERT, not a refusal.** `UNIQUE (project_id,
+  period_month)` means the naive implementation throws a raw SQLite error at the user. Upsert is
+  chosen because a certificate approved late or corrected must be able to change an already-
+  recognised month — a refusal would leave the register permanently wrong. The upsert is **audited
+  with before and after**, and RV8.6 asserts the constraint still holds underneath.
+* **A frozen month cannot be changed.** Read from `frozen_periods` (per-project, keyed
+  `(project_id, period_month)` — there is no `periods` table). **No trigger covers
+  `revenue_recognized`** (migration 011 covers the ledger and LPB only), so this check is the only
+  thing enforcing it. Asserted.
+* **Recognition posts NO ledger line.** RV8.7 asserts the ledger row count is unchanged — it is not
+  a cash movement.
+* **Invariant 10 as three figures:** on one period, recognised 4,000,000 / billed 3,000,000 /
+  received 2,000,000 — asserted to be three *different* numbers, because if any two matched the
+  assertion would prove nothing.
+* **No default method.** Recognising without a method is refused with a reason rather than guessing.
+
+**Write boundary, asserted on the DATABASE.** A Viewer **may read** the page (200) and gets **403**
+on both writes, with the row count and the stored method **unchanged** — not a status-code-only
+assertion. The viewer's page does not offer the forms it cannot submit.
+
+**Files:** NEW `src/lib/revenue-service.js`, NEW `views/revenue.ejs`, NEW `test/revenue.test.js`
+(RV8.1–RV8.9, port **3928**); MOD `src/routes/reporting.js` (2 routes + `/reports/revenue` in
+`REPORT_PATHS` + `page()` honours a per-page `active`), `views/partials/sidebar.ejs`,
+`views/reports-index.ejs`, `TEST_PLAN.md`, plan.
+
+**Gates:** `dump-schema.js --check` clean ✅; `db/validate.py` ALL CHECKS PASS ✅;
+`test/revenue.test.js` **9/9** ✅; full suite **503 → 512** ✅.
+
+---
+
 ## 13. Workflow coverage vs PRD §4
 
 The product workflow, step by step, and whether a test exists. **Empty rows are the real answer to

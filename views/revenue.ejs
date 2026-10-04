@@ -1,0 +1,228 @@
+<%# Revenue recognition (module 8 part 8.8; PRD §5.3).
+
+    THE STORY THIS SCREEN HAS TO TELL, and the four states it distinguishes:
+
+    1. NOT CONFIGURED. `revenue_method` is NULL. MEASURED: this is the state the live project is
+       in, so it is the first thing a real user meets. Shown as a stated empty state with the four
+       methods offered — never as "0 recognised", which would read as "this project has earned
+       nothing" when it means "nobody has said which rule applies".
+
+    2. CONFIGURED, NO BASIS. A method is set and has nothing to work from: no approved certificate,
+       no contract window. 0 recognised, with the reason spelled out.
+
+    3. RECOGNISED. The register below, month by month.
+
+    4. THE FOUR ANSWERS SIDE BY SIDE. Because the interesting number for `poc` is the GAP between
+       what the client has accepted (BAST) and what we have ticked internally. The PRD is emphatic
+       that `poc` follows BAST; showing both makes that visible instead of asking the reader to
+       take it on trust. `preview.internalPct` is the internal figure and is used for NOTHING else.
+
+    INVARIANT 10 IS THREE FIGURES, NOT ONE. "billed ≠ recognized ≠ received" — the register shows
+    all three per month, cumulative, so a month where we invoiced more than we recognised, or
+    received less than we invoiced, is visible rather than averaged away. %>
+<% const money = (n) => 'Rp ' + fmt(n || 0); %>
+<% const m = (v) => v == null ? '—' : Number(v); %>
+
+<% if (errors && errors.length) { %>
+<div class="card" style="margin-bottom:12px"><div class="fbody">
+  <p class="wn" style="margin:0"><b>Not done.</b> <%= errors.join(' ') %></p>
+</div></div>
+<% } %>
+<% if (notice) { %>
+<div class="card" style="margin-bottom:12px"><div class="fbody">
+  <p style="margin:0"><b>Recorded.</b> <%= notice %></p>
+</div></div>
+<% } %>
+
+<% if (!project) { %>
+<div class="card"><div class="fbody">
+  <p class="dim">No project is in scope for your account, so there is nothing to recognise.</p>
+</div></div>
+<% } else { %>
+
+<%# ---- the headline figures: the three invariant-10 numbers, never one ---- %>
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-book"/></svg>Contract value</div>
+    <div class="v sm"><%= money(reg.contract) %></div>
+    <div class="f"><%= project.code %></div></div>
+
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-chart"/></svg>Recognised</div>
+    <div class="v sm"><%= money(reg.recognizedTo) %></div>
+    <div class="f"><%= reg.pctRecognized %>% of contract</div></div>
+
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-out"/></svg>Invoiced</div>
+    <div class="v sm"><%= money(reg.billedTo) %></div>
+    <div class="f">these are not the same figure</div></div>
+
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-in"/></svg>Received</div>
+    <div class="v sm"><%= money(reg.receivedTo) %></div>
+    <div class="f">cash actually in</div></div>
+</div>
+
+<%# ---- which method is in force, and why ---- %>
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Revenue method</h2>
+    <span class="r"><%= reg.method ? reg.methodLabel.name : 'Not configured' %></span></div>
+  <div class="fbody">
+  <% if (!reg.method) { %>
+    <p><b>No revenue method is set for this project, so nothing can be recognised yet.</b></p>
+    <p class="dim" style="margin:6px 0 0">
+      A project is not defaulted to a method on purpose — which of the four applies is a commercial
+      decision about how this contract is billed and accepted, and guessing it would post revenue
+      under a rule nobody chose. Choose one below and the projection appears.
+    </p>
+  <% } else { %>
+    <p style="margin:0"><b><%= reg.methodLabel.name %></b> — recognises
+      <b><%= reg.methodLabel.basis %></b>.</p>
+    <p class="dim" style="margin:6px 0 0"><%= reg.methodLabel.note %></p>
+  <% } %>
+
+  <% if (canManage) { %>
+  <form method="post" action="<%= methodAction %>" style="margin-top:10px">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <div class="fgrid">
+      <label class="fld">Method
+        <select name="method" required>
+          <% methods.forEach(function(k){ %>
+          <option value="<%= k %>" <%= reg.method === k ? 'selected' : '' %>><%= methodLabels[k].name %></option>
+          <% }); %>
+        </select>
+      </label>
+      <label class="fld">&nbsp;<button class="btn" type="submit">Set method</button></label>
+    </div>
+    <p class="dim" style="margin:6px 0 0;font-size:12px">
+      Changing the method affects FUTURE recognitions. Months already recognised keep the figures
+      that were posted, and are listed in the register below.
+    </p>
+  </form>
+  <% } else { %>
+  <p class="dim" style="margin:10px 0 0">Only the Cost Controller or the Project Manager can change
+    this.</p>
+  <% } %>
+  </div>
+</div>
+
+<%# ---- the four methods, side by side, for the chosen month ---- %>
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>What each method would recognise</h2>
+    <span class="r"><%= month || 'no month selected' %></span></div>
+  <div class="tw"><table>
+    <thead><tr>
+      <th>Method</th><th>Basis</th><th class="r">Basis %</th>
+      <th class="r">Cumulative</th><th class="r">This month</th><th>What it means</th>
+    </tr></thead>
+    <tbody>
+      <% methods.forEach(function(k){ const d = preview.methods[k]; const isOn = reg.method === k; %>
+      <tr <%= isOn ? 'style="background:var(--accent-soft)"' : '' %>>
+        <td><b><%= d.label.name %></b><% if (isOn) { %> <span class="chip bl">in force</span><% } %></td>
+        <td class="dim" style="font-size:12px"><%= d.label.basis %></td>
+        <td class="r mono"><%= d.pct === null ? '—' : d.pct + '%' %></td>
+        <td class="r mono"><%= d.cumulativeAmount === null ? '—' : money(d.cumulativeAmount) %></td>
+        <td class="r mono"><%= d.periodAmount === null ? '—' : money(d.periodAmount) %></td>
+        <td class="dim" style="font-size:12px">
+          <% if (d.reason) { %><%= d.reason %><% } else { %>ready to recognise<% } %>
+        </td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table></div>
+
+  <% if (preview.methods.poc && preview.methods.poc.detail) { %>
+  <div class="fbody">
+    <p class="dim" style="margin:0">
+      <b>Why POC and the internal percentage can differ.</b>
+      The client has accepted <b><%= preview.methods.poc.detail.pct %>%</b>
+      (<%= preview.methods.poc.detail.certificates %> accepted certificate<%= preview.methods.poc.detail.certificates === 1 ? '' : 's' %>),
+      while our own progress ticks say <b><%= preview.internalPct === null ? 'nothing' : preview.internalPct + '%' %></b>.
+      Under POC we recognise the <b>client's</b> figure — revenue follows acceptance, not our own
+      optimism. The internal figure is shown here for comparison only and is never the basis.
+      <% if (preview.methods.poc.detail.capped) { %>
+      <b class="wn">The certificates total more than 100%, so the basis was capped at 100%. That
+      means overlapping certificates — worth checking the register.</b>
+      <% } %>
+    </p>
+  </div>
+  <% } %>
+</div>
+
+<%# ---- recognise a month ---- %>
+<% if (canManage) { %>
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Recognise a month</h2></div>
+  <div class="fbody">
+  <% if (!reg.method) { %>
+    <p class="dim" style="margin:0">Set a revenue method above first — there is no rule to
+      recognise under yet.</p>
+  <% } else { %>
+    <form method="post" action="<%= recognizeAction %>">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="fgrid">
+        <label class="fld">Month
+          <input type="month" name="period_month" value="<%= month || '' %>" required>
+        </label>
+        <label class="fld">&nbsp;<button class="btn" type="submit">Recognise</button></label>
+      </div>
+      <p class="dim" style="margin:6px 0 0;font-size:12px">
+        Recognising <b>replaces</b> any figure already recorded for that month, so a certificate
+        approved late or a corrected one can be brought in. The change is recorded with its before
+        and after. A closed month cannot be changed.
+      </p>
+    </form>
+  <% } %>
+  </div>
+</div>
+<% } %>
+
+<%# ---- the register ---- %>
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Recognition register</h2>
+    <span class="r"><%= reg.rows.length %> month<%= reg.rows.length === 1 ? '' : 's' %>
+      recognised</span></div>
+  <div class="tw"><table>
+    <thead><tr>
+      <th>Month</th><th>Method</th><th class="r">Basis %</th>
+      <th class="r">This month</th><th class="r">To date</th>
+      <th class="r">Invoiced to date</th><th class="r">Received to date</th>
+    </tr></thead>
+    <tbody>
+      <% if (!reg.rows.length) { %>
+      <tr><td colspan="7" class="dim">
+        Nothing has been recognised yet<% if (!reg.method) { %> — no method is set<% } %>.
+      </td></tr>
+      <% } %>
+      <% reg.rows.forEach(function(r){ %>
+      <tr>
+        <td class="mono"><%= r.period_month %></td>
+        <td><%= methodLabels[r.method] ? methodLabels[r.method].name : r.method %></td>
+        <td class="r mono"><%= r.basis_pct === null ? '—' : r.basis_pct + '%' %></td>
+        <td class="r mono"><%= money(r.amount) %></td>
+        <td class="r mono"><%= money(r.cumulative) %></td>
+        <td class="r mono dim"><%= money(r.billedTo) %></td>
+        <td class="r mono dim"><%= money(r.receivedTo) %></td>
+      </tr>
+      <% if (r.note) { %>
+      <tr><td colspan="7" class="dim" style="font-size:12px;padding-top:0"><%= r.note %></td></tr>
+      <% } %>
+      <% }) %>
+    </tbody>
+    <% if (reg.rows.length) { %>
+    <tfoot><tr>
+      <td colspan="3"><b>Total recognised</b></td>
+      <td class="r mono"><b><%= money(reg.recognizedTo) %></b></td>
+      <td class="r mono"><b><%= money(reg.recognizedTo) %></b></td>
+      <td class="r mono"><b><%= money(reg.billedTo) %></b></td>
+      <td class="r mono"><b><%= money(reg.receivedTo) %></b></td>
+    </tr></tfoot>
+    <% } %>
+  </table></div>
+  <div class="fbody">
+    <p class="dim" style="margin:0">
+      <b>Three figures, not one.</b> Recognised is what the accounting says has been earned;
+      invoiced is what we have billed; received is cash actually in. They move at different times
+      and none of them is a substitute for the others. Recognising revenue posts
+      <b>no ledger line</b> — it is not a cash movement.
+    </p>
+  </div>
+</div>
+
+<% } %>

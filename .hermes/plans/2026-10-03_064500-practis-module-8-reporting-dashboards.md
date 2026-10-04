@@ -736,7 +736,43 @@ in the audit).
 
 ---
 
-## Part 8.8 — Revenue recognition
+## Part 8.8 — Revenue recognition — ✅ BUILT 2026-10-03
+
+**Status: implemented, 9/9 RV8 tests green. NO migration** — `revenue_recognized` has existed since
+migration 001, and `app_settings` already carried everything needed. Suite **503 → 512**.
+
+**The rule the whole part turns on:** `poc` recognises the **BAST acceptance %**, never the internal
+tick %. The fixture is built so the two **deliberately differ** (40% vs 50%), because an assertion
+that POC "used BAST" would pass whichever column the code read if they were equal.
+
+**A defect this part's own tests caught.** The month's increment was computed as
+`cumulative − SUM(cumulative of earlier rows)`. Summing that column double-counts (each row already
+carries the running total), so a straight-line project posted 1,000,000 / 1,000,000 / **0** and then
+went negative. Now `priorCumulative` — the latest prior row's cumulative — and asserted directly.
+
+**Choices made and recorded, as the plan required:**
+* **Same-month re-recognition UPserts** (audited, before+after) rather than refusing. A certificate
+  approved late must be able to correct a month already recognised; a refusal would leave the
+  register permanently wrong. RV8.6 proves the UNIQUE constraint still holds underneath.
+* **A frozen month cannot change.** `frozen_periods` is per-project; **no trigger covers
+  `revenue_recognized`**, so this check is the only enforcement.
+* **No ledger line** — recognition is not a cash movement (RV8.7 asserts the row count unchanged).
+* **No default method** — recognising with `revenue_method` NULL is refused with a reason.
+* **Invariant 10 as three figures** for one period: recognised 4,000,000 / billed 3,000,000 /
+  received 2,000,000, asserted to be three *different* numbers.
+
+**Route detail worth keeping:** `page()` previously hardcoded `active: 'Aging'`, so the Revenue
+screen lit up the aging link. It now honours a per-page `active`. And `/reports/revenue` was added
+to `REPORT_PATHS` — the router only guards the paths listed in that array (Express 5's
+`/x/{*path}` silently drops a guard on a bare prefix).
+
+**Files:** NEW `src/lib/revenue-service.js`, `views/revenue.ejs`, `test/revenue.test.js` (RV8.1–8.9,
+port **3928**); MOD `src/routes/reporting.js`, `views/partials/sidebar.ejs`, `views/reports-index.ejs`.
+
+**Not built:** `milestone` and `poc` share the acceptance register (both need `status='accepted'`);
+the PRD's distinction is that milestone recognises on APPROVAL as a step function. Both are
+implemented off the same basis, so a project where the two should differ (progress accrued between
+certificates) is not yet distinguished — recorded as a gap rather than papered over.
 
 **PRD §5.3**, four methods on `projects.revenue_method`: `milestone`, `poc`, `time_based`,
 `on_billing`.

@@ -27,6 +27,10 @@
         shows it to everyone because the sidebar is not a permission system — the route
         answers 403 with a reason. %>
     <a href="/reports" class="<%= ['Aging', 'Forecast', 'Variance'].includes(_active) ? 'on' : '' %>"><svg><use href="#i-chart"/></svg><span class="lbl">Reports</span></a>
+    <%# Module 8 part 8.8: revenue recognition (PRD §5.3). Sits with the other reports, and its
+        route answers 403 with a reason for a role that may not open it — the sidebar is not a
+        permission system (same note as the Reports link above). %>
+    <a href="/reports/revenue" class="<%= _active === 'Revenue' ? 'on' : '' %>"><svg><use href="#i-book"/></svg><span class="lbl">Revenue</span></a>
     <%# Module 8 part 8.6: the Project Overview S-curve screen. It sits HERE rather than in the
         (still display:none) Project group with WBS/Budget, because it is the report a PM opens
         first and it belongs beside the other reports. The group is a visible heading, so this

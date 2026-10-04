@@ -29,9 +29,19 @@ const express = require('express');
 const router = express.Router();
 
 const q = require('../db/queries');
+const revenue = require('../lib/revenue-service');
 const { capabilities } = require('../lib/permissions');
 const { requirePage } = require('../middleware/auth');
 const { projectContext } = require('../middleware/scope');
+
+// The recognition month defaults to the CURRENT month, not to the latest closed one: a user
+// opening the screen wants to recognise this month's revenue.
+const currentMonth = () => new Date().toISOString().slice(0, 7);
+const isValidMonth = (m) => /^\d{4}-\d{2}$/.test(String(m || ''));
+
+// PRG: every write redirects, so a refresh cannot re-post and the URL always describes what is
+// on screen. `res.redirect` with a relative path is what the rest of the app uses.
+const redirectTo = (res, url) => res.redirect(url);
 
 // The same scoped-path discipline routes/app.js documents at its APP_PATHS: a bare
 // `router.use(requirePage)` on a root-mounted router runs for EVERY request in the app and
@@ -40,7 +50,7 @@ const { projectContext } = require('../middleware/scope');
 // Cripples every guarded path on this router, and the plan/lesson is explicit that the ARRAY
 // form is required: Express 5's `/x/{*path}` silently drops the guard on the bare prefix, so a
 // non-array mount here would leak this router's pages past `requirePage`. Array it is.
-const REPORT_PATHS = ['/reports', '/reports/aging', '/reports/project'];
+const REPORT_PATHS = ['/reports', '/reports/aging', '/reports/project', '/reports/revenue'];
 router.use(REPORT_PATHS, requirePage, projectContext);
 
 // Refuse a page the signed-in user has no role for — a rendered 403 with the reason, never a
@@ -67,7 +77,10 @@ function page(res, title, subtitle, crumb, bodyView, locals = {}) {
   res.render(bodyView, {
     layout: 'layout-app',
     title, subtitle, crumb,
-    active: 'Aging',
+    // The sidebar entry to highlight. Defaults to Aging (this router's first screen), and a page
+    // that belongs to a different entry overrides it through `locals.active` — otherwise the
+    // Revenue screen would light up the aging report's link.
+    active: locals.active || 'Aging',
     actions: '',
     projectName: res.locals.project?.name || 'No project',
     // Every screen in this repo renders money through the `fmt` local it was handed.
@@ -200,6 +213,102 @@ router.get('/reports/aging', guard, (req, res) => {
       sort,
       sortLabels: SORT_LABELS,
     });
+});
+
+// GET /reports/revenue — revenue recognition (module 8 part 8.8; PRD §5.3).
+//
+// FOUR METHODS, ONE CONFIGURED. The screen shows all four side by side so the reader can see why
+// the configured one is in force, and — for `poc` — how far the client-accepted (BAST) percentage
+// sits from our own internal tick percentage. The PRD is emphatic that `poc` follows BAST, so the
+// gap is the interesting thing, not a detail.
+//
+// MOTHER OF THE SCREEN'S STATES: `revenue_method` is NULL on the live project (MEASURED), so
+// "not set" is the first thing a real user meets. It is rendered as a stated empty state with the
+// four options, never as a project that has recognized nothing.
+//
+// The POST writes; the GET does not. Which is why the two capability checks differ: reading a
+// revenue figure follows the same rule as the forecast (PRD §5.4 hands the figure to PM and
+// Controller, and `canViewForecast` is deliberately unrestricted), while CHANGING it is a
+// deliberate act gated on `canManageForecast` — the same pair the forecast screen uses, so
+// revenue and forecast cannot drift into different rules for the same column family.
+router.get('/reports/revenue', (req, res) => {
+  const project = res.locals.project;
+  if (!project) {
+    return page(res, 'Revenue recognition', 'No project is in scope for your account',
+      'Reports / Revenue', 'revenue', {
+        project: null, reg: null, preview: null, methods: revenue.METHODS,
+        methodLabels: revenue.METHOD_LABELS, month: null,
+        canManage: false, errors: [], notice: null,
+        recognizeAction: '/reports/revenue/recognize', methodAction: '/reports/revenue/method',
+      });
+  }
+
+  // READING this page is not gated — PRD §5.3 hands the revenue figure to the PM and the
+  // Controller, and `canViewForecast` is deliberately unrestricted. So the caps are computed here
+  // rather than by a guard middleware (there is none on this route), and they are used ONLY to
+  // decide whether to offer the write forms. `canManageForecast` on the two POSTs is the real
+  // boundary; this is the same flag, asked without the redirect.
+  const caps = capabilities(req.user);
+  const month = isValidMonth(req.query.month)
+    ? String(req.query.month) : (req.query.month ? null : currentMonth());
+  const view = revenue.preview(project.id, month);
+  const reg = revenue.register(project.id);
+
+  return page(res, 'Revenue recognition',
+    `${project.name} · what can be recognised, and on what basis`,
+    `${project.name} / Reports / Revenue`, 'revenue', {
+      project, reg, preview: view, month,
+      methods: revenue.METHODS, methodLabels: revenue.METHOD_LABELS,
+      // Highlights the Revenue link in the sidebar rather than the default Aging one.
+      active: 'Revenue',
+      // The write capability, so the form is only offered to someone who can submit it — the same
+      // rule `views/forecast.ejs` follows. A form a reader cannot submit is worse than no form.
+      canManage: !!caps.canManageForecast,
+      errors: (req.query.err ? [String(req.query.err)] : []),
+      notice: req.query.ok ? String(req.query.ok) : null,
+      recognizeAction: '/reports/revenue/recognize',
+      methodAction: '/reports/revenue/method',
+    });
+});
+
+const revGuard = requireCapability('canManageForecast',
+  'Only the Cost Controller or the Project Manager may change revenue recognition.');
+
+router.post('/reports/revenue/method', revGuard, (req, res) => {
+  const project = res.locals.project;
+  if (!project) return redirectTo(res, '/reports/revenue?err=' + encodeURIComponent('No project in scope.'));
+  try {
+    const out = revenue.setMethod({
+      projectId: project.id, method: String(req.body.method || ''), actorId: req.user.id,
+    });
+    const msg = out.changed
+      ? `Revenue method set to ${revenue.METHOD_LABELS[out.method].name}.`
+      : `Revenue method was already ${revenue.METHOD_LABELS[out.method].name}.`;
+    return redirectTo(res, '/reports/revenue?ok=' + encodeURIComponent(msg));
+  } catch (e) {
+    if (e instanceof revenue.RevenueError) {
+      return redirectTo(res, '/reports/revenue?err=' + encodeURIComponent(e.message));
+    }
+    throw e;
+  }
+});
+
+router.post('/reports/revenue/recognize', revGuard, (req, res) => {
+  const project = res.locals.project;
+  if (!project) return redirectTo(res, '/reports/revenue?err=' + encodeURIComponent('No project in scope.'));
+  const month = String(req.body.period_month || '');
+  try {
+    const out = revenue.recognize({ projectId: project.id, month, actorId: req.user.id });
+    const msg = `${out.month}: ${fmt(out.amount)} recognised (${out.basisPct}% of contract).`;
+    return redirectTo(res, '/reports/revenue?month=' + encodeURIComponent(month)
+      + '&ok=' + encodeURIComponent(msg));
+  } catch (e) {
+    if (e instanceof revenue.RevenueError) {
+      return redirectTo(res, '/reports/revenue?month=' + encodeURIComponent(month)
+        + '&err=' + encodeURIComponent(e.message));
+    }
+    throw e;
+  }
 });
 
 module.exports = router;
