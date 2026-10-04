@@ -1,0 +1,262 @@
+<%# Project Update Report (module 8 part 8.10; PRD §4.4, §5.4).
+
+    WHAT THIS SCREEN HAS TO MAKE OBVIOUS
+
+    1. APPROVING FREEZES THE PERIOD. Under owner decision A (2026-10-04) the approval and the freeze
+       are the same act. The approve control says so in the button's own label and in the warning
+       above it — a Project Manager must not close a month by surprise.
+    2. THE REPORT COMPILES, IT DOES NOT COMPUTE. Every figure is read from the service that owns the
+       rule, so this screen cannot disagree with the forecast, revenue or aging screens. Said in
+       words at the foot, not just claimed in code.
+    3. A POSITION IS DATED. If the month has no measurement of its own, the report quotes the last
+       measured month and SAYS SO. It never prints 0 for "not measured".
+    4. `status` IS THE WORKFLOW: draft → reviewed → frozen. There is no separate "approved" resting
+       state, because approving IS the freeze.
+
+    Receives: project, month, stored (the saved row or null), live (the compiled body),
+    stale, caps, periods, error, notice, saved. %>
+<% if (typeof error !== 'undefined' && error) { %>
+<div class="errb"><div class="errb-tx"><p><b>Not done.</b> <%= error %></p></div></div>
+<% } %>
+<% if (typeof notice !== 'undefined' && notice) { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b>Done.</b> <%= notice %></div>
+<% } %>
+
+<% if (!project) { %>
+<div class="card"><div class="fbody">
+  <p><b>No project is in scope for your account, so there is no report to show.</b></p>
+  <p class="dim" style="margin:6px 0 0">Ask an Administrator to assign you to a project.</p>
+</div></div>
+<% } else { %>
+
+<% const pct = (n) => (n === null || n === undefined ? null : Number(n).toFixed(2)); %>
+<% const isFrozen = periods.isFrozen(project.id, month); %>
+<% const status = stored ? stored.status : null; %>
+
+<div class="card">
+  <div class="card-hd">
+    <h2><%= month %> · Project update report</h2>
+    <span class="r">
+      <% if (!stored) { %><span class="chip nt">NOT COMPILED</span>
+      <% } else if (status === 'frozen') { %><span class="chip ok">FROZEN</span>
+      <% } else if (status === 'reviewed') { %><span class="chip wn">REVIEWED</span>
+      <% } else { %><span class="chip nt">DRAFT</span><% } %>
+      <% if (isFrozen) { %> <span class="chip ok">PERIOD FROZEN</span>
+      <% } else { %> <span class="chip nt">PERIOD OPEN</span><% } %>
+    </span>
+  </div>
+  <div class="fbody">
+    <p class="dim" style="margin:0">
+      <b>What this is.</b> The monthly position report for <%= month %>: schedule and cost
+      performance, what the client owes against what has been recognised, what the project owes,
+      the exceptions this period, and what changed in the baseline.
+      <%= periods.isFrozen(project.id, month)
+        ? 'This period is frozen, so backdated entries to it are refused — the figures below are the period\u2019s history.'
+        : 'Approving this report will freeze the period: after that, backdated entries to ' + month + ' are refused.' %>
+    </p>
+    <% if (stale && status !== 'frozen') { %>
+    <p style="margin:10px 0 0"><b class="wn">The stored report is out of date.</b>
+      Something changed after it was compiled
+      (<%= stored.spi === live.spi ? '' : 'SPI ' %>). Regenerate it to bring it up to date.
+    </p>
+    <% } %>
+  </div>
+</div>
+
+<div class="grid k4">
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-chart"/></svg>Schedule (SPI)</div>
+    <div class="v mono"><%= pct(live.spi) === null ? 'Not measured' : pct(live.spi) %></div>
+    <div class="f"><%= live.spi === null
+      ? 'No month at or before this one has been measured yet.'
+      : 'Earned ÷ planned, to date · as at ' + live.measured_month %></div></div>
+
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-chart"/></svg>Cost (CPI)</div>
+    <div class="v mono"><%= pct(live.cpi) === null ? 'Not measured' : pct(live.cpi) %></div>
+    <div class="f"><%= live.cpi === null
+      ? 'No month at or before this one has been measured yet.'
+      : 'Earned ÷ actual, to date · as at ' + live.measured_month %></div></div>
+
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-cash"/></svg>Receivable</div>
+    <div class="v mono"><%= fmt(live.receivable_amount) %></div>
+    <div class="f">what the client still owes
+      <%= live.receivable_undated ? ' · plus ' + fmt(live.receivable_undated) + ' not yet datable' : '' %></div></div>
+
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-book"/></svg>Revenue recognised</div>
+    <div class="v mono"><%= fmt(live.revenue_recognized) %></div>
+    <div class="f"><%= live.method
+      ? 'to date, under the ' + live.method + ' method'
+      : 'no revenue method is set, so nothing is recognised' %></div></div>
+</div>
+
+<% if (live.evm_stale) { %>
+<div class="note" style="margin-top:12px">
+  <svg><use href="#i-info"/></svg>
+  <span><b>The performance figures are dated <%= live.measured_month %>, not <%= month %>.</b>
+    This month has no progress recorded and no cost booked, so nothing has been measured in it. The
+    report quotes the latest position that WAS measured at or before it, rather than printing zero —
+    a zero would read as "exactly on plan", which is a different claim from "not measured".</span>
+</div>
+<% } %>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd">
+    <h2>Exceptions this period</h2>
+    <span class="r">PRD §4.4 · threshold <%= live.exceptions.spiThreshold %> SPI / <%= live.exceptions.cpiThreshold %> CPI</span>
+  </div>
+  <div class="fbody">
+    <% if (!live.exceptions.raised.length) { %>
+    <p><b>Nothing from the alert list fired for this project.</b></p>
+    <% } else { %>
+    <ul style="margin:0 0 4px;padding-left:18px">
+      <% live.exceptions.raised.forEach(function(e) { %>
+      <li style="margin:0 0 6px"><span class="chip wn">CHECK</span> <%= e.text %></li>
+      <% }); %>
+    </ul>
+    <% } %>
+    <% if (live.exceptions.notEvaluated.length) { %>
+    <p class="dim" style="margin:10px 0 0">
+      <b>Not checked:</b>
+      <% live.exceptions.notEvaluated.forEach(function(e, i) { %><%= i ? '; ' : '' %><%= e.kind.replace(/_/g, ' ') %> — <%= e.reason %><% }); %>.
+      An alert that cannot be evaluated is named here rather than left out, because an absent line
+      would read as "no problem".
+    </p>
+    <% } %>
+  </div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Baseline — what changed</h2><span class="r">PRD §5.4 · prior baseline vs current</span></div>
+  <div class="fbody">
+    <p style="margin:0 0 8px"><%= live.baseline_changes.note %></p>
+    <% if (live.baseline_changes.rows.length) { %>
+    <div class="tw"><table>
+      <thead><tr><th>Reference</th><th>Change</th><th>Title</th>
+        <th style="text-align:right">Cost impact</th><th>Effective</th></tr></thead>
+      <tbody>
+      <% live.baseline_changes.rows.forEach(function(b) { %>
+        <tr>
+          <td class="mono"><%= b.bcr_no || '#' + b.id %></td>
+          <td><%= b.change_type.replace(/_/g, ' ') %></td>
+          <td><%= b.title %></td>
+          <td class="mono" style="text-align:right"><%= fmt(b.impact_cost) %></td>
+          <td class="mono"><%= b.effective_period || '—' %></td>
+        </tr>
+      <% }); %>
+      </tbody>
+      <tfoot><tr><th colspan="3">Total impact this period</th>
+        <th class="mono" style="text-align:right"><%= fmt(live.baseline_changes.totalImpact) %></th>
+        <th></th></tr></tfoot>
+    </table></div>
+    <% } %>
+  </div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd">
+    <h2>The report and the period</h2>
+    <span class="r">record → review → approve, and the approval freezes <%= month %></span>
+  </div>
+  <div class="fbody">
+    <% if (!stored) { %>
+      <p><b>This month has not been compiled yet.</b> Compiling produces a <b>draft</b> — it changes
+      nothing and closes nothing. Drafts can be regenerated as the month's figures move.</p>
+      <% if (caps.canManageReport) { %>
+      <form method="post" action="/reports/update/generate">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="period_month" value="<%= month %>">
+        <button class="btn pri" type="submit"><svg><use href="#i-plus"/></svg>Compile this month's report</button>
+      </form>
+      <% } else { %>
+      <p class="dim" style="margin:8px 0 0">Compiling the report is a Project Controller, Project
+        Manager or Project Admin task.</p>
+      <% } %>
+
+    <% } else if (status === 'draft') { %>
+      <p><b>Draft.</b> A Controller reviews it, then the Project Manager approves it — and that
+      approval is what freezes <%= month %>.</p>
+      <% if (caps.canManageReport) { %>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <form method="post" action="/reports/update/<%= stored.id %>/review">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button class="btn pri" type="submit">Mark reviewed</button>
+        </form>
+        <form method="post" action="/reports/update/generate">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <input type="hidden" name="period_month" value="<%= month %>">
+          <button class="btn" type="submit">Regenerate from current figures</button>
+        </form>
+      </div>
+      <% } %>
+
+    <% } else if (status === 'reviewed') { %>
+      <p style="margin:0 0 8px"><b class="wn">Reviewed and waiting for the Project Manager.</b></p>
+      <% if (caps.canApproveReport) { %>
+      <div class="errb" style="margin:0 0 10px"><div class="errb-tx"><p style="margin:0">
+        <b>Approving freezes <%= month %>.</b> After this, entries dated in <%= month %> are refused by
+        the system and must be tagged to the next period. That is the point of the freeze — the
+        report stays truthful — but it cannot be done by accident. It can be undone on the
+        Accounting periods screen if a correction is genuinely needed.
+      </p></div></div>
+      <form method="post" action="/reports/update/<%= stored.id %>/approve">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="btn pri" type="submit">Approve and freeze <%= month %></button>
+      </form>
+      <% } else { %>
+      <p class="dim" style="margin:0">A Project Manager approves this — and the approval freezes the
+      period, which is why it is not the compiler's decision.</p>
+      <% } %>
+
+    <% } else { %>
+      <p><b>The period <%= month %> is frozen and this report is its record.</b>
+      <% if (stored.approved_at) { %>Approved <%= String(stored.approved_at).slice(0, 10) %>.<% } %>
+      Its figures cannot be regenerated: a frozen report is what the period reported, and rewriting
+      it would silently erase a variance.</p>
+      <p class="dim" style="margin:8px 0 0">
+        To change the underlying entries, reopen the period on the
+        <a href="/periods">Accounting periods</a> screen first. That is an Administrator act and it
+        is audited.
+      </p>
+    <% } %>
+  </div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>The figures on this report</h2><span class="r">positions to date</span></div>
+  <div class="tw"><table>
+    <thead><tr><th>Figure</th><th style="text-align:right">Value</th><th>What it is</th></tr></thead>
+    <tbody>
+      <tr><td>Schedule performance (SPI)</td>
+        <td class="mono" style="text-align:right"><%= pct(live.spi) === null ? '—' : pct(live.spi) %></td>
+        <td class="dim">earned value ÷ planned value, cumulative<%= live.measured_month ? ' as at ' + live.measured_month : '' %></td></tr>
+      <tr><td>Cost performance (CPI)</td>
+        <td class="mono" style="text-align:right"><%= pct(live.cpi) === null ? '—' : pct(live.cpi) %></td>
+        <td class="dim">earned value ÷ actual cost, cumulative<%= live.measured_month ? ' as at ' + live.measured_month : '' %></td></tr>
+      <tr><td>Cost variance</td>
+        <td class="mono" style="text-align:right"><%= live.cost_variance_pct === null ? '—' : (live.cost_variance_pct > 0 ? '+' : '') + live.cost_variance_pct + '%' %></td>
+        <td class="dim">(actual − earned) ÷ earned · <b>positive means over budget</b></td></tr>
+      <tr><td>Receivable</td>
+        <td class="mono" style="text-align:right"><%= fmt(live.receivable_amount) %></td>
+        <td class="dim">what the client still owes, from the aging list</td></tr>
+      <tr><td>Revenue recognised</td>
+        <td class="mono" style="text-align:right"><%= fmt(live.revenue_recognized) %></td>
+        <td class="dim">cumulative, under the configured method<%= live.method ? ' (' + live.method + ')' : '' %></td></tr>
+      <tr><td>Payable</td>
+        <td class="mono" style="text-align:right"><%= fmt(live.payable_amount) %></td>
+        <td class="dim">what the project owes, from the ledger</td></tr>
+      <% if (live.recognition && live.recognition.period_amount) { %>
+      <tr><td>Recognised this month</td>
+        <td class="mono" style="text-align:right"><%= fmt(live.recognition.period_amount) %></td>
+        <td class="dim">the movement in the month, not the position
+          <%= live.recognition.period_basis_pct === null ? '' : '· ' + live.recognition.period_basis_pct + '% of contract' %></td></tr>
+      <% } %>
+    </tbody>
+  </table></div>
+  <div class="fbody">
+    <p class="dim" style="margin:0">Every figure above is read from the service that owns its rule —
+      the forecast service for SPI and CPI, the revenue service for recognition, the aging list for
+      receivables. Nothing is worked out twice here, so this report cannot disagree with the screens
+      it is read beside. The approved plan is never changed by anything on this page.</p>
+  </div>
+</div>
+
+<% } %>

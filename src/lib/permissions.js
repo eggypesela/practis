@@ -169,6 +169,26 @@ function capabilities(user) {
   // gets the register, and does not get the forms it cannot submit.
   const canViewAcceptance = true;
 
+  // --- Project Update Report + period freeze (module 8 part 8.10, PRD §4.4/§5.4) ---------------
+  // Who may COMPILE and REVIEW the monthly report. The PRD §4.4 wording is "the Project Controller
+  // compiles the Project Update Report ... reviewed by Controller", so the compiling family is the
+  // one that owns project progress — the same trio that records WBS progress and acceptance
+  // certificates. Deliberately the SAME flag for generate and review: the Controller both compiles
+  // and reviews, and splitting a two-step action across two flags would invent a role the PRD does
+  // not name.
+  const canManageReport = has('project_controller', 'project_manager', 'project_admin');
+
+  // Who may APPROVE it — and under decision A (2026-10-04) approving is the act that FREEZES THE
+  // PERIOD, so this flag closes the month for everyone. That makes it the most consequential flag in
+  // module 8, and it is deliberately the same `project_manager` set the other approvals use:
+  // "who approves things here" has ONE answer in this app.
+  const canApproveReport = has('project_manager');
+
+  // READING a report is unrestricted for a signed-in user, like `canViewForecast` and
+  // `canViewAcceptance`: it is a project's own position, not Finance's customer-by-customer ledger.
+  // A Viewer sees the report; the freeze control is simply not offered, and the route refuses it.
+  const canViewReport = true;
+
   return {
     roles,
     isAdmin,
@@ -229,6 +249,10 @@ function capabilities(user) {
     canViewAcceptance,
     canManageAcceptance,
     canApproveAcceptance,
+    // Project Update Report + period freeze (module 8 part 8.10).
+    canViewReport,
+    canManageReport,
+    canApproveReport,
 
     // --- Baseline change requests (module 7 part 7.6) ----------------------
     canInitiateBcr,

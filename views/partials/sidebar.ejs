@@ -31,6 +31,10 @@
         route answers 403 with a reason for a role that may not open it — the sidebar is not a
         permission system (same note as the Reports link above). %>
     <a href="/reports/revenue" class="<%= _active === 'Revenue' ? 'on' : '' %>"><svg><use href="#i-book"/></svg><span class="lbl">Revenue</span></a>
+    <%# Module 8 part 8.10: the monthly Project Update Report (PRD §5.4). Approving it freezes the
+        period, so it sits beside Revenue as the month-end act. Same note as the Reports link: the
+        sidebar is not a permission system — the route refuses with a reason. %>
+    <a href="/reports/update" class="<%= _active === 'Update report' ? 'on' : '' %>"><svg><use href="#i-file"/></svg><span class="lbl">Update report</span></a>
     <%# Module 8 part 8.6: the Project Overview S-curve screen. It sits HERE rather than in the
         (still display:none) Project group with WBS/Budget, because it is the report a PM opens
         first and it belongs beside the other reports. The group is a visible heading, so this

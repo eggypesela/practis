@@ -1382,6 +1382,40 @@ service-level only.
 
 ---
 
+## 12u. UP8 — Project update report + period freeze — ✅ IMPLEMENTED 2026-10-04
+
+PRD §4.4 ("hybrid period freeze", the alert list) and §5.4 (the **Project Update Report**: SPI, CPI,
+receivable vs recognised revenue, payable, exceptions, baseline changes). Owner decision **A**
+(2026-10-04): **the period freezes when the report is APPROVED**, not when it is generated — so a
+report can be read and corrected before the month closes.
+
+Service `src/lib/report-service.js`; routes `GET /reports/update`, `POST /reports/update/generate`,
+`POST /reports/update/:id/review`, `POST /reports/update/:id/approve` in `src/routes/reporting.js`;
+view `views/report-update.ejs`. **No migration** — `project_reports` and `frozen_periods` have existed
+since migration 001.
+
+| Test | What it pins |
+|---|---|
+| UP8.1 | A month with no measurement reports SPI/CPI as **absent (null), never 0** — 0 would claim "exactly on plan" |
+| UP8.2 | **Compile, don't compute**: every figure equals the service that owns it (view's `spi_cum`/`cpi_cum`, revenue-service's cumulative, the aging view's total) |
+| UP8.3 | A report quotes the position **as at the last measured month at or before it**, and flags staleness — not the project's latest position |
+| UP8.4 | Regeneration updates a **draft** (recomputing CPI from new cost) and is **refused on a frozen report** |
+| UP8.5 | The only path is **draft → reviewed → frozen**; `approved` is **never a resting state**; both `approve()` and `transition()` refuse the shortcut |
+| UP8.6 | Only the **Project Manager** approves; a refusal **leaves the period open**; and **the page actually renders** (a 403 from a broken view is not evidence of a working permission) |
+| **UP8.7** | **THE POINT:** approving freezes the period, and a **backdated ledger write into that month is REFUSED BY THE DATABASE** — with the month proven writable *before* the approval |
+| UP8.8 | A frozen report's figures cannot move: regenerate/re-approve/re-review all refused, snapshot byte-identical |
+| UP8.9 | The alerts that fired are raised (CPI 0.5882 < 0.95, quoting the figure and the threshold); the alert that **cannot** be evaluated is **named as not checked**; the baseline comparison states "nothing changed" as an answer, and scopes to the month |
+
+**Status flow:** `draft` → `reviewed` → `frozen` (approval and freeze are ONE act). Capabilities:
+`canViewReport` (everyone signed in), `canManageReport` (Project Controller/Manager/Admin —
+compile + review), `canApproveReport` (Project Manager — and it freezes the period).
+
+**Populated at last:** `frozen_periods.report_id`, present since migration 001 but never written
+until now — a report approval records WHICH report closed the period.
+
+**Not built (flagged, not hidden):** PRD §5.4's PDF/Excel exports with a light print theme. The report
+body is designed so they can be added without reshaping the data.
+
 ## 13. Workflow coverage vs PRD §4
 
 The product workflow, step by step, and whether a test exists. **Empty rows are the real answer to

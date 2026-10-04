@@ -124,6 +124,9 @@ Build 8.9 as above: permissions → service → routes → views → tests → f
 
 **Status: implemented, 9/9 BA8 tests green. NO migration, as planned. Suite 512 → 521.**
 
+Owner decision A (2026-10-04): three-step status draft → submitted → accepted; only `accepted` counts
+as revenue. `status` IS the workflow — no second approval chain.
+
 Built exactly as planned. Three details worth keeping:
 
 **`record()` hard-codes `'draft'` and ignores a posted status.** BA8.2 posts

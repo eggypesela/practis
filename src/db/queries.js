@@ -303,6 +303,20 @@ const _freezePeriod = db.prepare(`
 const _unfreezePeriod = db.prepare(
   `DELETE FROM frozen_periods WHERE project_id = ? AND period_month = ?`);
 
+// The same freeze, reached from a report approval (module 8 part 8.10) — and recording WHICH report
+// closed the period. `frozen_periods.report_id` has existed since migration 001 for exactly this and
+// was never written, because nothing generated a report until 8.10. An Administrator's manual freeze
+// on /periods has no report behind it, so the column stays NULL there and the two doors remain
+// distinguishable after the fact.
+//
+// The DO UPDATE backfills `report_id` when the month was ALREADY frozen by hand: the report then
+// becomes the recorded reason without re-freezing anything or losing the original `frozen_at`.
+const _freezePeriodForReport = db.prepare(`
+  INSERT INTO frozen_periods (project_id, period_month, frozen_at, frozen_by, report_id)
+  VALUES (@project_id, @period_month, datetime('now'), @actor_id, @report_id)
+  ON CONFLICT(project_id, period_month) DO UPDATE SET report_id = excluded.report_id
+    WHERE frozen_periods.report_id IS NULL`);
+
 // ---- per-project scoping (audit BOLA, plan task 0.9) --------------------------
 // `user_roles.project_id` is the junction the PRD 2.3 describes ("users are
 // assigned a role PER PROJECT"). It existed from migration 001 and was NULL in
@@ -726,6 +740,10 @@ module.exports = {
   freezePeriod: (projectId, periodMonth, actorId) =>
     _freezePeriod.run({ project_id: projectId, period_month: periodMonth, actor_id: actorId }),
   unfreezePeriod: (projectId, periodMonth) => _unfreezePeriod.run(projectId, periodMonth),
+  // Module 8 part 8.10: the freeze a report approval performs, recording which report closed it.
+  freezePeriodForReport: (projectId, periodMonth, actorId, reportId) =>
+    _freezePeriodForReport.run({ project_id: projectId, period_month: periodMonth,
+      actor_id: actorId, report_id: reportId }),
 
   // ---- per-project scoping (plan task 0.9 / BOLA) ----
   // Every user's scoped project ids, in ONE query for the whole roster, so the

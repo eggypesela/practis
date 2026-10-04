@@ -30,6 +30,8 @@ const router = express.Router();
 
 const q = require('../db/queries');
 const revenue = require('../lib/revenue-service');
+const reportSvc = require('../lib/report-service');
+const periods = require('../lib/periods');
 const { capabilities } = require('../lib/permissions');
 const { requirePage } = require('../middleware/auth');
 const { projectContext } = require('../middleware/scope');
@@ -50,7 +52,8 @@ const redirectTo = (res, url) => res.redirect(url);
 // Cripples every guarded path on this router, and the plan/lesson is explicit that the ARRAY
 // form is required: Express 5's `/x/{*path}` silently drops the guard on the bare prefix, so a
 // non-array mount here would leak this router's pages past `requirePage`. Array it is.
-const REPORT_PATHS = ['/reports', '/reports/aging', '/reports/project', '/reports/revenue'];
+const REPORT_PATHS = ['/reports', '/reports/aging', '/reports/project', '/reports/revenue',
+  '/reports/update'];
 router.use(REPORT_PATHS, requirePage, projectContext);
 
 // Refuse a page the signed-in user has no role for — a rendered 403 with the reason, never a
@@ -310,5 +313,126 @@ router.post('/reports/revenue/recognize', revGuard, (req, res) => {
     throw e;
   }
 });
+
+// ---- Project Update Report + period freeze (module 8 part 8.10; PRD §4.4, §5.4) ---------------
+//
+// The monthly report, and the act that closes the period. Read `src/lib/report-service.js` for the
+// decision (A: freezes on APPROVAL) and for why the service compiles rather than computes.
+//
+// THE FREEZE IS NOT REIMPLEMENTED HERE. `report.approve()` calls the same `q.freezePeriod` the
+// Administrator's /periods button calls, so the two doors close the month the same way and
+// `/periods` shows what a PM's approval did.
+
+// The report month defaults to the CURRENT month: a Controller opening the screen is compiling this
+// month's report. A month given on the query string is only accepted if it looks like one — a typo
+// must not silently become "no month".
+const reportMonth = (raw) => (isValidMonth(raw) ? String(raw)
+  : (raw ? null : new Date().toISOString().slice(0, 7)));
+
+function reportLocals(req, res, extra = {}) {
+  const project = res.locals.project;
+  const month = reportMonth(req.query.month);
+  const stored = (project && month) ? reportSvc.forMonth(project.id, month) : null;
+  // The compiled body is always shown, even when a stored report exists, because it is what the
+  // report WOULD say right now — the difference between the two is exactly what regeneration would
+  // change, and hiding it would make a stale stored report invisible.
+  const live = (project && month) ? reportSvc.compile(project.id, month) : null;
+  return {
+    project, month,
+    stored,
+    live,
+    // A stored report whose figures differ from the live compile is STALE. Said plainly, because a
+    // frozen report legitimately differs (the period cannot move) while a draft one should be
+    // regenerated.
+    stale: !!(stored && live && (stored.spi !== live.spi || stored.cpi !== live.cpi
+      || stored.receivable_amount !== live.receivable_amount
+      || stored.revenue_recognized !== live.revenue_recognized)),
+    caps: capabilities(req.user),
+    // The `periods` MODULE, so the view can ask whether the month is frozen without the route
+    // pre-deciding which of the two statuses to print. (A boolean here would make the view unable
+    // to distinguish "this report is frozen" from "the period is frozen".)
+    periods,
+    ...extra,
+  };
+}
+
+router.get('/reports/update', (req, res) => {
+  const project = res.locals.project;
+  // NOTE the locals are passed FLAT, not nested under a `locals:` key. `page()` spreads its last
+  // argument into the render context, so `page(res, ..., { locals: { x } })` would define one
+  // variable called `locals` and leave `x` undefined in the view.
+  if (!project) {
+    return page(res, 'Project update report', 'No project is in scope for your account',
+      'Portfolio / Reports / Update', 'report-update',
+      { active: 'Update report', project: null, month: null, stored: null, live: null,
+        stale: false, caps: capabilities(req.user), periods, error: null, notice: null });
+  }
+  return page(res, 'Project update report',
+    `${project.name} · the monthly report · approving it freezes the period`,
+    `${project.name} / Reports / Update`, 'report-update',
+    Object.assign({ active: 'Update report' }, reportLocals(req, res, {
+      error: req.query.err ? String(req.query.err) : null,
+      notice: req.query.ok ? String(req.query.ok) : null,
+      saved: req.query.saved ? Number(req.query.saved) : null,
+    })));
+});
+
+router.post('/reports/update/generate',
+  requireCapability('canManageReport',
+    'Compiling the Project Update Report is a Project Controller, Project Manager or Project Admin task.'),
+  (req, res) => {
+    const project = res.locals.project;
+    const month = String(req.body.period_month || '');
+    try {
+      const out = reportSvc.generate({ projectId: project.id, month, actorId: req.user.id });
+      return redirectTo(res, `/reports/update?month=${encodeURIComponent(month)}`
+        + `&saved=${out.report.id}`
+        + `&ok=${encodeURIComponent(out.regenerated ? 'Report regenerated from the current figures.' : 'Report compiled as a draft.')}`);
+    } catch (e) {
+      if (e instanceof reportSvc.ReportError) {
+        return redirectTo(res, `/reports/update?month=${encodeURIComponent(month)}`
+          + `&err=${encodeURIComponent(e.message)}`);
+      }
+      throw e;
+    }
+  });
+
+router.post('/reports/update/:id/review',
+  requireCapability('canManageReport',
+    'Reviewing the Project Update Report is a Project Controller, Project Manager or Project Admin task.'),
+  (req, res) => {
+    const project = res.locals.project;
+    try {
+      const out = reportSvc.review({ projectId: project.id, id: Number(req.params.id),
+        actorId: req.user.id });
+      return redirectTo(res, `/reports/update?month=${encodeURIComponent(out.period_month)}`
+        + `&ok=${encodeURIComponent('Report marked reviewed. It is ready for the Project Manager.')}`);
+    } catch (e) {
+      if (e instanceof reportSvc.ReportError) {
+        return redirectTo(res, `/reports/update?err=${encodeURIComponent(e.message)}`);
+      }
+      throw e;
+    }
+  });
+
+// APPROVE — and, under decision A, FREEZE THE PERIOD. The confirm text on the form says so; this
+// route is what makes it true.
+router.post('/reports/update/:id/approve',
+  requireCapability('canApproveReport', 'Approving the report is a Project Manager task.'),
+  (req, res) => {
+    const project = res.locals.project;
+    try {
+      const out = reportSvc.approve({ projectId: project.id, id: Number(req.params.id),
+        actorId: req.user.id });
+      return redirectTo(res, `/reports/update?month=${encodeURIComponent(out.period)}`
+        + `&ok=${encodeURIComponent(
+          `Approved. The period ${out.period} is now frozen and backdated entries to it are refused.`)}`);
+    } catch (e) {
+      if (e instanceof reportSvc.ReportError) {
+        return redirectTo(res, `/reports/update?err=${encodeURIComponent(e.message)}`);
+      }
+      throw e;
+    }
+  });
 
 module.exports = router;
