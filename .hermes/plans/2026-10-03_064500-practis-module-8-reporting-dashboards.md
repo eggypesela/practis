@@ -665,9 +665,44 @@ without `canViewPortfolio` cannot open another project's dashboard).
 
 ---
 
-## Part 8.7 — Portfolio dashboard + closed-project hiding
+## Part 8.7 — Portfolio dashboard + closed-project hiding — ✅ BUILT 2026-10-03
 
-Replaces the 35-line `views/dashboard.ejs`.
+**Status: implemented, 9/9 PF8 tests green. Migration 023 (settings rows only, no schema change).**
+
+**Route decision, from the code:** it stays in `routes/app.js`. `/` is in `APP_PATHS` (asserted by
+TEST_PLAN §12f) and `routes/reporting.js` also runs `projectContext`; mounting `/` in both would
+register the path twice and depend on mount order — `server.js` mounts reporting BEFORE app.
+
+**Threshold: a setting, not a constant.** Migration 023 seeds `spi_breach_threshold` and
+`cpi_breach_threshold` at 0.95 with INSERT OR IGNORE (021's precedent). Measured before writing:
+the dev DB had **no** threshold row, so PRD §4.4's "tunable" would have been untrue. The service
+also defaults to 0.95 when the row is missing, so a bare installation renders rather than throws.
+
+**Three defects the tests caught:**
+
+* **The footer disagreed with the table** — the live page printed the all-projects total while
+  rendering live rows. Added `totals.shown` (the sum of the rows rendered, asserted to the rupiah).
+* **The carry-forward trap again.** "Latest row with a cumulative index" returns **`2026-12`**,
+  seven months after the last real measurement. Reused `forecast.latestCumulative` so portfolio,
+  forecast and variance cannot describe different months. PF8.4 asserts both answers side by side.
+* **`cpi_cum` is `ROUND(x,4)` = 0.5556**, not 5/9 — the 8.5 rounding trap in a new place.
+
+**Kept distinct per PRD §4.5:** the three close steps each name what they left
+(`outOfSchedule` / `outOfMoney` / `fullyClosed`), the toggle names every project it would add and
+the step it left at, and `totals.live` + `totals.all` are both present because closed projects stay
+in the history totals forever.
+
+**Files:** NEW `db/migrations/023_portfolio_thresholds.sql`; NEW `src/lib/portfolio-service.js`;
+NEW `test/portfolio.test.js` (PF8.1–PF8.9, port **3927**); REWRITTEN `views/dashboard.ejs`;
+`src/routes/app.js`, `TEST_PLAN.md` §12r.
+
+**Suite: 494 → 503.**
+
+**Not built from the plan:** the **portfolio-wide forecast** and **current-month cashflow** lines
+PRD §5.4 also names. The page shows live contract/cost totals and per-project indices; a portfolio
+forecast would sum per-project EAC (available via `forecast-service.eac`) and a cashflow line needs
+a period-close comparison the schema does not yet carry. Both are honest gaps, recorded here rather
+than faked with a number that is not the thing it claims to be.
 
 **PRD §5.4:** *"Portfolio dashboard (exec/Viewer): all projects, CPI/SPI traffic-light cards,
 current-month cashflow, portfolio-wide forecast."*

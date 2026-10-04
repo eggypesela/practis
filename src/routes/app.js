@@ -4,6 +4,7 @@ const db = require('../db/db');
 const q = require('../db/queries');
 const { requirePage, requireAdmin } = require('../middleware/auth');
 const { projectContext } = require('../middleware/scope');
+const { portfolio } = require('../lib/portfolio-service');
 
 const IDR = new Intl.NumberFormat('id-ID');
 const fmt = (n) => IDR.format(n || 0);
@@ -45,27 +46,38 @@ const APP_PATHS = [
 ];
 router.use(APP_PATHS, requirePage, projectContext);
 
+// GET / — the PORTFOLIO DASHBOARD (module 8 part 8.7; PRD §5.4 "Portfolio dashboard
+// (exec/Viewer): all projects, CPI/SPI traffic-light cards, current-month cashflow, portfolio-wide
+// forecast").
+//
+// IT STAYS IN THIS ROUTER rather than moving to routes/reporting.js, decided from the code rather
+// than by taste: `/` is listed in APP_PATHS here and is asserted there by TEST_PLAN §12f, and the
+// reporting router's guard runs `projectContext` too — mounting `/` in both would register the
+// same path twice and depend on mount order (server.js mounts reporting BEFORE app). One route,
+// one home, and the sidebar's "Dashboard" entry already points here.
+//
+// ONLY the projects this user may see. `q.projects()` is the whole portfolio and rendering it here
+// leaked the names of every project to any signed-in user — a project-scoped PM would get a
+// dashboard listing projects they are not on (audit BOLA, 2026-09-30). `res.locals.projects` is
+// the authorised set, and the service is HANDED that list so it cannot look up a project itself.
 router.get('/', (req, res) => {
-  // ONLY the projects this user may see. `q.projects()` is the whole portfolio
-  // and rendering it here leaked the names of every project to any signed-in
-  // user — a project-scoped PM would get a dashboard listing projects they are
-  // not on (audit BOLA). res.locals.projects is the authorised set.
   const projects = res.locals.projects;
-  let contractValue = 0, costToDate = 0, untaggedCount = 0;
-  for (const p of projects) {
-    contractValue += p.contract_amount || 0;
-    if (res.locals.project) {
-      costToDate += q.costToDate(p.id).n;
-      untaggedCount += q.untaggedCount(p.id).n;
-    }
-  }
-  page(res, 'Dashboard', 'Portfolio overview · live', 'Portfolio / Dashboard', 'dashboard', {
-    active: 'Dashboard',
-    locals: {
-      projects, contractValue, costToDate, untaggedCount,
-      fmt,
-    },
-  });
+
+  // PRD §4.5 / invariant 12: closed projects are out of the live totals BY DEFAULT. The switch is
+  // explicit and visible, and the page says what it added — see `added` in the service.
+  const includeClosed = String(req.query.include_closed || '') === '1';
+
+  let untaggedCount = 0;
+  if (res.locals.project) untaggedCount = Number(q.untaggedCount(res.locals.project.id).n) || 0;
+
+  const p = portfolio(projects, { includeClosed });
+
+  page(res, 'Dashboard',
+    includeClosed ? 'Portfolio overview · including closed projects' : 'Portfolio overview · live',
+    'Portfolio / Dashboard', 'dashboard', {
+      active: 'Dashboard',
+      locals: { p, untaggedCount, fmt },
+    });
 });
 
 router.get('/ledger', (req, res) => {

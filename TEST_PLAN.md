@@ -1184,6 +1184,63 @@ ALL CHECKS PASS ✅; `test/dashboard.test.js` **8/8** ✅; full suite **486 → 
 
 ---
 
+## 12r. PF8 — Portfolio dashboard + closed-project hiding — ✅ IMPLEMENTED 2026-10-03
+
+PRD §5.4: *"Portfolio dashboard (exec/Viewer): all projects, CPI/SPI traffic-light cards,
+current-month cashflow, portfolio-wide forecast."* PRD §4.4 (threshold), §4.5 (3-step close).
+Screen: `GET /` — **the 35-line `views/dashboard.ejs` replaced**.
+
+**It stays in `routes/app.js`.** Decided from the code, not by taste: `/` is in `APP_PATHS` and
+asserted by TEST_PLAN §12f, and the reporting router also runs `projectContext` — mounting `/` in
+both would register one path twice and depend on mount order (`server.js` mounts reporting before
+app). One route, one home.
+
+**Migration 023** seeds `spi_breach_threshold` / `cpi_breach_threshold` = 0.95 (INSERT OR IGNORE,
+following 021's precedent). **No schema change** — `app_settings` is data, not DDL, so
+`dump-schema.js --check` stays clean. Measured first: the dev DB held **no** threshold of any kind,
+so without the row PRD §4.4's "tunable" would have been untrue.
+
+**Three defects this part's tests caught:**
+
+1. **The footer disagreed with the table.** The first version printed the *all-projects* total in
+   the footer of a page rendering *live* rows only — two numbers on one screen meaning different
+   things. Now `totals.shown` is the sum of the rows actually rendered, and PF8.5/8.7 assert it
+   equals that sum to the rupiah.
+2. **"Latest row with a cumulative index" reads a month the project has not reached.** Migration
+   019 carries `spi_cum`/`cpi_cum` **forward** across the grid, so the naive query returns
+   **`2026-12`** while nothing was measured after March. Identical to the Part 8.4 forecast defect.
+   The service reuses `forecast.latestCumulative`, whose guard excludes carried-forward months, so
+   the portfolio, forecast and variance screens **cannot disagree about which month they describe**.
+   PF8.4 asserts the naive answer (`2026-12`) AND the correct one (`2026-03`) side by side.
+3. **The fixture guard used a 1e-9 tolerance on a `ROUND(x,4)` column.** `cpi_cum` is exactly
+   **0.5556**, not 5/9 — the same rounding that caused the 8.5 EAC defect. Asserted against what
+   the view emits, with the reason recorded.
+
+**Threshold is READ, not baked in.** PF8.8 changes the `app_settings` row to `6` and watches SPI
+5.00 move from `within` to `breached`, then back — proof the number is live. A `DELETE` proves the
+absent-setting fallback renders instead of throwing.
+
+**PRD §4.5's three close steps are kept distinct**, not collapsed to one boolean: operationally
+closed leaves the live schedule, financially closed leaves live cashflow/forecast, contractually
+closed is archived. Each carries the step name **and what it left**, and the toggle **names each
+project it would add** with the step it left at — a bare count would be a number nobody can check.
+`totals.live` and `totals.all` are both present: "closed projects remain in portfolio history
+totals forever".
+
+**Tests (PF8.1–PF8.9, port 3927):** the three index states as a unit, incl. **a real 0 IS a breach
+while NULL is not** · an unmeasured project is grey, never red · one project can be `within` on SPI
+and `breached` on CPI at the same time · the carry-forward trap, naive vs correct · closed projects
+out of live / back under the toggle / **same figure both ways** / the advertised addition reconciles
+· each close step distinct and named · the printed total equals the sum of rows rendered · the
+threshold read from settings and re-tuned · the page renders, states the threshold, shows a
+**grey** (never green) tile for an unmeasured index, the toggle works, and **BOLA**: a role-less
+user is shown no project name and no rupiah figure.
+
+**Gates:** `dump-schema.js --check` clean ✅; `python3 db/validate.py` ALL CHECKS PASS ✅;
+`test/portfolio.test.js` **9/9** ✅; full suite **494 → 503** ✅.
+
+---
+
 ## 13. Workflow coverage vs PRD §4
 
 The product workflow, step by step, and whether a test exists. **Empty rows are the real answer to

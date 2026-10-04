@@ -1,36 +1,151 @@
+<%# Portfolio dashboard (module 8 part 8.7; PRD §5.4 "Portfolio dashboard (exec/Viewer): all
+    projects, CPI/SPI traffic-light cards, current-month cashflow, portfolio-wide forecast").
+
+    THE THREE THINGS THIS SCREEN GETS RIGHT, because each was a measured defect before it:
+
+    1. A BLANK INDEX IS GREY. Not green, not red. On the development database every row of
+       v_evm_period has spi_cum NULL and cpi_cum NULL — cost is booked but no baseline or progress
+       exists, so no index can be computed. A tile comparing 0 to a 0.95 threshold would have
+       painted that project RED, telling the owner it is in breach when the truth is that there is
+       nothing to measure yet. `h.spiState`/`h.cpiState` carry 'not-measured' for exactly that.
+
+    2. THE THRESHOLD IS PRINTED. A green tile nobody can check is decoration. The card header
+       states the number in force and whether it came from settings or the default.
+
+    3. CLOSED PROJECTS ARE OUT, AND THE PAGE SAYS WHAT IT LEFT OUT. PRD §4.5 excludes each close
+       step from a different live view, and says closed projects stay in the history totals
+       forever — so there are two labelled figures, live and including closed, never one. The
+       toggle names the projects it would add and the step each left at. %>
+<% const money = (n) => 'Rp ' + fmt(n || 0); %>
+<% const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0); %>
+<% const tl = (state, value) => state === 'not-measured' ? 'nt'
+     : (state === 'breached' ? 'bd' : 'ok'); %>
+
 <div class="grid k4">
-  <div class="card kpi"><div class="lbl"><svg><use href="#i-folder"/></svg>Active projects</div>
-    <div class="v"><%= projects.length %></div><div class="f">visible to you</div></div>
+  <div class="card kpi"><div class="lbl"><svg><use href="#i-folder"/></svg>Live projects</div>
+    <div class="v"><%= p.totals.live.count %></div>
+    <div class="f"><%= p.closedCount
+      ? p.closedCount + ' closed, hidden below' : 'visible to you' %></div></div>
+
   <div class="card kpi"><div class="lbl"><svg><use href="#i-chart"/></svg>Contract value</div>
-    <div class="v sm">Rp <%= fmt(contractValue) %></div><div class="f">across <%= projects.length %> projects</div></div>
+    <div class="v sm"><%= money(p.totals.live.contract) %></div>
+    <div class="f">live projects only</div></div>
+
   <div class="card kpi"><div class="lbl"><svg><use href="#i-book"/></svg>Cost to date</div>
-    <div class="v sm">Rp <%= fmt(costToDate) %></div>
-    <div class="f"><%= contractValue ? Math.round(costToDate / contractValue * 100) : 0 %>% of contract</div></div>
+    <div class="v sm"><%= money(p.totals.live.cost) %></div>
+    <div class="f"><%= pct(p.totals.live.cost, p.totals.live.contract) %>% of live contract</div></div>
+
   <div class="card kpi"><div class="lbl"><svg><use href="#i-in"/></svg>Untagged lines</div>
-    <div class="v"><%= untaggedCount %></div><div class="f"><span class="wn">blocks cost report</span></div></div>
+    <div class="v"><%= untaggedCount %></div>
+    <div class="f"><% if (untaggedCount) { %><span class="wn">blocks cost report</span><% } else { %>nothing waiting<% } %></div></div>
 </div>
 
-<div class="grid k2" style="margin-top:12px">
-  <div class="card">
-    <div class="card-hd"><h2>Projects</h2><span class="r"><%= projects.length %></span></div>
-    <div class="rows">
-      <% projects.forEach(function(p){ %>
-      <div class="row">
-        <div class="ic bl"><svg><use href="#i-folder"/></svg></div>
-        <div class="tx"><div class="t"><a href="/ledger?project=<%= p.id %>"><%= p.name %></a></div>
-          <div class="d"><%= p.code %> · <%= p.status %></div></div>
-        <div class="tm">Rp <%= fmt(p.contract_amount) %></div>
-      </div>
+<%# THE CLOSED-PROJECTS ROW. Present whenever there is anything closed, so the live figures are
+    never quietly smaller than what the user knows exists. The toggle is a LINK, not a script:
+    it works without JavaScript and its state is in the URL, so a bookmark keeps it. %>
+<% if (p.closedCount) { %>
+<div class="card" style="margin-top:12px"><div class="fbody">
+  <p style="margin:0">
+    <b><%= p.closedCount %> closed project<%= p.closedCount === 1 ? '' : 's' %></b>
+    <%= p.includeClosed ? 'are included below.' : 'are left out of the live totals above.' %>
+    <% if (!p.includeClosed) { %>
+      Including them would add <b><%= money(p.added.contract) %></b> of contract value and
+      <b><%= money(p.added.cost) %></b> of cost.
+    <% } %>
+  </p>
+  <p class="dim" style="margin:8px 0 0">
+    <% if (p.includeClosed) { %>
+      <a href="/"><b>Hide closed projects</b></a> — back to live figures only.
+    <% } else { %>
+      <a href="/?include_closed=1"><b>Include closed projects</b></a> — who would be added, and
+      why each was out:
+      <span style="display:block;margin-top:6px">
+      <% p.added.names.forEach(function(n){ %><%= n.name %>
+        <span class="dim">(<%= n.steps.map(function(s){ return s.step + ' — left ' + s.left; }).join('; ') %>)</span><br>
+      <% }) %></span>
+    <% } %>
+  </p>
+  <p class="dim" style="margin:8px 0 0">A closed project never leaves the history: these figures
+    feed future bid estimates. The live totals above simply do not count it.</p>
+</div></div>
+<% } %>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd">
+    <h2>Projects</h2>
+    <span class="r">SPI / CPI breach below <%= p.thresholds.spi %><% if (!p.thresholds.fromSettings) { %>
+      (default — not yet set in settings)<% } %></span>
+  </div>
+  <div class="tw"><table>
+    <thead><tr>
+      <th>Project</th><th class="r">Contract</th><th class="r">Cost to date</th>
+      <th class="r">% spent</th><th>Schedule (SPI)</th><th>Cost (CPI)</th><th>Measured</th>
+    </tr></thead>
+    <tbody>
+      <% if (!p.rows.length) { %>
+      <tr><td colspan="7" class="dim">No projects are in scope for your account.</td></tr>
+      <% } %>
+      <% p.rows.forEach(function(r){ %>
+      <tr>
+        <td>
+          <a href="/reports/project?project=<%= r.id %>"><b><%= r.name %></b></a>
+          <div class="dim" style="font-size:12px"><%= r.code %>
+            <% if (r.exclusion.steps.length) { %>
+              · <span class="chip nt">closed</span>
+              <%= r.exclusion.steps.map(function(s){ return s.step.toLowerCase(); }).join(', ') %>
+            <% } else { %>· <%= r.status %><% } %>
+          </div>
+        </td>
+        <td class="r"><%= money(r.contractAmount) %></td>
+        <td class="r"><%= money(r.costToDate) %></td>
+        <td class="r"><%= r.contractAmount ? pct(r.costToDate, r.contractAmount) + '%' : '—' %></td>
+
+        <%# One tile per index. The CLASS carries the meaning (ok / wn / nt) and so does the
+            WORDS — never colour alone, because this screen is printed and colour is not the only
+            way a reader will get it. 'nt' (not measured) is the grey state. %>
+        <td><span class="chip <%= tl(r.health.spiState, r.health.spi) %>">
+          <% if (r.health.spiState === 'not-measured') { %>not measured
+          <% } else { %><%= r.health.spi.toFixed(2) %><% } %></span>
+          <% if (r.health.spiState === 'breached') { %><span class="dim" style="font-size:12px">behind</span>
+          <% } else if (r.health.spiState === 'within') { %><span class="dim" style="font-size:12px">on plan</span><% } %>
+        </td>
+        <td><span class="chip <%= tl(r.health.cpiState, r.health.cpi) %>">
+          <% if (r.health.cpiState === 'not-measured') { %>not measured
+          <% } else { %><%= r.health.cpi.toFixed(2) %><% } %></span>
+          <% if (r.health.cpiState === 'breached') { %><span class="dim" style="font-size:12px">over budget</span>
+          <% } else if (r.health.cpiState === 'within') { %><span class="dim" style="font-size:12px">on budget</span><% } %>
+        </td>
+
+        <td class="dim" style="font-size:12px">
+          <% if (r.health.measured) { %>as at <%= r.health.month %>
+          <% } else { %>nothing measured yet<% } %>
+        </td>
+      </tr>
       <% }) %>
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-hd"><h2>To review</h2><span class="r"><%= untaggedCount %></span></div>
-    <div class="rows">
-      <div class="row"><div class="ic wn"><svg><use href="#i-book"/></svg></div>
-        <div class="tx"><div class="t">Untagged cost lines <span class="chip nt">QUEUE</span></div>
-          <div class="d">No WBS/CBS tag · blocks cost reporting</div></div>
-        <div class="tm"><%= untaggedCount %> lines</div></div>
-    </div>
-  </div>
+    </tbody>
+    <tfoot><tr>
+      <td><b>Total</b> <span class="dim"><%= p.includeClosed ? 'including closed' : 'what is shown' %></span></td>
+      <td class="r"><b><%= money(p.totals.shown.contract) %></b>
+        <% if (!p.includeClosed && p.closedCount) { %>
+          <div class="dim" style="font-size:12px">closed would add <%= money(p.added.contract) %></div>
+        <% } %></td>
+      <td class="r"><b><%= money(p.totals.shown.cost) %></b>
+        <% if (!p.includeClosed && p.closedCount) { %>
+          <div class="dim" style="font-size:12px">closed would add <%= money(p.added.cost) %></div>
+        <% } %></td>
+      <td colspan="4"></td>
+    </tr></tfoot>
+  </table></div>
 </div>
+
+<div class="card" style="margin-top:12px"><div class="fbody">
+  <p class="dim" style="margin:0">
+    <b>Reading the tiles.</b> Schedule and cost indices are cumulative, from the latest month with
+    a real measurement — the same month the forecast and variance reports use, so no two screens
+    describe different months. Below <b><%= p.thresholds.spi %></b> is shown as a breach
+    (PRD §4.4). <b>Not measured</b> is grey and is not a breach: it means the project has no
+    baseline or no progress recorded yet, and it cannot be on or off plan until it does.
+    <% if (untaggedCount) { %>The <%= untaggedCount %> untagged line<%= untaggedCount === 1 ? '' : 's' %>
+    block the cost report — <a href="/queue">tag them</a> to make these figures complete.<% } %>
+  </p>
+</div></div>
