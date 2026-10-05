@@ -1496,6 +1496,37 @@ with `{status:'error'}` is reported healthy by anything that only reads the stat
 requires anonymous visitors to be redirected, except a hand-kept `PUBLIC` set. `/health/live` and
 `/health/ready` were added to that set with the reason. Any new public route needs the same edit.
 
+## 12zz. AL — Alerts, notification inbox, polling (module 9 part 9.3) — ✅ IMPLEMENTED 2026-10-05
+
+PRD **§4.4** (the six alerts, Q19), TECH-SPEC **§4.4/§6.2**, **TS-03** (30 s polling), **TS-14**
+(backup alert), **TS-23** (disk alert). Gate `test/alerts.test.js`, series **AL1–AL11**.
+**No port** — an in-process HTTP server on port 0, plus direct service calls for the rules.
+
+| # | Check |
+|---|---|
+| AL1 | The EVM rules fire on real data (a breach and an EAC overrun) and stay silent on a genuinely healthy project |
+| AL2 | A missing backup alerts as CRITICAL (TS-14); a real backup clears it |
+| AL3 | The disk alert fires under the threshold, and names the DATABASE's filesystem |
+| AL4 | Recipients: the project half (cannot see project → never told) AND the capability half (viewer → no `invoice_overdue`) |
+| AL5 | Dedupe: a second evaluation creates nothing while unread; after reading, a persisting condition is delivered again |
+| AL6 | `markRead` is owner-scoped, idempotent, and cannot be used as an existence oracle |
+| AL7 | The inbox orders critical → warning → info, not merely newest |
+| AL8 | `GET /api/alerts` returns UNREAD ONLY, with the count and `pollSeconds: 30`; 401 anonymous |
+| AL9 | `POST /api/alerts/:id/read` requires the CSRF header (refused without it) and marks exactly one |
+| AL10 | `GET /alerts` renders (badge + poll client present, no template error); 302 anonymous |
+| AL11 | The evaluation job registers with the runner, completes, and is idempotent through a second drain |
+
+**The schema already had the dedupe rule.** `idx_notif_unread_unique` is a partial UNIQUE index over
+`(user_id, alert_type, project, entity_type, entity_id) WHERE read_at IS NULL`, so delivery is
+`INSERT OR IGNORE` — no `SELECT`-then-`INSERT` (a race on a 60 s tick), and re-notification after a
+read falls out of the index for free. `notification_inbox` has existed since migration 002 with
+**nothing writing to it**; these rules are the first writers.
+
+**Recipients are an authorization decision.** A person is told only if they can already see the
+project (`permissions.projectsFor`, fail-closed) AND hold the capability the alert's screen needs —
+so the inbox can never reveal a figure to someone whose page would refuse it. The two system alerts
+go to `canManageStructure` (the Administrator), not to every project user.
+
 ## 12z. BR — Backup, retention, restore drill (module 9 part 9.4) — ✅ IMPLEMENTED 2026-10-05
 
 TECH-SPEC **§4.2** (backup/restore), **§12.4–§12.6**, **TS-13/TS-14/TS-19**. Gate

@@ -102,6 +102,9 @@
     <a href="/periods" class="<%= _active === 'Accounting periods' ? 'on' : '' %>"><svg><use href="#i-book"/></svg><span class="lbl">Accounting periods</span></a>
     <a href="/system/health" class="<%= _active === 'system' ? 'on' : '' %>"><svg><use href="#i-check"/></svg><span class="lbl">System health</span></a>
     <% } %>
+    <%# `#i-bell` is defined in partials/topbar.ejs, which renders on every page alongside this
+        sidebar, so the reference resolves without a second copy of the symbol here. %>
+    <a href="/alerts" class="<%= _active === 'Notifications' ? 'on' : '' %>"><svg><use href="#i-bell"/></svg><span class="lbl">Notifications</span></a>
   </nav>
   <div class="sb-foot">
     <div class="av"><%= (typeof initials !== 'undefined') ? initials : '?' %></div>

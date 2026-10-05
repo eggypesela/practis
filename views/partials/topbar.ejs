@@ -1,10 +1,58 @@
 <div class="top">
   <div class="crumb"><b><%= (typeof crumb !== 'undefined') ? crumb : '' %></b></div>
   <div class="search"><svg><use href="#i-search"/></svg><input placeholder="Search…"></div>
-  <button class="iconbtn" type="button"><svg><use href="#i-bell"/></svg></button>
+  <a class="iconbtn" id="bellBtn" href="/alerts" title="Notifications" aria-label="Notifications">
+    <svg><use href="#i-bell"/></svg>
+    <span class="bellbadge" id="bellBadge" hidden></span>
+  </a>
   <div class="avatarbtn"><%= (typeof initials !== 'undefined') ? initials : '?' %></div>
 </div>
 <svg style="display:none" aria-hidden="true"><defs>
 <symbol id="i-search" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M10.5 3a7.5 7.5 0 1 0 4.6 13.4l4.2 4.2 1.4-1.4-4.2-4.2A7.5 7.5 0 0 0 10.5 3Zm0 2a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11Z"/></symbol>
 <symbol id="i-bell" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0-6 6v4.2L4 16v1h16v-1l-2-2.8V9a6 6 0 0 0-6-6zm-2 14h4a2 2 0 0 1-4 0z"/></symbol>
 </defs></svg>
+
+<script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>">
+/* The notification badge (TS-03: "in-app alerts delivered by browser polling every 30 seconds").
+ *
+ * This is the ONLY polling client, and it lives in the topbar so it runs on every page — an alert
+ * that only appeared on one screen would be found only by someone who happened to be on that screen.
+ *
+ * IT STARTS FROM ZERO, NOT FROM A PAGE VARIABLE. The first number the user sees comes from the same
+ * endpoint the badge keeps polling, so the bell can never show a count that was true when the page
+ * was rendered and has since changed. Waiting `pollSeconds` before the first call is precisely the
+ * window in which a stale count would be shown, so the first call is immediate.
+ *
+ * A failed poll is SILENT and the badge is LEFT ALONE. Clearing it on a network error would make a
+ * dropped request look like "no alerts" — the one wrong answer for a notification badge.
+ */
+(function () {
+  var btn = document.getElementById('bellBtn');
+  var badge = document.getElementById('bellBadge');
+  if (!btn || !badge) return;
+
+  function paint(n) {
+    if (n > 0) {
+      badge.textContent = n > 99 ? '99+' : String(n);
+      badge.hidden = false;
+      btn.setAttribute('aria-label', n + ' notification' + (n === 1 ? '' : 's'));
+    } else {
+      badge.hidden = true;
+      btn.setAttribute('aria-label', 'Notifications');
+    }
+  }
+
+  function poll() {
+    fetch('/api/alerts?limit=1', { headers: { 'accept': 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+      .then(function (out) { paint(Number(out.unread) || 0); })
+      .catch(function () { /* keep the last known count — see the note above */ });
+  }
+
+  var SECONDS = 30; /* TS-03. The endpoint also reports it; this is the first tick, before any reply. */
+  poll();
+  setInterval(function () {
+    if (!document.hidden) poll();   /* a backgrounded tab does not need to keep asking */
+  }, SECONDS * 1000);
+})();
+</script>

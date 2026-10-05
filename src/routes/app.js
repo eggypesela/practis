@@ -5,6 +5,7 @@ const q = require('../db/queries');
 const { requirePage, requireAdmin } = require('../middleware/auth');
 const { projectContext } = require('../middleware/scope');
 const { portfolio } = require('../lib/portfolio-service');
+const svc = require('../lib/alert-service');
 
 const IDR = new Intl.NumberFormat('id-ID');
 const fmt = (n) => IDR.format(n || 0);
@@ -42,7 +43,7 @@ const APP_PATHS = [
   '/periods/unfreeze', '/advances', '/advances/new', '/advances/:id',
   '/advances/:id/lines', '/expenses', '/expenses/:lineId/check',
   '/expenses/:lineId/reject', '/expenses/:lineId/block', '/expenses/:lineId/unblock',
-  '/reconciliation',
+  '/reconciliation', '/alerts',
 ];
 router.use(APP_PATHS, requirePage, projectContext);
 
@@ -773,5 +774,36 @@ router.get('/reconciliation', requireCapability('canReconcile', 'Reconciliation 
         },
       });
   });
+
+// GET /alerts — the NOTIFICATION INBOX (module 9 part 9.3; PRD §4.4, Q12, TS-03).
+//
+// PROJECT-AGNOSTIC on purpose. Every other page in this router requires a project and redirects to
+// `/` without one; the inbox must not, because the operator's two system alerts (stale backup, low
+// disk — TS-14/TS-23) belong to NO project. Requiring a project would make the two most urgent
+// alerts unreachable for an Administrator who has none selected, which is the normal state for them.
+//
+// No capability gate: this shows a person only the rows ADDRESSED TO THEM, and `recipientsFor`
+// already refused to address a row to anyone whose pages would hide the figure. A gate here would be
+// a second, weaker copy of that decision.
+router.get('/alerts', (req, res) => {
+  const alerts = svc.inboxFor(req.user, { limit: 100 });
+  const total = svc.unreadCount(req.user);
+  const bySeverity = (s) => alerts.filter((a) => a.severity === s).length;
+  page(res, 'Notifications', 'Alerts that are waiting for someone to act on them',
+    'Notifications', 'alerts', {
+      active: 'Notifications',
+      locals: {
+        alerts,
+        total,
+        critical: bySeverity('critical'),
+        warning: bySeverity('warning'),
+        info: bySeverity('info'),
+        pollSeconds: 30,
+        // The alert types this installation can raise, so the empty state can say what it is
+        // watching for rather than just "nothing here".
+        thresholds: svc.thresholds(),
+      },
+    });
+});
 
 module.exports = router;

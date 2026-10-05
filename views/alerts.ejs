@@ -1,0 +1,91 @@
+<%
+  const sevClass = (s) => s === 'critical' ? 'bd' : (s === 'warning' ? 'wn' : '');
+  const sevLabel = (s) => s === 'critical' ? 'Critical' : (s === 'warning' ? 'Warning' : 'For information');
+  const typeLabel = {
+    cpi_spi_breach: 'Cost / schedule performance',
+    cost_overrun: 'Forecast over budget',
+    progress_stale: 'Progress not updated',
+    invoice_overdue: 'Overdue invoice',
+    bcr_pending: 'Change request waiting',
+    cash_advance_aged: 'Cash advance unsettled',
+    submission_overdue: 'Submission overdue',
+    backup_overdue: 'Backup',
+    disk_low: 'Disk space',
+  };
+%>
+
+<div class="card">
+  <div class="card-hd"><h2>Waiting for action</h2>
+    <span class="r">
+      <% if (critical) { %><span class="chip bd"><%= critical %> critical</span><% } %>
+      <% if (warning) { %><span class="chip wn"><%= warning %> warning</span><% } %>
+      <% if (info) { %><span class="chip"><%= info %> for information</span><% } %>
+      <% if (!total) { %><span class="chip ok">nothing waiting</span><% } %>
+    </span></div>
+
+  <% if (!alerts.length) { %>
+  <div class="fbody"><div class="fnote"><svg><use href="#i-check"/></svg><span>
+    <b>Nothing is waiting.</b> This list is checked for you in the background, and the bell at the
+    top of the page updates on its own every <%= pollSeconds %> seconds — there is nothing to refresh.
+    It currently watches for six project conditions
+    (performance below <%= thresholds.cpi %> against the plan, a forecast that finishes over budget,
+    progress not updated for <%= thresholds.staleProgressDays %> days, an invoice past its due date,
+    a change request waiting more than <%= thresholds.bcrPendingDays %> days, and a cash advance
+    outstanding more than <%= thresholds.advanceAgedDays %> days) plus two on this installation
+    (a backup that is overdue or has failed, and low disk space).
+    Alerts are only sent to people who can already see the project and the figures involved.
+  </span></div></div>
+  <% } else { %>
+  <div class="tw"><table>
+    <thead><tr><th style="width:170px">What</th><th>Detail</th><th style="width:120px" class="r">When</th><th style="width:90px"></th></tr></thead>
+    <tbody>
+    <% alerts.forEach((a) => { %>
+      <tr data-alert-id="<%= a.id %>">
+        <td>
+          <span class="chip <%= sevClass(a.severity) %>"><%= sevLabel(a.severity) %></span>
+          <div class="dim" style="margin-top:4px"><%= typeLabel[a.alertType] || a.alertType %></div>
+        </td>
+        <td><b><%= a.title %></b><div class="dim" style="margin-top:2px"><%= a.body %></div></td>
+        <td class="r dim"><%= a.createdAt %></td>
+        <td class="r">
+          <button class="btn sm js-ack" type="button" data-id="<%= a.id %>">Mark read</button>
+        </td>
+      </tr>
+    <% }); %>
+    </tbody>
+  </table></div>
+  <div class="fbody">
+    <div class="fnote"><svg><use href="#i-info"/></svg><span>
+      Marking an alert read means <b>you have seen it</b>, not that it is fixed. If the condition is
+      still true the next check will tell you again — which is deliberate: a budget that is still
+      overspent is not made better by having been noticed once.
+    </span></div>
+  </div>
+  <% } %>
+</div>
+
+<script nonce="<%= typeof cspNonce !== 'undefined' ? cspNonce : '' %>">
+/* Mark-read, wired to the JSON endpoint (§6.2) rather than a form POST, because the inbox is
+   already a polling client and a page reload on every acknowledgement would lose the scroll
+   position in a long list. The CSRF token travels in the header — the same path the import
+   endpoints use, since a fetch body is not a form body. */
+(function () {
+  var TOKEN = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+  document.querySelectorAll('.js-ack').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var id = btn.getAttribute('data-id');
+      btn.disabled = true;
+      fetch('/api/alerts/' + encodeURIComponent(id) + '/read', {
+        method: 'POST',
+        headers: { 'x-csrf-token': TOKEN, 'accept': 'application/json' },
+      }).then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)); })
+        .then(function (out) {
+          var row = document.querySelector('tr[data-alert-id="' + id + '"]');
+          if (row) row.remove();
+          if (out.unread === 0) window.location.reload();
+        })
+        .catch(function () { btn.disabled = false; });
+    });
+  });
+})();
+</script>

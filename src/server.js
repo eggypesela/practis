@@ -58,6 +58,7 @@ app.use(require('./middleware/auth').attachUser);
 app.use(require('./routes/health'));
 
 app.use(require('./routes/auth'));
+app.use(require('./routes/alerts'));   // /api/alerts (module 9 part 9.3, TS-03)
 app.use(require('./routes/admin'));
 app.use(require('./routes/api'));
 app.use(require('./routes/projects'));
@@ -115,11 +116,28 @@ module.exports.boot = () => {
     ? 'backup: first snapshot queued'
     : `backup: skipped startup snapshot (${first.reason})`);
 
+  // Alert evaluation (module 9 part 9.3, PRD §4.4 / TS-14 / TS-23). Registered here so the runner
+  // knows the type — an unregistered type is a LOUD failure by design, so a tick before this line
+  // would report a wiring bug rather than silently doing nothing.
+  //
+  // Evaluated on every tick as well as at boot. The sixty-second cadence is for the SERVER's own
+  // condition alerts (backup overdue, disk low) — the six project alerts change monthly at most, and
+  // re-evaluating them is cheap (a handful of indexed reads) while the partial unique index makes
+  // the repeat delivery a no-op. Running it here rather than on the 30-second poll is the whole
+  // point: the poll only ever READS, so the browser's cadence cannot change what anybody is told.
+  const alerts = require('./lib/alert-service');
+  alerts.registerAlertJob(jobs);
+  const firstEval = alerts.enqueueEvaluation(jobs);
+  console.log(`alerts: first evaluation queued (job ${firstEval})`);
+
   jobs.start({
     intervalMs: 60_000,
     // Each tick asks whether an hourly snapshot is due. The check is cheap and reads the backup
     // directory, not the database.
-    onTick: () => { try { backup.enqueueHourlyBackup(jobs); } catch (e) { console.error('[backup] tick:', e.message); } },
+    onTick: () => {
+      try { backup.enqueueHourlyBackup(jobs); } catch (e) { console.error('[backup] tick:', e.message); }
+      try { alerts.enqueueEvaluation(jobs); } catch (e) { console.error('[alerts] tick:', e.message); }
+    },
   });
 
   return app.listen(PORT, () => {
