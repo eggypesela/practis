@@ -87,13 +87,52 @@
 <% } %>
 
 <div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Backups</h2>
+    <span class="r">
+      <% if (d.backupOverdue) { %><span class="chip bd">overdue</span>
+      <% } else { %><span class="chip ok">on schedule</span><% } %>
+    </span></div>
+  <div class="tw"><table>
+    <thead><tr><th>Measure</th><th class="r">Value</th></tr></thead>
+    <tbody>
+      <tr><td>Newest verified backup</td><td class="r"><%= fmtAge(d.backupAgeSeconds) %></td></tr>
+      <tr><td>Snapshots held</td><td class="r"><%= d.backup.total %></td></tr>
+      <tr><td>Retention references</td>
+        <td class="r"><%= d.backup.referenceCount %> of <%= d.backup.maxReferences %> max<% if (!d.backup.withinLimit) { %> <span class="wn">over limit</span><% } %></td></tr>
+      <tr><td>Superseded (fills no tier)</td><td class="r"><%= d.backup.supersededCount %></td></tr>
+      <tr><td>Backup directory size</td><td class="r"><%= fmtBytes(d.backup.totalBytes) %></td></tr>
+      <tr><td>Schema version in newest</td><td class="r"><%= d.backup.latestUserVersion === null ? '—' : 'v' + d.backup.latestUserVersion %></td></tr>
+      <tr><td>Not in the set</td>
+        <td class="r"><% const missing = (d.backup.latestComponents || []).filter((c) => !c.included); %><%= missing.length ? missing.map((c) => c.name).join(', ') : 'nothing' %></td></tr>
+    </tbody>
+  </table></div>
+  <div class="fbody">
+    <div class="fnote"><svg><use href="#i-info"/></svg><span>
+      <b>Nothing is ever deleted automatically.</b> The 24h/7d/4w/12m tiers are a description of
+      which snapshots would be kept, not authority to remove any: §4.2 requires explicit approval
+      and a tested restore first. Superseded snapshots are counted here so that decision can be
+      made with real numbers.
+      <% if (d.backupOverdue) { %>
+      <span class="wn">The newest backup is past the one-hour RPO (TS-14) — the next hourly snapshot
+      should restore this, and if it does not, the backup job is failing.</span>
+      <% } %>
+      A restore is rehearsed with <code class="mono">node scripts/restore-drill.js</code>, which
+      restores to an isolated path and never touches production.
+      <% if (d.backup.latestUserVersion !== null && d.backup.latestUserVersion < d.schemaVersion) { %>
+      <span class="wn">The newest backup is at schema v<%= d.backup.latestUserVersion %> but the app
+      is at v<%= d.schemaVersion %> — restoring it would also require replaying migrations.</span>
+      <% } %>
+    </span></div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:12px">
   <div class="card-hd"><h2>This process</h2></div>
   <div class="tw"><table>
     <thead><tr><th>Measure</th><th class="r">Value</th></tr></thead>
     <tbody>
       <tr><td>Uptime</td><td class="r"><%= fmtUptime(d.uptimeSeconds) %></td></tr>
       <tr><td>Started</td><td class="r"><%= d.startedAt %></td></tr>
-      <tr><td>Latest backup</td><td class="r"><%= fmtAge(d.backupAgeSeconds) %></td></tr>
     </tbody>
   </table></div>
   <div class="fbody">

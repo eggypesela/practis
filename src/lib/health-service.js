@@ -150,9 +150,11 @@ function readinessChecks() {
  * The Administrator detail view (§4.3/TS-23): every check with its reason, plus queue depth,
  * backup age, uptime and migration version.
  *
- * `backupAgeSeconds` is null until the backup job exists (part 9.4). It is reported as null
- * rather than as 0 or as "ok": a null is an honest "not measured yet", and 0 would read as a
- * backup taken seconds ago. The admin page must show it as unknown.
+ * `backupAgeSeconds` is the REAL age measured from the backup set (module 9 part 9.4). It is null
+ * when no backup exists, and the page must render that as UNKNOWN rather than as 0 — `0` would mean
+ * "a backup finished this second", so reporting a missing backup as `0` would show the healthiest
+ * possible number for the most dangerous state. `backupOverdue` is TS-14's RPO of one hour
+ * expressed as a flag, and is what part 9.3 turns into an alert.
  */
 function detail(extra = {}) {
   const checks = readinessChecks();
@@ -166,9 +168,55 @@ function detail(extra = {}) {
     startedAt: STARTED_AT.toISOString(),
     uptimeSeconds: Math.round((Date.now() - STARTED_AT.getTime()) / 1000),
     diskFreeBytes: (() => { try { return diskFreeBytes(); } catch { return null; } })(),
-    backupAgeSeconds: extra.backupAgeSeconds ?? null,
+    backupAgeSeconds: backupAgeSeconds(),
+    backupOverdue: isBackupOverdue(),
+    backup: backupSummary(),
     registeredJobTypes: jobs.registeredTypes(),
   };
+}
+
+/** Age of the newest verified backup, in seconds, or null when there is none. */
+function backupAgeSeconds() {
+  try {
+    return require('./backup-service').backupAgeSeconds();
+  } catch {
+    // A failure to read the backup directory must not take the health page down — the page is
+    // what an operator opens when something is already wrong.
+    return null;
+  }
+}
+
+function isBackupOverdue() {
+  try {
+    return require('./backup-service').isOverdue();
+  } catch {
+    return true; // unknown is reported as overdue, never as fine
+  }
+}
+
+/** The backup set, summarised for the admin page. */
+function backupSummary() {
+  try {
+    const b = require('./backup-service');
+    const r = b.retentionReport();
+    const latest = b.latestBackup();
+    return {
+      total: r.totalSnapshots,
+      newest: r.newest,
+      oldest: r.oldest,
+      totalBytes: r.totalBytes,
+      supersededCount: r.supersededCount,
+      withinLimit: r.withinLimit,
+      referenceCount: r.referenceCount,
+      maxReferences: r.maxReferences,
+      tiers: r.tiers,
+      latestUserVersion: latest ? latest.userVersion : null,
+      latestComponents: latest ? latest.components : [],
+      dir: b.backupsDir(),
+    };
+  } catch (err) {
+    return { error: (err && err.message) || 'unreadable', total: 0 };
+  }
 }
 
 module.exports = {

@@ -98,8 +98,42 @@ module.exports.boot = () => {
   const jobs = require('./lib/jobs');
   const recovered = jobs.recoverStale();
   if (recovered) console.log(`jobs: recovered ${recovered} job(s) interrupted by the last shutdown`);
-  jobs.start();
-  return app.listen(PORT, () => console.log(`PRACTIS on http://localhost:${PORT}`));
+
+  // The hourly database backup (module 9 part 9.4, TECH-SPEC §4.2/§12.6, TS-13/TS-14). Registered
+  // BEFORE the ticker starts so the first tick can already see the job type; registering after
+  // would make the opening ticks complain about an unmounted type.
+  //
+  // The first enqueue is DELIBERATE and it is the point of the feature: TS-14 locks an RPO of one
+  // hour, and a pipeline that waits an hour before its first snapshot leaves exactly the window it
+  // promised to protect completely unprotected — which is always the window that matters, because
+  // it is the one starting the moment the app goes live. `enqueueHourlyBackup` is a no-op if a
+  // backup is already recent, so a restart loop does not produce a burst of snapshots.
+  const backup = require('./lib/backup-service');
+  backup.registerBackupJob(jobs);
+  const first = backup.enqueueHourlyBackup(jobs);
+  console.log(first.enqueued
+    ? 'backup: first snapshot queued'
+    : `backup: skipped startup snapshot (${first.reason})`);
+
+  jobs.start({
+    intervalMs: 60_000,
+    // Each tick asks whether an hourly snapshot is due. The check is cheap and reads the backup
+    // directory, not the database.
+    onTick: () => { try { backup.enqueueHourlyBackup(jobs); } catch (e) { console.error('[backup] tick:', e.message); } },
+  });
+
+  return app.listen(PORT, () => {
+    console.log(`PRACTIS on http://localhost:${PORT}`);
+
+    // Drain ONCE, immediately, rather than waiting up to a full 60s tick. Without this the
+    // snapshot is only QUEUED at boot and the first recovery copy of a newly-started deployment
+    // is delayed by a whole tick — during exactly the window TS-14's one-hour RPO is supposed to
+    // cover. Deferred with `setImmediate` so it runs AFTER the listener is accepting connections:
+    // a slow snapshot must never delay startup, and the runner already logs a failed job.
+    setImmediate(() => {
+      jobs.drain().catch((e) => console.error('[backup] startup drain:', (e && e.message) || e));
+    });
+  });
 };
 
 // Only listen when run directly (`node src/server.js`), not when required.

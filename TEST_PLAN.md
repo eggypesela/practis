@@ -1496,6 +1496,39 @@ with `{status:'error'}` is reported healthy by anything that only reads the stat
 requires anonymous visitors to be redirected, except a hand-kept `PUBLIC` set. `/health/live` and
 `/health/ready` were added to that set with the reason. Any new public route needs the same edit.
 
+## 12z. BR — Backup, retention, restore drill (module 9 part 9.4) — ✅ IMPLEMENTED 2026-10-05
+
+TECH-SPEC **§4.2** (backup/restore), **§12.4–§12.6**, **TS-13/TS-14/TS-19**. Gate
+`test/backup.test.js`, series **BR1–BR13**. **No port** — in-process against a temp DB in a
+throwaway directory.
+
+| # | Check |
+|---|---|
+| BR1 | A backup produces a verified, compressed snapshot; the manifest records what was proven |
+| BR2 | The kept `.gz` decompresses to a DB passing integrity + FK checks, and still matches its recorded sha256 |
+| BR3 | An artifact that FAILS verification is not published — no manifest, no `.part` left behind |
+| BR4 | **Taking a backup leaves the live database byte-identical** (§4.2: never write to production) |
+| BR5 | The disk guard REFUSES rather than filling the disk, and leaves no partial output |
+| BR6 | Backup age is measured; **«no backup» is UNKNOWN, never zero**; overdue fires past the RPO |
+| BR7 | **The retention report NEVER deletes** — file list unchanged, and no deletion function is exported |
+| BR8 | Tiering counts REFERENCES (≤47); one snapshot fills several tiers without duplication |
+| BR9 | The drill restores to an isolated path, passes all six checks, and the app SERVES the copy |
+| BR9b | A drill with nothing to restore says so rather than reporting success |
+| BR10 | The drill refuses a target that is the live DB or inside the live data directory |
+| BR11 | The job registers with the runner, suppresses a duplicate while one is recent, and completes end to end |
+| BR12 | The manifest itemises the backup set and admits what is absent (no offsite copy); no secret value |
+| BR13 | The backup dir follows `db.name`, so a temp DB can never pollute the real backup set |
+
+**Two design notes worth keeping.** The retention window is counted in **buckets**, not duration: a
+naive `now - createdAt <= 24h` admits 25 hour-buckets and quietly exceeds §4.2's maximum of 24
+(BR8 caught this). And the default backup directory derives from the database's own path, because
+26 files in this suite boot the real server against a temp DB — a fixed default would have written
+throwaway snapshots into the REAL backup set (BR13 pins it).
+
+**The drill boots the real server against the restored copy** (`app_readiness`). That check caught a
+genuine bug — a positional `jobs.enqueue(...)` call that crashed the server at boot — which no
+file-level check could have found.
+
 ## 12y. JB — Job runner (module 9 part 9.1) — ✅ IMPLEMENTED 2026-10-05
 
 TECH-SPEC **§4.5**. Gate `test/jobs.test.js`, series **JB1–JB11**. **No port**: this file drives the
