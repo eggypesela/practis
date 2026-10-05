@@ -1465,6 +1465,40 @@ The product workflow, step by step, and whether a test exists. **Empty rows are 
 
 ---
 
+## 12w. JB — Job runner (module 9 part 9.1) — ✅ IMPLEMENTED 2026-10-05
+
+TECH-SPEC **§4.5**. Gate `test/jobs.test.js`, series **JB1–JB11**. **No port**: this file drives the
+service in-process against a migrated temp DB (see the last note below).
+
+The `jobs` table has existed since migration 002 with nothing reading or writing it. 9.1 adds the
+scheduler: claim a due row, call a registered handler, retry with backoff, recover from a crash.
+`recoverStale()` + `start()` are wired into `server.js` `boot()`.
+
+| # | Check |
+|---|---|
+| JB1 | A due job is claimed once, counted, completed; the payload round-trips |
+| JB2 | A job scheduled in the FUTURE is not claimed early; claimable once due |
+| JB3 | The same job cannot be claimed twice (the claim is ONE statement) |
+| JB4 | A failing handler re-queues with backoff and keeps the reason |
+| JB5 | A re-queued job really runs AGAIN; exhausting max_attempts ends it |
+| JB6 | Backoff is exponential (30/60/120s) and capped at 30 min |
+| JB7 | A job with NO handler fails immediately and permanently |
+| JB8 | **Crash recovery**: an orphaned `running` job returns to `queued`; in-window jobs are left alone |
+| JB8b | A repeatedly-crashing job cannot loop for ever |
+| JB9 | `drain()` runs **one job at a time** (never overlapping); depth counters are right |
+| JB9b | `stats()` / `oldestFailure()` describe a broken queue |
+| JB10 | The ticker starts, refuses a second start, really ticks, and stops |
+| JB11 | `register()` refuses nonsense; wired types are discoverable |
+
+**`attempts` is incremented AT CLAIM, not on failure.** If it moved only on failure, a job that
+crashes the *process* would never be counted and recovery would re-queue it for ever — a loop that
+looks like liveness. Success is decided by `state`, never by `attempts`.
+
+**Why this file has no port and no `startFixture()`.** The fixture spawns the server as a separate
+process, so its ticker would be a second runner claiming the same rows — a race, in a test about not
+racing; and a fixture boot costs ~40s. The runner is pure service code, so this file migrates a temp
+DB, points `PRACTIS_DB` at it, and drives the module in-process.
+
 ## 14. Schema-validator drift — FIXED 2026-10-01
 
 `db/validate.py` executes **`db/schema.sql`** and asserts DB-level invariants — it passes ("ALL CHECKS

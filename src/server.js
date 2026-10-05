@@ -71,7 +71,21 @@ app.use(errorHandler);
 // a hand-maintained list of "public paths" cannot perform). `server.boot` is the
 // real entry point; requiring this module no longer starts a listener.
 module.exports = app;
-module.exports.boot = () => app.listen(PORT, () => console.log(`PRACTIS on http://localhost:${PORT}`));
+
+// The job runner (module 9 part 9.1, TECH-SPEC §4.5). Started inside boot() rather than at require
+// time, deliberately: requiring this module is what every test does, and a timer that starts on
+// require would leave a scheduler running in tests that never wanted one.
+//
+// `recoverStale()` runs BEFORE the first tick and before traffic is accepted, so a job interrupted
+// by the previous process is returned to the queue rather than sitting in `running` forever (§4.5's
+// crash-recovery rule). It is the one piece of job state that must be repaired at boot.
+module.exports.boot = () => {
+  const jobs = require('./lib/jobs');
+  const recovered = jobs.recoverStale();
+  if (recovered) console.log(`jobs: recovered ${recovered} job(s) interrupted by the last shutdown`);
+  jobs.start();
+  return app.listen(PORT, () => console.log(`PRACTIS on http://localhost:${PORT}`));
+};
 
 // Only listen when run directly (`node src/server.js`), not when required.
 if (require.main === module) module.exports.boot();
