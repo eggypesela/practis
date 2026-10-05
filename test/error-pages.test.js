@@ -76,6 +76,10 @@ test('SCH-ERR.2 a fetch()/XHR client keeps receiving JSON', () => {
   errorHandler(new Error('boom'), { headers: { accept: 'application/json' }, url: '/ledger' }, api, () => {});
   assert.strictEqual(api.statusCode, 500);
   assert.strictEqual(api.kind, 'json', 'an explicit JSON Accept still gets JSON');
+  // The body gained `requestId` in module 9 part 9.2 (§4.4: "request id returned on errors; user
+  // can quote it"). This request double carries no `id`, and the handler omits the field rather
+  // than emitting `requestId: undefined` — so the shape here is still exactly the base error. The
+  // WITH-id case is asserted in test/health.test.js HL9.
   assert.deepStrictEqual(api.body, { error: 'internal error' });
 
   // THE CASE ACCEPT ALONE GETS WRONG: fetch() defaults to `Accept: */*`, and the

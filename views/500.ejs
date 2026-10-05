@@ -1,1 +1,19 @@
 <div class="wrap"><div class="hd"><div><h1>Something went wrong</h1><p>The action could not be completed and nothing was saved. Try again, and if it keeps failing, tell your administrator what you were doing.</p></div></div></div>
+
+<%# TECH-SPEC §4.4: "Request ID returned on errors; user can quote it for support." Shown on the
+    page because a user reports what they can SEE — they will not read a response header. It is a
+    random hex token from the CSPRNG, never a session id or a secret, so showing it is safe. %>
+<% if (typeof requestId !== 'undefined' && requestId) { %>
+<div class="wrap" style="margin-top:12px">
+  <div class="card"><div class="fbody">
+    <div class="fnote"><svg><use href="#i-info"/></svg><span>
+      Quote this reference when reporting the problem — it identifies this exact request in the
+      server log: <code class="mono"><%= requestId %></code></span></div>
+  </div></div>
+</div>
+<% } %>
+
+<%# i-info is per-view (symbols are not shared between pages), so this page defines its own. %>
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
+</defs></svg>

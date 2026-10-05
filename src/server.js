@@ -10,6 +10,15 @@ const PORT = process.env.PORT || 3003;
 require('./db/migrate');
 require('./db/seed');
 
+// Request ID FIRST (TECH-SPEC §4.4). Everything below — including the access log and the 404/500
+// handlers — reads `req.id`, so it must exist before any of them can run. It also becomes the
+// `X-Request-Id` response header on every response, so a user can quote it for support.
+app.use(require('./middleware/request-id').requestId());
+
+// Structured access log (§4.4). Mounted before the routers so its 'finish' listener sees the
+// route template Express resolved; static assets and the container probe are excluded there.
+app.use(require('./lib/logger').accessLog());
+
 // Behind nginx / Tailscale, req.ip is the proxy's address unless the hop count is
 // declared — which would make every user share one rate-limit bucket. See
 // src/lib/rate-limit.js for the reasoning; defaults to loopback (same-host proxy).
@@ -41,6 +50,12 @@ app.use(express.static(path.join(__dirname, '..', 'assets')));
 // Resolve the signed-in user + sidebar locals (user name, role, initials, admin
 // flag) on every request, so every page — including 403/404 — renders correctly.
 app.use(require('./middleware/auth').attachUser);
+
+// Health endpoints (module 9 part 9.2, TECH-SPEC §4.3). Mounted BEFORE the page routers on
+// purpose: /health/live and /health/ready must answer a Docker HEALTHCHECK with no session, and
+// everything mounted after this point is behind a page guard. /system/health inside this router
+// applies its own requirePage+requireAdmin.
+app.use(require('./routes/health'));
 
 app.use(require('./routes/auth'));
 app.use(require('./routes/admin'));

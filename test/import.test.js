@@ -546,8 +546,16 @@ test('I8.4 EVERY page route demands a session (the guard list is complete)', asy
   // no enumeration (see routes/admin.js). It was missing from this list, which
   // made the test report the page as a leak; the omission was in the list, not
   // in the app.
-  const PUBLIC = new Set(['/login', '/logout', '/health', '/favicon.ico',
-    '/app.css', '/fonts.css', '/invite/:token']);
+  //
+  // `/health/live` and `/health/ready` (module 9 part 9.2) are DELIBERATELY public
+  // for the same structural reason the Docker HEALTHCHECK exists: a probe has no
+  // session, so requiring one would make the check permanently fail. They are safe
+  // because TECH-SPEC §4.3 requires their bodies to be minimal — a status word plus
+  // the NAMES of failing checks, with no version, path, reason or secret. The
+  // authenticated operator detail page is `/system/health`, which is NOT listed
+  // here and must redirect an anonymous visitor.
+  const PUBLIC = new Set(['/login', '/logout', '/health', '/health/live', '/health/ready',
+    '/favicon.ico', '/app.css', '/fonts.css', '/invite/:token']);
 
   const routes = [];
   const walk = (stack, prefix = '') => {

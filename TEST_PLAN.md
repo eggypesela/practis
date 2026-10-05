@@ -1465,7 +1465,38 @@ The product workflow, step by step, and whether a test exists. **Empty rows are 
 
 ---
 
-## 12w. JB — Job runner (module 9 part 9.1) — ✅ IMPLEMENTED 2026-10-05
+## 12x. HL — Health, readiness, request IDs, logs (module 9 part 9.2) — ✅ IMPLEMENTED 2026-10-05
+
+TECH-SPEC **§4.3** (health/readiness), **§4.4** (logging/request IDs), **TS-23**. Gate
+`test/health.test.js`, series **HL1–HL12**. **No port of its own** — it binds an ephemeral port
+in-process against a migrated temp DB.
+
+| # | Check |
+|---|---|
+| HL1 | `/health/live` answers ok WITHOUT touching the database |
+| HL2 | `/health/ready` answers ok with a MINIMAL body; asserts the exact key set, so a new field that leaks a version or path is a failure |
+| HL3 | Readiness evaluates all FIVE checks §4.3 lists, each with a boolean and a reason |
+| HL4 | The job-runner check FAILS when the runner was never started |
+| HL5 | An impossible disk threshold turns readiness RED and the failed check is NAMED (the threshold is proven to fire) |
+| HL6 | The disk check measures the DATABASE's filesystem, not the root overlay |
+| HL7 | The schema check compares against the real migration target, not a drifted constant |
+| HL8 | Every response carries a sane `X-Request-Id`; a good inbound id is kept |
+| HL8b | A HOSTILE inbound `X-Request-Id` (short, CRLF, over-long) is discarded, not echoed |
+| HL9 | A crash returns the request id in the body, and does not leak the message |
+| HL10 | `/system/health` redirects anonymous visitors; the public probes do NOT |
+| HL11 | `/system/health` renders full detail for an Administrator (schema, queue, backup age) |
+| HL12 | The log line carries §4.4's fields, omits `userId` when anonymous, logs the route TEMPLATE, and excludes static assets + the container probe |
+
+**§4.3 is a split, not a detail level.** The public probes cannot require a session (a container
+HEALTHCHECK has none), so their bodies carry a status word plus the NAMES of failing checks only.
+The reasons live on the authenticated page. `/health/ready` answers **503** when not ready — a 200
+with `{status:'error'}` is reported healthy by anything that only reads the status code.
+
+**I8.4 WILL FAIL when a public route is added.** `test/import.test.js` walks every GET route and
+requires anonymous visitors to be redirected, except a hand-kept `PUBLIC` set. `/health/live` and
+`/health/ready` were added to that set with the reason. Any new public route needs the same edit.
+
+## 12y. JB — Job runner (module 9 part 9.1) — ✅ IMPLEMENTED 2026-10-05
 
 TECH-SPEC **§4.5**. Gate `test/jobs.test.js`, series **JB1–JB11**. **No port**: this file drives the
 service in-process against a migrated temp DB (see the last note below).

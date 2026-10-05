@@ -34,7 +34,11 @@ function notFoundHandler(req, res) {
 function errorHandler(err, req, res, next) {
   // Log the whole error server-side; never leak the stack or message to the client
   // (it can name tables, paths and columns — an information disclosure).
-  console.error(err);
+  //
+  // Logged as a STRUCTURED error line (§4.4) carrying the request id, so a crash can be tied to
+  // the one request that caused it. The stack goes to the log, never to the response.
+  const { error: logError } = require('./logger');
+  logError('unhandled_error', err);
 
   // If the response already started, we cannot rewrite it — hand back to Express,
   // which destroys the socket. Without this the client hangs on a half-written body.
@@ -53,14 +57,25 @@ function errorHandler(err, req, res, next) {
   const isApi = url.startsWith('/api/');
   const prefersJson = accept.includes('application/json') && !accept.includes('text/html');
 
+  // §4.4: "Request ID returned on errors; user can quote it for support." The id is already on
+  // the X-Request-Id response header (middleware/request-id.js); it is repeated in the body
+  // because a user reading a 500 page will quote what is ON the page, not a response header.
+  //
+  // Omitted entirely when the request has no id (the middleware always sets one in the real app,
+  // but a direct unit call need not). `{requestId: undefined}` would still be a KEY, which changes
+  // the response shape depending on how the handler was reached — a contract that differs by
+  // caller is worse than one that omits an absent field.
   if (isApi || prefersJson) {
-    return res.status(500).json({ error: 'internal error' });
+    const body = { error: 'internal error' };
+    if (req.id) body.requestId = req.id;
+    return res.status(500).json(body);
   }
 
   return res.status(500).render('500', {
     layout: 'layout-app',
     title: 'Something went wrong',
     subtitle: '',
+    requestId: req.id,
   });
 }
 

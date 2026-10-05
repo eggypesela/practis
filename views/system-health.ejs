@@ -1,0 +1,119 @@
+<%
+  const chip = (ok) => ok ? 'chip ok' : 'chip bd';
+  const label = (name) => String(name).replace(/_/g, ' ');
+  const failing = d.checks.filter((c) => !c.ok);
+%>
+
+<% if (d.status !== 'ok') { %>
+<div class="errb"><div class="errb-tx"><p><b>Not ready.</b>
+  <%= failing.length %> check<%= failing.length === 1 ? '' : 's' %> failing:
+  <%= failing.map((c) => label(c.name)).join(', ') %>. The public probe answers
+  <code class="mono">503</code> while this lasts.</p></div></div>
+<% } else { %>
+<div class="note ok"><svg><use href="#i-check"/></svg><b>Ready.</b>
+  All five readiness checks pass. This is what a container health check sees.</div>
+<% } %>
+
+<div class="grid k4">
+  <div class="card kpi">
+    <div class="lbl"><svg><use href="#i-info"/></svg>Status</div>
+    <div class="v"><% if (d.status === 'ok') { %>OK<% } else { %>NOT READY<% } %></div>
+    <div class="f"><% if (d.status === 'ok') { %>serving normally<% } else { %>see the failing checks below<% } %></div>
+  </div>
+  <div class="card kpi">
+    <div class="lbl"><svg><use href="#i-swap"/></svg>Jobs due now</div>
+    <div class="v"><%= d.queue.due %></div>
+    <div class="f"><%= d.queue.queued %> queued · <%= d.queue.running %> running</div>
+  </div>
+  <div class="card kpi">
+    <div class="lbl"><svg><use href="#i-lock"/></svg>Jobs failed</div>
+    <div class="v"><%= d.queue.failed %></div>
+    <div class="f"><% if (d.queue.failed) { %><span class="wn">needs attention</span><% } else { %>none<% } %></div>
+  </div>
+  <div class="card kpi">
+    <div class="lbl"><svg><use href="#i-chart"/></svg>Disk free</div>
+    <div class="v"><%= fmtBytes(d.diskFreeBytes) %></div>
+    <div class="f">on the database's volume</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-hd"><h2>Readiness checks</h2>
+    <span class="r chip nt">schema v<%= d.schemaVersion %></span></div>
+  <div class="tw"><table>
+    <thead><tr><th>Check</th><th>State</th><th>Detail</th></tr></thead>
+    <tbody>
+      <% d.checks.forEach((c) => { %>
+      <tr>
+        <td><%= label(c.name) %></td>
+        <td><span class="<%= chip(c.ok) %>"><%= c.ok ? 'pass' : 'fail' %></span></td>
+        <td class="dim"><%= c.detail %></td>
+      </tr>
+      <% }); %>
+    </tbody>
+  </table></div>
+</div>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Job runner</h2>
+    <span class="r"><% if (d.runner.started) { %>ticking<% } else { %>stopped<% } %></span></div>
+  <div class="tw"><table>
+    <thead><tr><th>Measure</th><th class="r">Value</th></tr></thead>
+    <tbody>
+      <tr><td>Last tick</td><td class="r"><%= fmtAge(d.runner.lastTickAt ? Math.round((Date.now() - Date.parse(d.runner.lastTickAt)) / 1000) : null) %></td></tr>
+      <tr><td>Tick in progress</td><td class="r"><%= d.runner.ticking ? 'yes' : 'no' %></td></tr>
+      <tr><td>Queue: queued / running / failed / completed</td>
+        <td class="r"><%= d.queue.queued %> / <%= d.queue.running %> / <%= d.queue.failed %> / <%= d.queue.completed %></td></tr>
+      <tr><td>Handler types registered</td>
+        <td class="r"><%= d.registeredJobTypes.length ? d.registeredJobTypes.join(', ') : '—' %></td></tr>
+    </tbody>
+  </table></div>
+</div>
+
+<% if (d.oldestFailure) { %>
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>Oldest failed job</h2>
+    <span class="r chip bd">job #<%= d.oldestFailure.id %></span></div>
+  <div class="tw"><table>
+    <thead><tr><th>Type</th><th>Attempts</th><th>Last error</th><th>Finished</th></tr></thead>
+    <tbody><tr>
+      <td class="mono"><%= d.oldestFailure.type %></td>
+      <td><%= d.oldestFailure.attempts %></td>
+      <td class="dim"><%= d.oldestFailure.last_error || '—' %></td>
+      <td><%= d.oldestFailure.finished_at || '—' %></td>
+    </tr></tbody>
+  </table></div>
+</div>
+<% } %>
+
+<div class="card" style="margin-top:12px">
+  <div class="card-hd"><h2>This process</h2></div>
+  <div class="tw"><table>
+    <thead><tr><th>Measure</th><th class="r">Value</th></tr></thead>
+    <tbody>
+      <tr><td>Uptime</td><td class="r"><%= fmtUptime(d.uptimeSeconds) %></td></tr>
+      <tr><td>Started</td><td class="r"><%= d.startedAt %></td></tr>
+      <tr><td>Latest backup</td><td class="r"><%= fmtAge(d.backupAgeSeconds) %></td></tr>
+    </tbody>
+  </table></div>
+  <div class="fbody">
+    <div class="fnote"><svg><use href="#i-info"/></svg><span>
+      The public probes <code class="mono">/health/live</code> and
+      <code class="mono">/health/ready</code> return a status word and the NAMES of failing
+      checks only — never a reason, path or version. Everything on this page is the detail
+      behind them, and needs an Administrator session.
+      <% if (d.backupAgeSeconds === null) { %>
+      Backup age reads <b>never measured</b> because the backup job does not exist yet (part 9.4);
+      it is reported as unknown rather than as a recent time.
+      <% } %>
+      To trace a support report, quote the <code class="mono">X-Request-Id</code> response header
+      of the failing request — every log line for that request carries it.</span></div>
+  </div>
+</div>
+
+<%# i-info and i-lock are NOT in the shared sidebar defs block: symbols are per-view and a page
+    that uses one must define it, or the icon renders as an empty box. These are this page's own. %>
+<svg style="display:none" aria-hidden="true"><defs>
+<symbol id="i-info" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-2.6 2.4h1.2v12.1H9.5z"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2h1.5A1.5 1.5 0 0 1 20 11.5v8A1.5 1.5 0 0 1 18.5 21h-13A1.5 1.5 0 0 1 4 19.5v-8A1.5 1.5 0 0 1 5.5 10Zm2 0h6V8a3 3 0 0 0-6 0zm3 4a1.6 1.6 0 0 1 .8 3v1.9h-1.6V17a1.6 1.6 0 0 1 .8-3z"/></symbol>
+</defs></svg>
