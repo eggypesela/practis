@@ -1413,10 +1413,16 @@ compile + review), `canApproveReport` (Project Manager — and it freezes the pe
 **Populated at last:** `frozen_periods.report_id`, present since migration 001 but never written
 until now — a report approval records WHICH report closed the period.
 
-**Not built (flagged, not hidden):** PRD §5.4's PDF/Excel exports with a light print theme. The report
-body is designed so they can be added without reshaping the data.
+**Exports:** PRD §5.4's PDF/Excel exports were flagged out of scope for 8.10 and are now built as
+**part 8.11** (§12v below).
 
-## 13. Workflow coverage vs PRD §4
+## 12v. UPX8 — Report exports: PDF + XLSX — ✅ IMPLEMENTED 2026-10-04
+
+PRD §5.4 ("Exports: PDF + Excel report pack, light theme"), TECH-SPEC **TS-06** and **TS-18**
+(pdfmake + exceljs), TS-204 (formula-injection guard). Gate = `test/export.test.js`, port **3931**.
+
+| # | Check |
+...[truncated]
 
 The product workflow, step by step, and whether a test exists. **Empty rows are the real answer to
 "is the edge case in the test plan" — most of the workflow has no test because it is not built.**

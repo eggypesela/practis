@@ -45,6 +45,18 @@
       <% } else { %> <span class="chip nt">PERIOD OPEN</span><% } %>
     </span>
   </div>
+  <% if (stored) { %>
+  <%# Module 8 part 8.11: the exports. They download the STORED report — the record — not a live
+      recomputation, so the file matches what was approved. A draft says DRAFT on its face. %>
+  <div class="fbody" style="border-bottom:1px solid var(--border)">
+    <span class="dim" style="margin-right:8px">Download this report:</span>
+    <a class="btn" href="/reports/update/<%= stored.id %>/export.pdf">PDF</a>
+    <a class="btn" href="/reports/update/<%= stored.id %>/export.xlsx">Excel</a>
+    <span class="dim" style="margin-left:8px"><%= status === 'draft'
+      ? 'This is a draft, so the file is marked DRAFT.'
+      : 'The file carries the stored figures and who approved it.' %></span>
+  </div>
+  <% } %>
   <div class="fbody">
     <p class="dim" style="margin:0">
       <b>What this is.</b> The monthly position report for <%= month %>: schedule and cost

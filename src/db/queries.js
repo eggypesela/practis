@@ -6,6 +6,11 @@ const db = require('./db');
 const _projects = db.prepare(`SELECT * FROM projects ORDER BY name`);
 const _projectById = db.prepare(`SELECT * FROM projects WHERE id = ?`);
 
+// One stored report by id (module 8 part 8.11 — the exports download a SPECIFIC report, whereas
+// `forMonth` in report-service looks one up by month). Read here rather than in the service so the
+// statement is prepared once, like every other read in this file.
+const _projectReportById = db.prepare(`SELECT * FROM project_reports WHERE id = ?`);
+
 // ---- project register (module 6 task 6.2) ---------------------------------
 // `created_by` is NOT NULL: the approval rule (decision: self-approval needs a
 // typed reason) is meaningless without a recorded creator.
@@ -635,6 +640,8 @@ const _agingBuckets = db.prepare(`SELECT aging_bucket, COUNT(*) AS n,
 module.exports = {
   projects: () => _projects.all(),
   projectById: (id) => _projectById.get(id),
+  // Module 8 part 8.11: the stored report an export downloads, by id.
+  projectReportById: (id) => _projectReportById.get(id),
   ledgerForProject: (id) => _ledgerForProject.all(id),
   totalsForProject: (id) => _totalsForProject.get(id),
   untaggedCount: (id) => _untaggedCount.get(id),

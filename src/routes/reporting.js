@@ -32,6 +32,7 @@ const q = require('../db/queries');
 const revenue = require('../lib/revenue-service');
 const reportSvc = require('../lib/report-service');
 const periods = require('../lib/periods');
+const exportSvc = require('../lib/export-service');
 const { capabilities } = require('../lib/permissions');
 const { requirePage } = require('../middleware/auth');
 const { projectContext } = require('../middleware/scope');
@@ -432,6 +433,43 @@ router.post('/reports/update/:id/approve',
         return redirectTo(res, `/reports/update?err=${encodeURIComponent(e.message)}`);
       }
       throw e;
+    }
+  });
+
+// ---- Report exports: PDF + XLSX (module 8 part 8.11; PRD §5.4, TS-06, TS-18) -------------------
+//
+// The download buttons on /reports/update point here. Both are GETs so the browser can save the file;
+// the only thing they mutate is the audit log (TS-221/225 list `export` as an audited action).
+//
+// Guarded by `canViewReport` — the same capability the screen needs — so anyone who can READ the
+// report can download it, and nobody who cannot read it can. The report id in the URL is checked
+// against the caller's project inside the service, which answers 404 rather than 403 for a
+// wrong-project id: the caller has no business knowing that report exists.
+router.get('/reports/update/:id/export.:format',
+  requireCapability('canViewReport', 'Downloading a report needs the same access as reading it.'),
+  async (req, res, next) => {
+    const project = res.locals.project;
+    if (!project) return redirectTo(res, '/reports/update');
+    try {
+      const out = await exportSvc.exportReport({
+        reportId: Number(req.params.id),
+        projectId: project.id,
+        format: String(req.params.format),
+        actorId: req.user.id,
+      });
+      res.setHeader('Content-Type', out.contentType);
+      res.setHeader('Content-Disposition',
+        `attachment; filename="${out.filename}"`);
+      res.setHeader('Content-Length', out.buffer.length);
+      // A report is a record, and a cached copy of one is a stale record waiting to be quoted.
+      res.setHeader('Cache-Control', 'no-store');
+      return res.end(out.buffer);
+    } catch (e) {
+      if (e instanceof exportSvc.ExportError) {
+        return redirectTo(res, `/reports/update?month=${encodeURIComponent(
+          (req.query.month || ''))}&err=${encodeURIComponent(e.message)}`);
+      }
+      return next(e);
     }
   });
 
